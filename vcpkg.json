@@ -1,0 +1,9 @@
+{
+  "name": "simpledbms-server",
+  "version-string": "0.1.0",
+  "builtin-baseline": "c263b1d91eedbc00b8f45e6016b579307b4395a6",
+  "dependencies": [
+    "asio",
+    "nlohmann-json"
+  ]
+}

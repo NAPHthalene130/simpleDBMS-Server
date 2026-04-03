@@ -180,3 +180,4 @@ $RECYCLE.BIN/
 /cmake-build-debug/*
 /.idea
 /build
+/CMakeUserPresets.json

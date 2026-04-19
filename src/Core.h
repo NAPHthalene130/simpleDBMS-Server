@@ -1,7 +1,6 @@
 #pragma once
 
-#include "network/NetReceiver.h"
-#include "network/NetSender.h"
+class NetworkManager;
 
 /**
  * @class Core
@@ -36,7 +35,13 @@ public:
      */
     void stop();
 
+    /**
+     * @brief 获取网络管理器
+     * @author NAPH130
+     * @return 网络管理器指针
+     */
+    NetworkManager *getNetworkManager();
+
 private:
-    NetReceiver netReceiver;
-    NetSender netSender;
+    NetworkManager *networkManager;
 };

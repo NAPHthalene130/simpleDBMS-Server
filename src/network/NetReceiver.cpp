@@ -5,8 +5,15 @@
 #include <iostream>
 #include <system_error>
 
-NetReceiver::NetReceiver(unsigned short listenPort)
-    : listenPort(listenPort),
+#include <asio/read.hpp>
+
+#include "Core.h"
+#include "NetworkManager.h"
+#include "models/network/NetData.h"
+
+NetReceiver::NetReceiver(Core *core, unsigned short listenPort)
+    : core(core),
+      listenPort(listenPort),
       isRunning(false)
 {
 }
@@ -40,6 +47,18 @@ void NetReceiver::stop()
         ioContext->stop();
     }
 
+    {
+        std::lock_guard<std::mutex> lock(socketMutex);
+        for (const std::shared_ptr<asio::ip::tcp::socket> &clientSocket : activeClientSockets) {
+            if (clientSocket != nullptr && clientSocket->is_open()) {
+                std::error_code errorCode;
+                clientSocket->shutdown(asio::ip::tcp::socket::shutdown_both, errorCode);
+                clientSocket->close(errorCode);
+            }
+        }
+        activeClientSockets.clear();
+    }
+
     if (serviceThread.joinable()) {
         serviceThread.join();
     }
@@ -53,14 +72,25 @@ void NetReceiver::stop()
     ioContext.reset();
 }
 
-void NetReceiver::receiveProcess(const std::string &receiverStr)
+void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket, const std::string &msg)
 {
     {
         std::lock_guard<std::mutex> lock(messageMutex);
-        lastReceivedMessage = receiverStr;
+        lastReceivedMessage = msg;
     }
 
-    std::cout << "Server received message: " << receiverStr << std::endl;
+    try {
+        const NetData netData = NetData::fromJson(msg);
+        std::cout << "Server received message from "
+                  << (clientSocket != nullptr && clientSocket->is_open()
+                          ? clientSocket->remote_endpoint().address().to_string()
+                          : std::string("unknown"))
+                  << ": type=" << netData.getType()
+                  << ", content=" << netData.getContent()
+                  << std::endl;
+    } catch (const std::exception &) {
+        std::cout << "Server received raw message: " << msg << std::endl;
+    }
 }
 
 std::string NetReceiver::getLastReceivedMessage() const
@@ -86,7 +116,7 @@ void NetReceiver::runService()
 
         acceptLoop();
     } catch (const std::exception &exception) {
-        receiveProcess("Server receiver exception: " + std::string(exception.what()));
+        std::cout << "NetReceiver::runService failed: " << exception.what() << std::endl;
     }
 }
 
@@ -99,9 +129,15 @@ void NetReceiver::acceptLoop()
 
         if (errorCode) {
             if (isRunning.load()) {
-                receiveProcess("Server accept failed: " + errorCode.message());
+                std::cout << "NetReceiver::acceptLoop failed: " << errorCode.message() << std::endl;
             }
             continue;
+        }
+
+        addActiveSocket(clientSocket);
+        if (core != nullptr && core->getNetworkManager() != nullptr
+            && core->getNetworkManager()->getClientSessionManager() != nullptr) {
+            core->getNetworkManager()->getClientSessionManager()->addSession(clientSocket.get());
         }
 
         asio::post(*workerPool,
@@ -113,26 +149,66 @@ void NetReceiver::acceptLoop()
 
 void NetReceiver::handleClientSession(std::shared_ptr<asio::ip::tcp::socket> clientSocket)
 {
-    std::array<char, 4096> buffer{};
-    std::string receiverStr;
-
     while (isRunning.load()) {
         std::error_code errorCode;
-        const std::size_t readSize = clientSocket->read_some(asio::buffer(buffer), errorCode);
+        std::array<unsigned char, 4> lengthHeader{};
+        asio::read(*clientSocket, asio::buffer(lengthHeader), errorCode);
 
         if (errorCode == asio::error::eof) {
             break;
         }
 
         if (errorCode) {
-            receiveProcess("Server session read failed: " + errorCode.message());
-            return;
+            std::cout << "NetReceiver::handleClientSession header read failed: "
+                      << errorCode.message()
+                      << std::endl;
+            break;
         }
 
-        receiverStr.append(buffer.data(), readSize);
+        const std::uint32_t messageLength = parseLengthHeader(lengthHeader);
+        std::string msg(messageLength, '\0');
+        asio::read(*clientSocket, asio::buffer(msg.data(), msg.size()), errorCode);
+
+        if (errorCode == asio::error::eof) {
+            break;
+        }
+
+        if (errorCode) {
+            std::cout << "NetReceiver::handleClientSession body read failed: "
+                      << errorCode.message()
+                      << std::endl;
+            break;
+        }
+
+        processMsg(clientSocket, msg);
     }
 
-    if (!receiverStr.empty()) {
-        receiveProcess(receiverStr);
+    if (core != nullptr && core->getNetworkManager() != nullptr) {
+        if (core->getNetworkManager()->getClientSessionManager() != nullptr) {
+            core->getNetworkManager()->getClientSessionManager()->removeSession(clientSocket.get());
+        }
+        core->getNetworkManager()->disconnected(clientSocket);
     }
+    removeActiveSocket(clientSocket);
+}
+
+void NetReceiver::addActiveSocket(std::shared_ptr<asio::ip::tcp::socket> clientSocket)
+{
+    std::lock_guard<std::mutex> lock(socketMutex);
+    activeClientSockets.push_back(clientSocket);
+}
+
+void NetReceiver::removeActiveSocket(std::shared_ptr<asio::ip::tcp::socket> clientSocket)
+{
+    std::lock_guard<std::mutex> lock(socketMutex);
+    activeClientSockets.erase(std::remove(activeClientSockets.begin(), activeClientSockets.end(), clientSocket),
+                              activeClientSockets.end());
+}
+
+std::uint32_t NetReceiver::parseLengthHeader(const std::array<unsigned char, 4> &lengthHeader) const
+{
+    return (static_cast<std::uint32_t>(lengthHeader[0]) << 24U)
+           | (static_cast<std::uint32_t>(lengthHeader[1]) << 16U)
+           | (static_cast<std::uint32_t>(lengthHeader[2]) << 8U)
+           | static_cast<std::uint32_t>(lengthHeader[3]);
 }

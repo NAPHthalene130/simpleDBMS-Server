@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "storage/models/DatabaseBlock.h"
+#include "models/storage/DatabaseBlock.h"
 
 /**
  * @class SystemCatalogManager

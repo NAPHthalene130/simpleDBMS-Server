@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "storage/models/TableBlock.h"
+#include "models/storage/TableBlock.h"
 
 /**
  * @class DatabaseManager

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "models/parser/InsertStmt.h"
 #include "storage/manager/DatabaseManager.h"
@@ -27,7 +27,7 @@ public:
      * @author NAPH130
      * @return 支持的语句类型
      */
-    StatementType getSupportedType() const override;
+    ExecutionStatementType getSupportedType() const override;
 
     /**
      * @brief 执行插入语句

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <vector>
 
@@ -30,7 +30,7 @@ public:
      * @author NAPH130
      * @return 支持的语句类型
      */
-    StatementType getSupportedType() const override;
+    ExecutionStatementType getSupportedType() const override;
 
     /**
      * @brief 执行查询语句

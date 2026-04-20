@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "models/parser/CreateDbStmt.h"
 #include "models/storage/DatabaseBlock.h"
@@ -26,7 +26,7 @@ public:
      * @author NAPH130
      * @return 支持的语句类型
      */
-    StatementType getSupportedType() const override;
+    ExecutionStatementType getSupportedType() const override;
 
     /**
      * @brief 执行创建数据库语句

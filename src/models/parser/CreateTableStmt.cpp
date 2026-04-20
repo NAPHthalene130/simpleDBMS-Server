@@ -1,7 +1,7 @@
 ﻿#include "CreateTableStmt.h"
 
 CreateTableStmt::CreateTableStmt()
-    : SQLStatement(StatementType::CreateTable)
+    : SQLStatement(ExecutionStatementType::CreateTable)
 {
 }
 

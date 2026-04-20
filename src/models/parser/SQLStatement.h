@@ -2,20 +2,7 @@
 
 #include <string>
 
-/**
- * @enum StatementType
- * @brief SQL 语句类型枚举
- * @details 用于标识抽象语法树节点对应的语句类别。
- * @author NAPH130
- */
-enum class StatementType
-{
-    CreateDatabase,
-    CreateTable,
-    Insert,
-    Select,
-    Unknown
-};
+#include "models/executor/ExecutionStatementType.h"
 
 /**
  * @class SQLStatement
@@ -27,12 +14,12 @@ class SQLStatement
 {
 public:
     SQLStatement();
-    explicit SQLStatement(StatementType stmtType);
+    explicit SQLStatement(ExecutionStatementType stmtType);
     virtual ~SQLStatement();
 
-    StatementType getStmtType() const;
-    void setStmtType(StatementType stmtType);
+    ExecutionStatementType getStmtType() const;
+    void setStmtType(ExecutionStatementType stmtType);
 
 private:
-    StatementType stmtType;
+    ExecutionStatementType stmtType;
 };

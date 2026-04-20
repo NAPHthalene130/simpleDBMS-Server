@@ -1,7 +1,7 @@
 ﻿#include "InsertStmt.h"
 
 InsertStmt::InsertStmt()
-    : SQLStatement(StatementType::Insert)
+    : SQLStatement(ExecutionStatementType::Insert)
 {
 }
 

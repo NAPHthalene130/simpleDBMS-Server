@@ -1,23 +1,23 @@
 ﻿#include "SQLStatement.h"
 
 SQLStatement::SQLStatement()
-    : stmtType(StatementType::Unknown)
+    : stmtType(ExecutionStatementType::Unknown)
 {
 }
 
-SQLStatement::SQLStatement(StatementType stmtType)
+SQLStatement::SQLStatement(ExecutionStatementType stmtType)
     : stmtType(stmtType)
 {
 }
 
 SQLStatement::~SQLStatement() = default;
 
-StatementType SQLStatement::getStmtType() const
+ExecutionStatementType SQLStatement::getStmtType() const
 {
     return stmtType;
 }
 
-void SQLStatement::setStmtType(StatementType stmtType)
+void SQLStatement::setStmtType(ExecutionStatementType stmtType)
 {
     this->stmtType = stmtType;
 }

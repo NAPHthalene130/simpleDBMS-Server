@@ -1,7 +1,7 @@
 ﻿#include "CreateDbStmt.h"
 
 CreateDbStmt::CreateDbStmt()
-    : SQLStatement(StatementType::CreateDatabase)
+    : SQLStatement(ExecutionStatementType::CreateDatabase)
 {
 }
 

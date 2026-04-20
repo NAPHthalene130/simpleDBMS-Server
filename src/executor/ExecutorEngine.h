@@ -1,9 +1,12 @@
-#pragma once
+﻿#pragma once
 
 #include <memory>
 #include <vector>
 
 #include "StatementExecutor.h"
+#include "storage/manager/DatabaseManager.h"
+#include "storage/manager/SystemCatalogManager.h"
+#include "storage/manager/TableDefManager.h"
 
 /**
  * @class ExecutorEngine
@@ -33,7 +36,7 @@ public:
      * @param statementType 语句类型
      * @return 是否已注册对应执行器
      */
-    bool hasExecutor(StatementType statementType) const;
+    bool hasExecutor(ExecutionStatementType statementType) const;
 
     /**
      * @brief 执行指定 SQL 语句
@@ -51,8 +54,11 @@ private:
      * @param statementType 语句类型
      * @return 对应的语句执行器对象
      */
-    std::shared_ptr<StatementExecutor> findExecutor(StatementType statementType) const;
+    std::shared_ptr<StatementExecutor> findExecutor(ExecutionStatementType statementType) const;
 
 private:
     std::vector<std::shared_ptr<StatementExecutor>> statementExecutors;
+    SystemCatalogManager systemCatalogManager;
+    DatabaseManager databaseManager;
+    TableDefManager tableDefManager;
 };

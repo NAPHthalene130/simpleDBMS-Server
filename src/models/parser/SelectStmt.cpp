@@ -1,7 +1,7 @@
 ﻿#include "SelectStmt.h"
 
 SelectStmt::SelectStmt()
-    : SQLStatement(StatementType::Select), selectAllFields(false)
+    : SQLStatement(ExecutionStatementType::Select), selectAllFields(false)
 {
 }
 

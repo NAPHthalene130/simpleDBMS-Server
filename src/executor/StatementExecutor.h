@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "models/executor/ExecutionContext.h"
 #include "models/executor/ExecutionResult.h"
@@ -24,7 +24,7 @@ public:
      * @author NAPH130
      * @return 支持的语句类型
      */
-    virtual StatementType getSupportedType() const = 0;
+    virtual ExecutionStatementType getSupportedType() const = 0;
 
     /**
      * @brief 执行指定 SQL 语句

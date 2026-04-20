@@ -124,7 +124,8 @@ void User::setAge(int newAge) {
 - 避免循环依赖，可通过中间层或依赖注入解决
 
 ### 5.4 方法参数传入
-- 方法参数应采用 **引用传递**（`const std::string& userName`），避免复制大对象
+- 对于 **类对象或较大结构体**，方法参数应优先采用 **指针传递**（`const UserInfo* userInfo`），避免复制大对象并便于表达可空语义
+- 对于 **字符串、基本类型、枚举等轻量类型**，优先直接传值（`std::string userName`、`int age`、`bool enabled`）
 - 对于可选参数，使用 **默认值**（`int age = 0`），避免调用者忘记传递参数
 
 ## 6. 头文件规范

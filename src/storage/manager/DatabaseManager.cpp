@@ -2,6 +2,11 @@
 
 // 当前仅预留数据库管理器实现入口。
 
+DatabaseManager::DatabaseManager(Core *core)
+    : core(core)
+{
+}
+
 bool DatabaseManager::createTable(TableBlock tbInfo)
 {
     (void)tbInfo;

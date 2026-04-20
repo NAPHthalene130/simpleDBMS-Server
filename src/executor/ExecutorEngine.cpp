@@ -1,23 +1,14 @@
-﻿#include "ExecutorEngine.h"
+#include "ExecutorEngine.h"
 
 #include <exception>
-#include <memory>
 #include <string>
 
-#include "statementExecutors/CreateDbExecutor.h"
-#include "statementExecutors/CreateTableExecutor.h"
-#include "statementExecutors/InsertExecutor.h"
-#include "statementExecutors/SelectExecutor.h"
-
-ExecutorEngine::ExecutorEngine()
+ExecutorEngine::ExecutorEngine(Core *core)
+    : core(core)
 {
-    registerExecutor(std::make_shared<CreateDbExecutor>(systemCatalogManager));
-    registerExecutor(std::make_shared<CreateTableExecutor>(databaseManager, tableDefManager));
-    registerExecutor(std::make_shared<InsertExecutor>(databaseManager, tableDefManager));
-    registerExecutor(std::make_shared<SelectExecutor>(databaseManager, tableDefManager));
 }
 
-void ExecutorEngine::registerExecutor(const std::shared_ptr<StatementExecutor> &statementExecutor)
+void ExecutorEngine::registerExecutor(StatementExecutor *statementExecutor)
 {
     if (statementExecutor == nullptr) {
         return;
@@ -36,9 +27,16 @@ bool ExecutorEngine::hasExecutor(ExecutionStatementType statementType) const
     return findExecutor(statementType) != nullptr;
 }
 
-ExecutionResult ExecutorEngine::execute(const SQLStatement &statement, ExecutionContext &executionContext)
+ExecutionResult ExecutorEngine::execute(const SQLStatement *statement, ExecutionContext *executionContext)
 {
-    std::shared_ptr<StatementExecutor> statementExecutor = findExecutor(statement.getStmtType());
+    if (statement == nullptr || executionContext == nullptr) {
+        ExecutionResult executionResult;
+        executionResult.setStatus(ExecutionStatus::Failure);
+        executionResult.setMessage("Invalid execute input pointer.");
+        return executionResult;
+    }
+
+    StatementExecutor *statementExecutor = findExecutor(statement->getStmtType());
     if (statementExecutor == nullptr) {
         ExecutionResult executionResult;
         executionResult.setStatus(ExecutionStatus::Failure);
@@ -61,9 +59,9 @@ ExecutionResult ExecutorEngine::execute(const SQLStatement &statement, Execution
     }
 }
 
-std::shared_ptr<StatementExecutor> ExecutorEngine::findExecutor(ExecutionStatementType statementType) const
+StatementExecutor *ExecutorEngine::findExecutor(ExecutionStatementType statementType) const
 {
-    for (const std::shared_ptr<StatementExecutor> &statementExecutor : statementExecutors) {
+    for (StatementExecutor *statementExecutor : statementExecutors) {
         if (statementExecutor != nullptr && statementExecutor->getSupportedType() == statementType) {
             return statementExecutor;
         }

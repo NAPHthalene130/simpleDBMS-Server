@@ -2,6 +2,11 @@
 
 // 当前仅预留系统目录管理器实现入口。
 
+SystemCatalogManager::SystemCatalogManager(Core *core)
+    : core(core)
+{
+}
+
 bool SystemCatalogManager::createDatabase(DatabaseBlock dbInfo)
 {
     (void)dbInfo;

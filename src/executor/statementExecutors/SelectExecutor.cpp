@@ -1,4 +1,4 @@
-﻿#include "SelectExecutor.h"
+#include "SelectExecutor.h"
 
 namespace {
 ExecutionResult buildFailureResult(const std::string &message)
@@ -10,8 +10,8 @@ ExecutionResult buildFailureResult(const std::string &message)
 }
 }
 
-SelectExecutor::SelectExecutor(DatabaseManager &databaseManager, TableDefManager &tableDefManager)
-    : databaseManager(databaseManager), tableDefManager(tableDefManager)
+SelectExecutor::SelectExecutor(Core *core, DatabaseManager *databaseManager, TableDefManager *tableDefManager)
+    : StatementExecutor(core), databaseManager(databaseManager), tableDefManager(tableDefManager)
 {
 }
 
@@ -20,16 +20,20 @@ ExecutionStatementType SelectExecutor::getSupportedType() const
     return ExecutionStatementType::Select;
 }
 
-ExecutionResult SelectExecutor::execute(const SQLStatement &statement, ExecutionContext &executionContext)
+ExecutionResult SelectExecutor::execute(const SQLStatement *statement, ExecutionContext *executionContext)
 {
-    if (statement.getStmtType() != getSupportedType()) {
+    if (statement == nullptr || executionContext == nullptr) {
+        return buildFailureResult("SelectExecutor received null input pointer.");
+    }
+
+    if (statement->getStmtType() != getSupportedType()) {
         return buildFailureResult("SelectExecutor received mismatched statement type.");
     }
 
-    return executeSelect(static_cast<const SelectStmt &>(statement), executionContext);
+    return executeSelect(static_cast<const SelectStmt *>(statement), executionContext);
 }
 
-ExecutionResult SelectExecutor::executeSelect(const SelectStmt &selectStmt, ExecutionContext &executionContext)
+ExecutionResult SelectExecutor::executeSelect(const SelectStmt *selectStmt, ExecutionContext *executionContext)
 {
     (void)executionContext;
     if (!validateTargetFields(selectStmt)) {
@@ -39,18 +43,22 @@ ExecutionResult SelectExecutor::executeSelect(const SelectStmt &selectStmt, Exec
     return buildFailureResult("SelectExecutor is registered, but execution logic is not implemented yet.");
 }
 
-bool SelectExecutor::validateTargetFields(const SelectStmt &selectStmt) const
+bool SelectExecutor::validateTargetFields(const SelectStmt *selectStmt) const
 {
-    return selectStmt.getSelectAllFields() || !selectStmt.getTargetFields().empty();
+    if (selectStmt == nullptr) {
+        return false;
+    }
+
+    return selectStmt->getSelectAllFields() || !selectStmt->getTargetFields().empty();
 }
 
-bool SelectExecutor::evaluateCondition(const ConditionNode &conditionNode) const
+bool SelectExecutor::evaluateCondition(const ConditionNode *conditionNode) const
 {
     (void)conditionNode;
     return true;
 }
 
-std::vector<std::vector<std::string>> SelectExecutor::buildResultSet(const SelectStmt &selectStmt) const
+std::vector<std::vector<std::string>> SelectExecutor::buildResultSet(const SelectStmt *selectStmt) const
 {
     (void)selectStmt;
     return {};

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <vector>
 
@@ -20,10 +20,11 @@ public:
     /**
      * @brief 构造函数
      * @author NAPH130
-     * @param databaseManager 数据库管理器
-     * @param tableDefManager 表定义管理器
+     * @param core 服务端核心对象指针
+     * @param databaseManager 数据库管理器指针
+     * @param tableDefManager 表定义管理器指针
      */
-    SelectExecutor(DatabaseManager &databaseManager, TableDefManager &tableDefManager);
+    SelectExecutor(Core *core, DatabaseManager *databaseManager, TableDefManager *tableDefManager);
 
     /**
      * @brief 获取当前执行器支持的语句类型
@@ -39,7 +40,7 @@ public:
      * @param executionContext 当前执行上下文
      * @return 统一的执行结果对象
      */
-    ExecutionResult execute(const SQLStatement &statement, ExecutionContext &executionContext) override;
+    ExecutionResult execute(const SQLStatement *statement, ExecutionContext *executionContext) override;
 
 private:
     /**
@@ -49,7 +50,7 @@ private:
      * @param executionContext 当前执行上下文
      * @return 执行结果对象
      */
-    ExecutionResult executeSelect(const SelectStmt &selectStmt, ExecutionContext &executionContext);
+    ExecutionResult executeSelect(const SelectStmt *selectStmt, ExecutionContext *executionContext);
 
     /**
      * @brief 校验目标字段是否满足查询要求
@@ -57,7 +58,7 @@ private:
      * @param selectStmt 查询语句对象
      * @return 是否通过字段校验
      */
-    bool validateTargetFields(const SelectStmt &selectStmt) const;
+    bool validateTargetFields(const SelectStmt *selectStmt) const;
 
     /**
      * @brief 评估条件树是否满足过滤要求
@@ -65,7 +66,7 @@ private:
      * @param conditionNode 条件树节点
      * @return 是否满足条件
      */
-    bool evaluateCondition(const ConditionNode &conditionNode) const;
+    bool evaluateCondition(const ConditionNode *conditionNode) const;
 
     /**
      * @brief 构建查询结果集
@@ -73,9 +74,9 @@ private:
      * @param selectStmt 查询语句对象
      * @return 结果集二维数组
      */
-    std::vector<std::vector<std::string>> buildResultSet(const SelectStmt &selectStmt) const;
+    std::vector<std::vector<std::string>> buildResultSet(const SelectStmt *selectStmt) const;
 
 private:
-    DatabaseManager &databaseManager;
-    TableDefManager &tableDefManager;
+    DatabaseManager *databaseManager;
+    TableDefManager *tableDefManager;
 };

@@ -1,5 +1,7 @@
 #pragma once
 
+class Core;
+
 /**
  * @class FileManager
  * @brief 存储文件管理器
@@ -8,4 +10,14 @@
  */
 class FileManager
 {
+public:
+    /**
+     * @brief 构造函数
+     * @author NAPH130
+     * @param core 服务端核心对象指针
+     */
+    explicit FileManager(Core *core);
+
+private:
+    Core *core;
 };

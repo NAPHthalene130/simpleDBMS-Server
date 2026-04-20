@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+class Core;
+
 #include "models/executor/ExecutionContext.h"
 #include "models/executor/ExecutionResult.h"
 #include "models/parser/SQLStatement.h"
@@ -13,6 +15,13 @@
 class StatementExecutor
 {
 public:
+    /**
+     * @brief 构造函数
+     * @author NAPH130
+     * @param core 服务端核心对象指针
+     */
+    explicit StatementExecutor(Core *core);
+
     /**
      * @brief 虚析构函数
      * @author NAPH130
@@ -33,5 +42,8 @@ public:
      * @param executionContext 当前执行上下文
      * @return 统一的执行结果对象
      */
-    virtual ExecutionResult execute(const SQLStatement &statement, ExecutionContext &executionContext) = 0;
+    virtual ExecutionResult execute(const SQLStatement *statement, ExecutionContext *executionContext) = 0;
+
+protected:
+    Core *core;
 };

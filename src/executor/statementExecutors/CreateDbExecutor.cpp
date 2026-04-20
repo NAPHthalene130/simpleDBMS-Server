@@ -1,4 +1,4 @@
-﻿#include "CreateDbExecutor.h"
+#include "CreateDbExecutor.h"
 
 namespace {
 ExecutionResult buildFailureResult(const std::string &message)
@@ -10,8 +10,8 @@ ExecutionResult buildFailureResult(const std::string &message)
 }
 }
 
-CreateDbExecutor::CreateDbExecutor(SystemCatalogManager &systemCatalogManager)
-    : systemCatalogManager(systemCatalogManager)
+CreateDbExecutor::CreateDbExecutor(Core *core, SystemCatalogManager *systemCatalogManager)
+    : StatementExecutor(core), systemCatalogManager(systemCatalogManager)
 {
 }
 
@@ -20,23 +20,28 @@ ExecutionStatementType CreateDbExecutor::getSupportedType() const
     return ExecutionStatementType::CreateDatabase;
 }
 
-ExecutionResult CreateDbExecutor::execute(const SQLStatement &statement, ExecutionContext &executionContext)
+ExecutionResult CreateDbExecutor::execute(const SQLStatement *statement, ExecutionContext *executionContext)
 {
-    if (statement.getStmtType() != getSupportedType()) {
+    if (statement == nullptr || executionContext == nullptr) {
+        return buildFailureResult("CreateDbExecutor received null input pointer.");
+    }
+
+    if (statement->getStmtType() != getSupportedType()) {
         return buildFailureResult("CreateDbExecutor received mismatched statement type.");
     }
 
-    return executeCreateDb(static_cast<const CreateDbStmt &>(statement), executionContext);
+    return executeCreateDb(static_cast<const CreateDbStmt *>(statement), executionContext);
 }
 
-ExecutionResult CreateDbExecutor::executeCreateDb(const CreateDbStmt &createDbStmt, ExecutionContext &executionContext)
+ExecutionResult CreateDbExecutor::executeCreateDb(const CreateDbStmt *createDbStmt,
+                                                  ExecutionContext *executionContext)
 {
     (void)createDbStmt;
     (void)executionContext;
     return buildFailureResult("CreateDbExecutor is registered, but execution logic is not implemented yet.");
 }
 
-DatabaseBlock CreateDbExecutor::buildDatabaseBlock(const CreateDbStmt &createDbStmt) const
+DatabaseBlock CreateDbExecutor::buildDatabaseBlock(const CreateDbStmt *createDbStmt) const
 {
     (void)createDbStmt;
     return DatabaseBlock();

@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+class Core;
+
 #include "models/storage/TableBlock.h"
 
 /**
@@ -14,6 +16,13 @@
 class DatabaseManager
 {
 public:
+    /**
+     * @brief 构造函数
+     * @author NAPH130
+     * @param core 服务端核心对象指针
+     */
+    explicit DatabaseManager(Core *core);
+
     /**
      * @brief 创建数据表
      * @author NAPH130
@@ -58,4 +67,7 @@ public:
      * @note 当前仅预留接口，暂未实现
      */
     std::vector<TableBlock> getAllTables();
+
+private:
+    Core *core;
 };

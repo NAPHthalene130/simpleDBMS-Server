@@ -1,12 +1,9 @@
 ﻿#pragma once
 
-#include <memory>
 #include <vector>
 
 #include "StatementExecutor.h"
-#include "storage/manager/DatabaseManager.h"
-#include "storage/manager/SystemCatalogManager.h"
-#include "storage/manager/TableDefManager.h"
+class Core;
 
 /**
  * @class ExecutorEngine
@@ -21,14 +18,14 @@ public:
      * @brief 构造函数
      * @author NAPH130
      */
-    ExecutorEngine();
+    explicit ExecutorEngine(Core *core);
 
     /**
      * @brief 注册语句执行器
      * @author NAPH130
      * @param statementExecutor 语句执行器对象
      */
-    void registerExecutor(const std::shared_ptr<StatementExecutor> &statementExecutor);
+    void registerExecutor(StatementExecutor *statementExecutor);
 
     /**
      * @brief 检查指定语句类型是否已注册执行器
@@ -45,7 +42,7 @@ public:
      * @param executionContext 当前执行上下文
      * @return 统一的执行结果对象
      */
-    ExecutionResult execute(const SQLStatement &statement, ExecutionContext &executionContext);
+    ExecutionResult execute(const SQLStatement *statement, ExecutionContext *executionContext);
 
 private:
     /**
@@ -54,11 +51,9 @@ private:
      * @param statementType 语句类型
      * @return 对应的语句执行器对象
      */
-    std::shared_ptr<StatementExecutor> findExecutor(ExecutionStatementType statementType) const;
+    StatementExecutor *findExecutor(ExecutionStatementType statementType) const;
 
 private:
-    std::vector<std::shared_ptr<StatementExecutor>> statementExecutors;
-    SystemCatalogManager systemCatalogManager;
-    DatabaseManager databaseManager;
-    TableDefManager tableDefManager;
+    Core *core;
+    std::vector<StatementExecutor *> statementExecutors;
 };

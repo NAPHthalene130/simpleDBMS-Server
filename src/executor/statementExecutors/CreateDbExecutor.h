@@ -17,9 +17,10 @@ public:
     /**
      * @brief 构造函数
      * @author NAPH130
-     * @param systemCatalogManager 系统目录管理器
+     * @param core 服务端核心对象指针
+     * @param systemCatalogManager 系统目录管理器指针
      */
-    explicit CreateDbExecutor(SystemCatalogManager &systemCatalogManager);
+    CreateDbExecutor(Core *core, SystemCatalogManager *systemCatalogManager);
 
     /**
      * @brief 获取当前执行器支持的语句类型
@@ -35,7 +36,7 @@ public:
      * @param executionContext 当前执行上下文
      * @return 统一的执行结果对象
      */
-    ExecutionResult execute(const SQLStatement &statement, ExecutionContext &executionContext) override;
+    ExecutionResult execute(const SQLStatement *statement, ExecutionContext *executionContext) override;
 
 private:
     /**
@@ -45,7 +46,7 @@ private:
      * @param executionContext 当前执行上下文
      * @return 执行结果对象
      */
-    ExecutionResult executeCreateDb(const CreateDbStmt &createDbStmt, ExecutionContext &executionContext);
+    ExecutionResult executeCreateDb(const CreateDbStmt *createDbStmt, ExecutionContext *executionContext);
 
     /**
      * @brief 根据语句内容构建数据库元信息
@@ -53,8 +54,8 @@ private:
      * @param createDbStmt 创建数据库语句对象
      * @return 数据库元信息对象
      */
-    DatabaseBlock buildDatabaseBlock(const CreateDbStmt &createDbStmt) const;
+    DatabaseBlock buildDatabaseBlock(const CreateDbStmt *createDbStmt) const;
 
 private:
-    SystemCatalogManager &systemCatalogManager;
+    SystemCatalogManager *systemCatalogManager;
 };

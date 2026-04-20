@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "models/parser/InsertStmt.h"
 #include "storage/manager/DatabaseManager.h"
@@ -17,10 +17,11 @@ public:
     /**
      * @brief 构造函数
      * @author NAPH130
-     * @param databaseManager 数据库管理器
-     * @param tableDefManager 表定义管理器
+     * @param core 服务端核心对象指针
+     * @param databaseManager 数据库管理器指针
+     * @param tableDefManager 表定义管理器指针
      */
-    InsertExecutor(DatabaseManager &databaseManager, TableDefManager &tableDefManager);
+    InsertExecutor(Core *core, DatabaseManager *databaseManager, TableDefManager *tableDefManager);
 
     /**
      * @brief 获取当前执行器支持的语句类型
@@ -36,7 +37,7 @@ public:
      * @param executionContext 当前执行上下文
      * @return 统一的执行结果对象
      */
-    ExecutionResult execute(const SQLStatement &statement, ExecutionContext &executionContext) override;
+    ExecutionResult execute(const SQLStatement *statement, ExecutionContext *executionContext) override;
 
 private:
     /**
@@ -46,7 +47,7 @@ private:
      * @param executionContext 当前执行上下文
      * @return 执行结果对象
      */
-    ExecutionResult executeInsert(const InsertStmt &insertStmt, ExecutionContext &executionContext);
+    ExecutionResult executeInsert(const InsertStmt *insertStmt, ExecutionContext *executionContext);
 
     /**
      * @brief 校验插入语句字段和值是否匹配
@@ -54,9 +55,9 @@ private:
      * @param insertStmt 插入语句对象
      * @return 是否通过基础校验
      */
-    bool validateInsertStmt(const InsertStmt &insertStmt) const;
+    bool validateInsertStmt(const InsertStmt *insertStmt) const;
 
 private:
-    DatabaseManager &databaseManager;
-    TableDefManager &tableDefManager;
+    DatabaseManager *databaseManager;
+    TableDefManager *tableDefManager;
 };

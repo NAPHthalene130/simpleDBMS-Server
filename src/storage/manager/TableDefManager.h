@@ -1,5 +1,7 @@
 #pragma once
 
+class Core;
+
 /**
  * @class TableDefManager
  * @brief 表定义管理器
@@ -8,4 +10,14 @@
  */
 class TableDefManager
 {
+public:
+    /**
+     * @brief 构造函数
+     * @author NAPH130
+     * @param core 服务端核心对象指针
+     */
+    explicit TableDefManager(Core *core);
+
+private:
+    Core *core;
 };

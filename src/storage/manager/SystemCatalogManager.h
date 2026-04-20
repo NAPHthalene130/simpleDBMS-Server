@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+class Core;
+
 #include "models/storage/DatabaseBlock.h"
 
 /**
@@ -14,6 +16,13 @@
 class SystemCatalogManager
 {
 public:
+    /**
+     * @brief 构造函数
+     * @author NAPH130
+     * @param core 服务端核心对象指针
+     */
+    explicit SystemCatalogManager(Core *core);
+
     /**
      * @brief 创建数据库
      * @author NAPH130
@@ -48,4 +57,7 @@ public:
      * @note 当前仅预留接口，暂未实现
      */
     bool checkDbExists(std::string dbName);
+
+private:
+    Core *core;
 };

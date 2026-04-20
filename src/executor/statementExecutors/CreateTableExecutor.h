@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <vector>
 
@@ -21,10 +21,11 @@ public:
     /**
      * @brief 构造函数
      * @author NAPH130
-     * @param databaseManager 数据库管理器
-     * @param tableDefManager 表定义管理器
+     * @param core 服务端核心对象指针
+     * @param databaseManager 数据库管理器指针
+     * @param tableDefManager 表定义管理器指针
      */
-    CreateTableExecutor(DatabaseManager &databaseManager, TableDefManager &tableDefManager);
+    CreateTableExecutor(Core *core, DatabaseManager *databaseManager, TableDefManager *tableDefManager);
 
     /**
      * @brief 获取当前执行器支持的语句类型
@@ -40,7 +41,7 @@ public:
      * @param executionContext 当前执行上下文
      * @return 统一的执行结果对象
      */
-    ExecutionResult execute(const SQLStatement &statement, ExecutionContext &executionContext) override;
+    ExecutionResult execute(const SQLStatement *statement, ExecutionContext *executionContext) override;
 
 private:
     /**
@@ -50,7 +51,7 @@ private:
      * @param executionContext 当前执行上下文
      * @return 执行结果对象
      */
-    ExecutionResult executeCreateTable(const CreateTableStmt &createTableStmt, ExecutionContext &executionContext);
+    ExecutionResult executeCreateTable(const CreateTableStmt *createTableStmt, ExecutionContext *executionContext);
 
     /**
      * @brief 根据语句内容构建表元信息
@@ -58,7 +59,7 @@ private:
      * @param createTableStmt 创建数据表语句对象
      * @return 表元信息对象
      */
-    TableBlock buildTableBlock(const CreateTableStmt &createTableStmt) const;
+    TableBlock buildTableBlock(const CreateTableStmt *createTableStmt) const;
 
     /**
      * @brief 提取并整理字段定义列表
@@ -66,9 +67,9 @@ private:
      * @param createTableStmt 创建数据表语句对象
      * @return 字段定义列表
      */
-    std::vector<FieldBlock> buildFieldBlocks(const CreateTableStmt &createTableStmt) const;
+    std::vector<FieldBlock> buildFieldBlocks(const CreateTableStmt *createTableStmt) const;
 
 private:
-    DatabaseManager &databaseManager;
-    TableDefManager &tableDefManager;
+    DatabaseManager *databaseManager;
+    TableDefManager *tableDefManager;
 };

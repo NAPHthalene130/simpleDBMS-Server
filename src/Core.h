@@ -1,6 +1,8 @@
 #pragma once
 
 class NetworkManager;
+class ExecutorManager;
+class StorageManager;
 
 /**
  * @class Core
@@ -41,7 +43,11 @@ public:
      * @return 网络管理器指针
      */
     NetworkManager *getNetworkManager();
+    ExecutorManager *getExecutorManager();
+    StorageManager *getStorageManager();
 
 private:
     NetworkManager *networkManager;
+    StorageManager *storageManager;
+    ExecutorManager *executorManager;
 };

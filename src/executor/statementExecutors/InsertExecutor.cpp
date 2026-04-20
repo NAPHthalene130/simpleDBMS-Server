@@ -1,4 +1,4 @@
-﻿#include "InsertExecutor.h"
+#include "InsertExecutor.h"
 
 namespace {
 ExecutionResult buildFailureResult(const std::string &message)
@@ -10,8 +10,8 @@ ExecutionResult buildFailureResult(const std::string &message)
 }
 }
 
-InsertExecutor::InsertExecutor(DatabaseManager &databaseManager, TableDefManager &tableDefManager)
-    : databaseManager(databaseManager), tableDefManager(tableDefManager)
+InsertExecutor::InsertExecutor(Core *core, DatabaseManager *databaseManager, TableDefManager *tableDefManager)
+    : StatementExecutor(core), databaseManager(databaseManager), tableDefManager(tableDefManager)
 {
 }
 
@@ -20,16 +20,20 @@ ExecutionStatementType InsertExecutor::getSupportedType() const
     return ExecutionStatementType::Insert;
 }
 
-ExecutionResult InsertExecutor::execute(const SQLStatement &statement, ExecutionContext &executionContext)
+ExecutionResult InsertExecutor::execute(const SQLStatement *statement, ExecutionContext *executionContext)
 {
-    if (statement.getStmtType() != getSupportedType()) {
+    if (statement == nullptr || executionContext == nullptr) {
+        return buildFailureResult("InsertExecutor received null input pointer.");
+    }
+
+    if (statement->getStmtType() != getSupportedType()) {
         return buildFailureResult("InsertExecutor received mismatched statement type.");
     }
 
-    return executeInsert(static_cast<const InsertStmt &>(statement), executionContext);
+    return executeInsert(static_cast<const InsertStmt *>(statement), executionContext);
 }
 
-ExecutionResult InsertExecutor::executeInsert(const InsertStmt &insertStmt, ExecutionContext &executionContext)
+ExecutionResult InsertExecutor::executeInsert(const InsertStmt *insertStmt, ExecutionContext *executionContext)
 {
     (void)executionContext;
     if (!validateInsertStmt(insertStmt)) {
@@ -39,8 +43,12 @@ ExecutionResult InsertExecutor::executeInsert(const InsertStmt &insertStmt, Exec
     return buildFailureResult("InsertExecutor is registered, but execution logic is not implemented yet.");
 }
 
-bool InsertExecutor::validateInsertStmt(const InsertStmt &insertStmt) const
+bool InsertExecutor::validateInsertStmt(const InsertStmt *insertStmt) const
 {
-    return insertStmt.getColumnNames().empty()
-           || insertStmt.getColumnNames().size() == insertStmt.getValues().size();
+    if (insertStmt == nullptr) {
+        return false;
+    }
+
+    return insertStmt->getColumnNames().empty()
+           || insertStmt->getColumnNames().size() == insertStmt->getValues().size();
 }

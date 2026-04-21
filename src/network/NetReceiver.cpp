@@ -3,13 +3,21 @@
 #include <algorithm>
 #include <array>
 #include <iostream>
+#include <sstream>
 #include <system_error>
 
 #include <asio/read.hpp>
 
 #include "Core.h"
 #include "NetworkManager.h"
+#include "executor/ExecutorEngine.h"
+#include "executor/ExecutorManager.h"
+#include "models/executor/ExecutionContext.h"
+#include "models/executor/ExecutionResult.h"
 #include "models/network/NetData.h"
+#include "parser/Parser.h"
+#include "parser/ParserManager.h"
+#include "tokenizer/Tokenizer.h"
 
 NetReceiver::NetReceiver(Core *core, unsigned short listenPort)
     : core(core),
@@ -88,8 +96,85 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                   << ": type=" << netData.getType()
                   << ", content=" << netData.getContent()
                   << std::endl;
-    } catch (const std::exception &) {
+        if (netData.getType() == "SQL") {
+            if (core == nullptr || core->getTokenizer() == nullptr || core->getParserManager() == nullptr
+                || core->getParserManager()->getParser() == nullptr || core->getExecutorManager() == nullptr
+                || core->getExecutorManager()->getExecutorEngine() == nullptr) {
+                throw std::runtime_error("SQL pipeline is not initialized.");
+            }
+
+            Tokenizer *tokenizer = core->getTokenizer();
+            tokenizer->reset(netData.getContent());
+            const std::vector<Token> tokens = tokenizer->tokenize();
+
+            const ParseResult parseResult = core->getParserManager()->getParser()->parse(tokens);
+            if (!parseResult.success || parseResult.statement == nullptr) {
+                const std::string parseErrorMessage = "Parse failed at token "
+                                                     + std::to_string(parseResult.errorTokenIndex)
+                                                     + ": " + parseResult.errorMessage;
+                std::cout << parseErrorMessage << std::endl;
+                if (core->getNetworkManager() != nullptr && core->getNetworkManager()->getNetSender() != nullptr) {
+                    core->getNetworkManager()->getNetSender()->send(
+                        clientSocket,
+                        NetData("SQL_ERROR", parseErrorMessage).toJson());
+                }
+                return;
+            }
+
+            ExecutionContext executionContext;
+            if (core->getNetworkManager() != nullptr
+                && core->getNetworkManager()->getClientSessionManager() != nullptr) {
+                NetworkExecutionContext *networkExecutionContext =
+                    core->getNetworkManager()->getClientSessionManager()->findSessionContext(clientSocket.get());
+                if (networkExecutionContext != nullptr) {
+                    executionContext.setConnectionId(networkExecutionContext->getConnectionId());
+                    executionContext.setCurrentUser(networkExecutionContext->getCurrentUser());
+                    executionContext.setCurrentDbName(networkExecutionContext->getCurrentDbName());
+                }
+            }
+
+            const ExecutionResult executionResult =
+                core->getExecutorManager()->getExecutorEngine()->execute(
+                    parseResult.statement.get(),
+                    &executionContext);
+
+            std::ostringstream responseStream;
+            responseStream << "status="
+                           << (executionResult.getStatus() == ExecutionStatus::Success ? "Success" : "Failure")
+                           << ", message=" << executionResult.getMessage()
+                           << ", affectedRows=" << executionResult.getAffectedRows();
+
+            const std::vector<std::vector<std::string>> &resultSet = executionResult.getResultSet();
+            if (!resultSet.empty()) {
+                responseStream << ", resultSet=";
+                for (std::size_t rowIndex = 0; rowIndex < resultSet.size(); ++rowIndex) {
+                    if (rowIndex > 0) {
+                        responseStream << " | ";
+                    }
+                    for (std::size_t columnIndex = 0; columnIndex < resultSet[rowIndex].size(); ++columnIndex) {
+                        if (columnIndex > 0) {
+                            responseStream << ",";
+                        }
+                        responseStream << resultSet[rowIndex][columnIndex];
+                    }
+                }
+            }
+
+            const std::string responseType =
+                executionResult.getStatus() == ExecutionStatus::Success ? "SQL_RESULT" : "SQL_ERROR";
+            const std::string responseContent = responseStream.str();
+            std::cout << "SQL execution result: " << responseContent << std::endl;
+
+            if (core->getNetworkManager() != nullptr && core->getNetworkManager()->getNetSender() != nullptr) {
+                core->getNetworkManager()->getNetSender()->send(
+                    clientSocket,
+                    NetData(responseType, responseContent).toJson());
+            }
+        }
+        
+    } catch (const std::exception &exception) {
         std::cout << "Server received raw message: " << msg << std::endl;
+        std::cout << "NetReceiver::processMsg failed: " << exception.what() << std::endl;
     }
 }
 

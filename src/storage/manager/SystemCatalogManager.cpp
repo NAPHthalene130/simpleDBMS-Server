@@ -29,3 +29,14 @@ bool SystemCatalogManager::checkDbExists(std::string dbName)
     (void)dbName;
     return false;
 }
+
+uInt64 SystemCatalogManager::getDatabaseVersion(std::string dbName)
+{
+    (void)dbName;
+    return 0;
+}
+
+void SystemCatalogManager::addDatabaseVersion(std::string dbName)
+{
+    (void)dbName;
+}

@@ -7,7 +7,7 @@
 #include <limits>
 #include <stdexcept>
 
-#include "ParserException.h"
+#include "models/parser/ParserException.h"
 
 namespace
 {
@@ -62,10 +62,15 @@ std::int32_t parsePositiveInt(const std::string &value, const std::size_t tokenI
 }
 } // namespace
 
+Parser::Parser(Core *core)
+    : core(core)
+{
+}
+
 ParseResult Parser::parse(const std::vector<Token> &tokens) const
 {
     try {
-        TokenStream tokenStream(tokens);
+        TokenStream tokenStream(core, tokens);
         const std::shared_ptr<SQLStatement> statement = parseStatement(tokenStream);
         expectStatementEnd(tokenStream);
         return ParseResult::makeSuccess(statement);
@@ -82,15 +87,15 @@ std::shared_ptr<SQLStatement> Parser::parseStatement(TokenStream &tokenStream) c
         throw ParserException("Empty token stream cannot be parsed.", tokenStream.position());
     }
 
-    if (tokenStream.match(TokenType::Keyword, "CREATE")) {
+    if (tokenStream.match(SqlTokenType::Keyword, "CREATE")) {
         return parseCreateStatement(tokenStream);
     }
 
-    if (tokenStream.match(TokenType::Keyword, "INSERT")) {
+    if (tokenStream.match(SqlTokenType::Keyword, "INSERT")) {
         return parseInsertStatement(tokenStream);
     }
 
-    if (tokenStream.match(TokenType::Keyword, "SELECT")) {
+    if (tokenStream.match(SqlTokenType::Keyword, "SELECT")) {
         return parseSelectStatement(tokenStream);
     }
 
@@ -99,11 +104,11 @@ std::shared_ptr<SQLStatement> Parser::parseStatement(TokenStream &tokenStream) c
 
 std::shared_ptr<SQLStatement> Parser::parseCreateStatement(TokenStream &tokenStream) const
 {
-    if (tokenStream.match(TokenType::Keyword, "DATABASE")) {
+    if (tokenStream.match(SqlTokenType::Keyword, "DATABASE")) {
         return parseCreateDatabaseStatement(tokenStream);
     }
 
-    if (tokenStream.match(TokenType::Keyword, "TABLE")) {
+    if (tokenStream.match(SqlTokenType::Keyword, "TABLE")) {
         return parseCreateTableStatement(tokenStream);
     }
 
@@ -113,7 +118,7 @@ std::shared_ptr<SQLStatement> Parser::parseCreateStatement(TokenStream &tokenStr
 std::shared_ptr<CreateDbStmt> Parser::parseCreateDatabaseStatement(TokenStream &tokenStream) const
 {
     const Token &databaseNameToken = tokenStream.expect(
-        TokenType::Identifier,
+        SqlTokenType::Identifier,
         "CREATE DATABASE statement requires a database identifier.");
 
     const std::shared_ptr<CreateDbStmt> statement = std::make_shared<CreateDbStmt>();
@@ -124,21 +129,21 @@ std::shared_ptr<CreateDbStmt> Parser::parseCreateDatabaseStatement(TokenStream &
 std::shared_ptr<CreateTableStmt> Parser::parseCreateTableStatement(TokenStream &tokenStream) const
 {
     const Token &tableNameToken = tokenStream.expect(
-        TokenType::Identifier,
+        SqlTokenType::Identifier,
         "CREATE TABLE statement requires a table identifier.");
     tokenStream.expect(
-        TokenType::Symbol,
+        SqlTokenType::Symbol,
         "(",
         "CREATE TABLE statement requires '(' before field definitions.");
 
     std::vector<FieldBlock> fields;
     fields.push_back(parseFieldDefinition(tokenStream, 0));
-    while (tokenStream.consumeOptional(TokenType::Symbol, ",")) {
+    while (tokenStream.consumeOptional(SqlTokenType::Symbol, ",")) {
         fields.push_back(parseFieldDefinition(tokenStream, static_cast<std::int32_t>(fields.size())));
     }
 
     tokenStream.expect(
-        TokenType::Symbol,
+        SqlTokenType::Symbol,
         ")",
         "CREATE TABLE statement requires ')' after field definitions.");
 
@@ -150,29 +155,29 @@ std::shared_ptr<CreateTableStmt> Parser::parseCreateTableStatement(TokenStream &
 
 std::shared_ptr<InsertStmt> Parser::parseInsertStatement(TokenStream &tokenStream) const
 {
-    tokenStream.expect(TokenType::Keyword, "INTO", "INSERT statement requires INTO keyword.");
+    tokenStream.expect(SqlTokenType::Keyword, "INTO", "INSERT statement requires INTO keyword.");
     const Token &tableNameToken = tokenStream.expect(
-        TokenType::Identifier,
+        SqlTokenType::Identifier,
         "INSERT INTO statement requires a table identifier.");
 
     tokenStream.expect(
-        TokenType::Symbol,
+        SqlTokenType::Symbol,
         "(",
         "INSERT INTO statement requires '(' before column list.");
     const std::vector<std::string> columnNames = parseIdentifierList(tokenStream);
     tokenStream.expect(
-        TokenType::Symbol,
+        SqlTokenType::Symbol,
         ")",
         "INSERT INTO statement requires ')' after column list.");
 
-    tokenStream.expect(TokenType::Keyword, "VALUES", "INSERT statement requires VALUES keyword.");
+    tokenStream.expect(SqlTokenType::Keyword, "VALUES", "INSERT statement requires VALUES keyword.");
     tokenStream.expect(
-        TokenType::Symbol,
+        SqlTokenType::Symbol,
         "(",
         "INSERT statement requires '(' before value list.");
     const std::vector<std::string> values = parseValueList(tokenStream);
     tokenStream.expect(
-        TokenType::Symbol,
+        SqlTokenType::Symbol,
         ")",
         "INSERT statement requires ')' after value list.");
 
@@ -192,19 +197,19 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement(TokenStream &tokenStrea
     bool selectAllFields = false;
     std::vector<std::string> targetFields;
 
-    if (tokenStream.consumeOptional(TokenType::Symbol, "*") ||
-        tokenStream.consumeOptional(TokenType::Operator, "*")) {
+    if (tokenStream.consumeOptional(SqlTokenType::Symbol, "*") ||
+        tokenStream.consumeOptional(SqlTokenType::Operator, "*")) {
         selectAllFields = true;
     } else {
         targetFields = parseIdentifierList(tokenStream);
     }
 
-    tokenStream.expect(TokenType::Keyword, "FROM", "SELECT statement requires FROM keyword.");
+    tokenStream.expect(SqlTokenType::Keyword, "FROM", "SELECT statement requires FROM keyword.");
     const Token &tableNameToken = tokenStream.expect(
-        TokenType::Identifier,
+        SqlTokenType::Identifier,
         "SELECT statement requires a table identifier after FROM.");
 
-    if (tokenStream.match(TokenType::Keyword, "WHERE")) {
+    if (tokenStream.match(SqlTokenType::Keyword, "WHERE")) {
         throw ParserException("WHERE clause is not supported in phase 1 parser.", tokenStream.position() - 1);
     }
 
@@ -219,7 +224,7 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement(TokenStream &tokenStrea
 FieldBlock Parser::parseFieldDefinition(TokenStream &tokenStream, const std::int32_t fieldOrder) const
 {
     const Token &fieldNameToken = tokenStream.expect(
-        TokenType::Identifier,
+        SqlTokenType::Identifier,
         "Field definition requires a column identifier.");
 
     FieldBlock fieldBlock;
@@ -232,37 +237,37 @@ FieldBlock Parser::parseFieldDefinition(TokenStream &tokenStream, const std::int
 
 void Parser::parseFieldType(TokenStream &tokenStream, FieldBlock &fieldBlock) const
 {
-    if (tokenStream.match(TokenType::Keyword, "INT")) {
+    if (tokenStream.match(SqlTokenType::Keyword, "INT")) {
         fieldBlock.setType(FIELD_TYPE_INT);
         fieldBlock.setParam(0);
         return;
     }
 
-    if (tokenStream.match(TokenType::Keyword, "FLOAT")) {
+    if (tokenStream.match(SqlTokenType::Keyword, "FLOAT")) {
         fieldBlock.setType(FIELD_TYPE_FLOAT);
         fieldBlock.setParam(0);
         return;
     }
 
-    if (tokenStream.match(TokenType::Keyword, "DOUBLE")) {
+    if (tokenStream.match(SqlTokenType::Keyword, "DOUBLE")) {
         fieldBlock.setType(FIELD_TYPE_DOUBLE);
         fieldBlock.setParam(0);
         return;
     }
 
-    if (tokenStream.match(TokenType::Keyword, "CHAR")) {
-        tokenStream.expect(TokenType::Symbol, "(", "CHAR type requires '(' before length.");
-        const Token &lengthToken = tokenStream.expect(TokenType::Number, "CHAR type length must be a number.");
-        tokenStream.expect(TokenType::Symbol, ")", "CHAR type requires ')' after length.");
+    if (tokenStream.match(SqlTokenType::Keyword, "CHAR")) {
+        tokenStream.expect(SqlTokenType::Symbol, "(", "CHAR type requires '(' before length.");
+        const Token &lengthToken = tokenStream.expect(SqlTokenType::Number, "CHAR type length must be a number.");
+        tokenStream.expect(SqlTokenType::Symbol, ")", "CHAR type requires ')' after length.");
         fieldBlock.setType(FIELD_TYPE_CHAR);
         fieldBlock.setParam(parsePositiveInt(lengthToken.getValue(), tokenStream.position() - 1));
         return;
     }
 
-    if (tokenStream.match(TokenType::Keyword, "VARCHAR")) {
-        tokenStream.expect(TokenType::Symbol, "(", "VARCHAR type requires '(' before length.");
-        const Token &lengthToken = tokenStream.expect(TokenType::Number, "VARCHAR type length must be a number.");
-        tokenStream.expect(TokenType::Symbol, ")", "VARCHAR type requires ')' after length.");
+    if (tokenStream.match(SqlTokenType::Keyword, "VARCHAR")) {
+        tokenStream.expect(SqlTokenType::Symbol, "(", "VARCHAR type requires '(' before length.");
+        const Token &lengthToken = tokenStream.expect(SqlTokenType::Number, "VARCHAR type length must be a number.");
+        tokenStream.expect(SqlTokenType::Symbol, ")", "VARCHAR type requires ')' after length.");
         fieldBlock.setType(FIELD_TYPE_VARCHAR);
         fieldBlock.setParam(parsePositiveInt(lengthToken.getValue(), tokenStream.position() - 1));
         return;
@@ -275,13 +280,13 @@ std::vector<std::string> Parser::parseIdentifierList(TokenStream &tokenStream) c
 {
     std::vector<std::string> identifiers;
     const Token &firstToken = tokenStream.expect(
-        TokenType::Identifier,
+        SqlTokenType::Identifier,
         "Identifier list requires at least one identifier.");
     identifiers.push_back(firstToken.getValue());
 
-    while (tokenStream.consumeOptional(TokenType::Symbol, ",")) {
+    while (tokenStream.consumeOptional(SqlTokenType::Symbol, ",")) {
         const Token &identifierToken = tokenStream.expect(
-            TokenType::Identifier,
+            SqlTokenType::Identifier,
             "Identifier list contains invalid identifier.");
         identifiers.push_back(identifierToken.getValue());
     }
@@ -293,18 +298,18 @@ std::vector<std::string> Parser::parseValueList(TokenStream &tokenStream) const
 {
     std::vector<std::string> values;
     const Token &firstValueToken = tokenStream.peek();
-    if (firstValueToken.getType() != TokenType::Number &&
-        firstValueToken.getType() != TokenType::String &&
-        firstValueToken.getType() != TokenType::Identifier) {
+    if (firstValueToken.getType() != SqlTokenType::Number &&
+        firstValueToken.getType() != SqlTokenType::String &&
+        firstValueToken.getType() != SqlTokenType::Identifier) {
         throw ParserException("Value list requires at least one literal or identifier.", tokenStream.position());
     }
 
     values.push_back(tokenStream.advance().getValue());
-    while (tokenStream.consumeOptional(TokenType::Symbol, ",")) {
+    while (tokenStream.consumeOptional(SqlTokenType::Symbol, ",")) {
         const Token &valueToken = tokenStream.peek();
-        if (valueToken.getType() != TokenType::Number &&
-            valueToken.getType() != TokenType::String &&
-            valueToken.getType() != TokenType::Identifier) {
+        if (valueToken.getType() != SqlTokenType::Number &&
+            valueToken.getType() != SqlTokenType::String &&
+            valueToken.getType() != SqlTokenType::Identifier) {
             throw ParserException("Value list contains invalid value token.", tokenStream.position());
         }
 
@@ -316,6 +321,6 @@ std::vector<std::string> Parser::parseValueList(TokenStream &tokenStream) const
 
 void Parser::expectStatementEnd(TokenStream &tokenStream) const
 {
-    tokenStream.consumeOptional(TokenType::Symbol, ";");
-    tokenStream.expect(TokenType::EndOfFile, "Statement must end at EndOfFile.");
+    tokenStream.consumeOptional(SqlTokenType::Symbol, ";");
+    tokenStream.expect(SqlTokenType::EndOfFile, "Statement must end at EndOfFile.");
 }

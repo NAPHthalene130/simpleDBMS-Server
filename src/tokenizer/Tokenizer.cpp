@@ -2,14 +2,15 @@
 
 #include <cctype>
 
-Tokenizer::Tokenizer()
-    : currentPosition(0)
+Tokenizer::Tokenizer(Core *core)
+    : core(core), currentPosition(0)
 {
     initializeKeywords();
 }
 
-Tokenizer::Tokenizer(const std::string &sqlText)
-    : sqlText(sqlText),
+Tokenizer::Tokenizer(Core *core, const std::string &sqlText)
+    : core(core),
+      sqlText(sqlText),
       currentPosition(0)
 {
     initializeKeywords();
@@ -35,7 +36,7 @@ Token Tokenizer::nextToken()
 {
     skipIgnoredCharacters();
     if (isAtEnd()) {
-        return Token(TokenType::EndOfFile, "");
+        return Token(SqlTokenType::EndOfFile, "");
     }
 
     if (isIdentifierStartChar(currentChar())) {
@@ -63,7 +64,7 @@ std::vector<Token> Tokenizer::tokenize()
     std::vector<Token> tokens;
     Token token = nextToken();
 
-    while (token.getType() != TokenType::EndOfFile) {
+    while (token.getType() != SqlTokenType::EndOfFile) {
         tokens.push_back(token);
         token = nextToken();
     }
@@ -210,9 +211,9 @@ Token Tokenizer::buildIdentifierOrKeywordToken()
     const std::string text = sqlText.substr(startIndex, currentPosition - startIndex);
     const std::string upperText = toUpperString(text);
     if (keywords.find(upperText) != keywords.end()) {
-        return Token(TokenType::Keyword, upperText);
+        return Token(SqlTokenType::Keyword, upperText);
     }
-    return Token(TokenType::Identifier, text);
+    return Token(SqlTokenType::Identifier, text);
 }
 
 Token Tokenizer::buildNumberToken()
@@ -235,7 +236,7 @@ Token Tokenizer::buildNumberToken()
         break;
     }
 
-    return Token(TokenType::Number, sqlText.substr(startIndex, currentPosition - startIndex));
+    return Token(SqlTokenType::Number, sqlText.substr(startIndex, currentPosition - startIndex));
 }
 
 Token Tokenizer::buildStringToken()
@@ -260,7 +261,7 @@ Token Tokenizer::buildStringToken()
             }
 
             advance();
-            return Token(TokenType::String, text);
+            return Token(SqlTokenType::String, text);
         }
 
         text.push_back(currentChar());
@@ -268,13 +269,13 @@ Token Tokenizer::buildStringToken()
     }
 
     // 未闭合字符串按 Unknown 处理，避免后续解析器误判。
-    return Token(TokenType::Unknown, text);
+    return Token(SqlTokenType::Unknown, text);
 }
 
 Token Tokenizer::buildOperatorOrSymbolToken()
 {
     if (isAtEnd()) {
-        return Token(TokenType::EndOfFile, "");
+        return Token(SqlTokenType::EndOfFile, "");
     }
 
     const char first = currentChar();
@@ -286,20 +287,20 @@ Token Tokenizer::buildOperatorOrSymbolToken()
         value.push_back(first);
         value.push_back(second);
         advance(2);
-        return Token(TokenType::Operator, value);
+        return Token(SqlTokenType::Operator, value);
     }
 
     if (first == '=' || first == '<' || first == '>' || first == '+' || first == '-' || first == '*'
         || first == '/' || first == '%') {
         advance();
-        return Token(TokenType::Operator, std::string(1, first));
+        return Token(SqlTokenType::Operator, std::string(1, first));
     }
 
     if (first == '(' || first == ')' || first == ',' || first == ';' || first == '.') {
         advance();
-        return Token(TokenType::Symbol, std::string(1, first));
+        return Token(SqlTokenType::Symbol, std::string(1, first));
     }
 
     advance();
-    return Token(TokenType::Unknown, std::string(1, first));
+    return Token(SqlTokenType::Unknown, std::string(1, first));
 }

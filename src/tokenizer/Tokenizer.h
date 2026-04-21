@@ -7,6 +7,8 @@
 
 #include "models/tokenizer/Token.h"
 
+class Core;
+
 /**
  * @class Tokenizer
  * @brief SQL 词法分析器
@@ -20,14 +22,14 @@ public:
      * @brief 默认构造函数
      * @author Qi
      */
-    Tokenizer();
+    explicit Tokenizer(Core *core = nullptr);
 
     /**
      * @brief 使用 SQL 文本初始化词法分析器
      * @author Qi
      * @param sqlText SQL 原始文本
      */
-    explicit Tokenizer(const std::string &sqlText);
+    Tokenizer(Core *core, const std::string &sqlText);
 
     /**
      * @brief 重置输入 SQL 文本并回到起始位置
@@ -72,6 +74,7 @@ public:
     std::vector<Token> tokenize();
 
 private:
+    Core *core;
     std::string sqlText;
     std::size_t currentPosition;
 

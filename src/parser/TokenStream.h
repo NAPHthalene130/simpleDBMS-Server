@@ -5,7 +5,9 @@
 #include <vector>
 
 #include "models/tokenizer/Token.h"
-#include "ParserException.h"
+#include "models/parser/ParserException.h"
+
+class Core;
 
 /**
  * @class TokenStream
@@ -19,9 +21,10 @@ public:
     /**
      * @brief 构造 TokenStream
      * @author YuzhSong
+     * @param core 核心类指针
      * @param tokens 输入 token 序列
      */
-    explicit TokenStream(const std::vector<Token> &tokens);
+    explicit TokenStream(Core *core, const std::vector<Token> &tokens);
 
     /**
      * @brief 获取当前游标位置
@@ -58,7 +61,7 @@ public:
      * @param type 目标 token 类型
      * @return 匹配并消费成功返回 true，否则返回 false
      */
-    bool match(TokenType type);
+    bool match(SqlTokenType type);
 
     /**
      * @brief 若当前 token 类型和值都匹配则消费
@@ -68,7 +71,7 @@ public:
      * @param caseInsensitive 是否大小写不敏感比较
      * @return 匹配并消费成功返回 true，否则返回 false
      */
-    bool match(TokenType type, const std::string &value, bool caseInsensitive = true);
+    bool match(SqlTokenType type, const std::string &value, bool caseInsensitive = true);
 
     /**
      * @brief 可选消费：若当前 token 类型匹配则消费
@@ -76,7 +79,7 @@ public:
      * @param type 目标 token 类型
      * @return 匹配并消费成功返回 true，否则返回 false
      */
-    bool consumeOptional(TokenType type);
+    bool consumeOptional(SqlTokenType type);
 
     /**
      * @brief 可选消费：若当前 token 类型和值都匹配则消费
@@ -86,7 +89,7 @@ public:
      * @param caseInsensitive 是否大小写不敏感比较
      * @return 匹配并消费成功返回 true，否则返回 false
      */
-    bool consumeOptional(TokenType type, const std::string &value, bool caseInsensitive = true);
+    bool consumeOptional(SqlTokenType type, const std::string &value, bool caseInsensitive = true);
 
     /**
      * @brief 断言当前 token 类型必须匹配并消费
@@ -96,7 +99,7 @@ public:
      * @return 被消费的 token 引用
      * @throw ParserException 当 token 不匹配时抛出
      */
-    const Token &expect(TokenType type, const std::string &message);
+    const Token &expect(SqlTokenType type, const std::string &message);
 
     /**
      * @brief 断言当前 token 类型和值必须匹配并消费
@@ -109,12 +112,13 @@ public:
      * @throw ParserException 当 token 不匹配时抛出
      */
     const Token &expect(
-        TokenType type,
+        SqlTokenType type,
         const std::string &value,
         const std::string &message,
         bool caseInsensitive = true);
 
 private:
+    Core *core;                       ///< 核心类指针
     const std::vector<Token> &tokens; ///< 底层 token 序列引用
     std::size_t cursor;               ///< 当前游标
     Token eofToken;                   ///< 越界时返回的 EOF 哨兵 token

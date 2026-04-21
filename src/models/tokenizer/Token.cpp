@@ -1,21 +1,21 @@
 ﻿#include "Token.h"
 
 Token::Token()
-    : type(TokenType::Unknown)
+    : type(SqlTokenType::Unknown)
 {
 }
 
-Token::Token(TokenType type, const std::string &value)
+Token::Token(SqlTokenType type, const std::string &value)
     : type(type), value(value)
 {
 }
 
-TokenType Token::getType() const
+SqlTokenType Token::getType() const
 {
     return type;
 }
 
-void Token::setType(TokenType type)
+void Token::setType(SqlTokenType type)
 {
     this->type = type;
 }

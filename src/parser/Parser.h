@@ -10,9 +10,11 @@
 #include "models/parser/InsertStmt.h"
 #include "models/parser/SQLStatement.h"
 #include "models/parser/SelectStmt.h"
+#include "models/parser/ParseResult.h"
 #include "models/tokenizer/Token.h"
-#include "ParseResult.h"
 #include "TokenStream.h"
+
+class Core;
 
 /**
  * @class Parser
@@ -24,6 +26,13 @@ class Parser
 {
 public:
     /**
+     * @brief 构造函数
+     * @author NAPH130
+     * @param core 服务端核心对象指针
+     */
+    explicit Parser(Core *core = nullptr);
+
+    /**
      * @brief 语法分析统一入口
      * @author YuzhSong
      * @param tokens 由 Tokenizer 产出的 token 序列
@@ -32,6 +41,8 @@ public:
     ParseResult parse(const std::vector<Token> &tokens) const;
 
 private:
+    Core *core;
+
     /**
      * @brief 解析通用 SQL 语句入口
      * @author YuzhSong

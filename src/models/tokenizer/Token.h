@@ -3,12 +3,12 @@
 #include <string>
 
 /**
- * @enum TokenType
+ * @enum SqlTokenType
  * @brief 词法单元类型枚举
  * @details 用于标识 Token 在 SQL 文本中的语义类别。
  * @author NAPH130
  */
-enum class TokenType
+enum class SqlTokenType
 {
     Keyword,
     Identifier,
@@ -30,15 +30,15 @@ class Token
 {
 public:
     Token();
-    Token(TokenType type, const std::string &value);
+    Token(SqlTokenType type, const std::string &value);
 
-    TokenType getType() const;
-    void setType(TokenType type);
+    SqlTokenType getType() const;
+    void setType(SqlTokenType type);
 
     const std::string &getValue() const;
     void setValue(const std::string &value);
 
 private:
-    TokenType type;
+    SqlTokenType type;
     std::string value;
 };

@@ -3,6 +3,8 @@
 class NetworkManager;
 class ExecutorManager;
 class StorageManager;
+class Tokenizer;
+class ParserManager;
 
 /**
  * @class Core
@@ -45,9 +47,13 @@ public:
     NetworkManager *getNetworkManager();
     ExecutorManager *getExecutorManager();
     StorageManager *getStorageManager();
+    Tokenizer *getTokenizer();
+    ParserManager *getParserManager();
 
 private:
     NetworkManager *networkManager;
     StorageManager *storageManager;
     ExecutorManager *executorManager;
+    Tokenizer *tokenizer;
+    ParserManager *parserManager;
 };

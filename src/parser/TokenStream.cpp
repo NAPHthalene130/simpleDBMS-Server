@@ -30,8 +30,8 @@ bool equalsString(const std::string &lhs, const std::string &rhs, const bool cas
 }
 } // namespace
 
-TokenStream::TokenStream(const std::vector<Token> &tokens)
-    : tokens(tokens), cursor(0), eofToken(TokenType::EndOfFile, "")
+TokenStream::TokenStream(Core *core, const std::vector<Token> &tokens)
+    : core(core), tokens(tokens), cursor(0), eofToken(SqlTokenType::EndOfFile, "")
 {
 }
 
@@ -42,7 +42,7 @@ std::size_t TokenStream::position() const
 
 bool TokenStream::isAtEnd() const
 {
-    return cursor >= tokens.size() || peek().getType() == TokenType::EndOfFile;
+    return cursor >= tokens.size() || peek().getType() == SqlTokenType::EndOfFile;
 }
 
 const Token &TokenStream::peek(const std::size_t offset) const
@@ -65,7 +65,7 @@ const Token &TokenStream::advance()
     return currentToken;
 }
 
-bool TokenStream::match(const TokenType type)
+bool TokenStream::match(const SqlTokenType type)
 {
     if (peek().getType() != type) {
         return false;
@@ -75,7 +75,7 @@ bool TokenStream::match(const TokenType type)
     return true;
 }
 
-bool TokenStream::match(const TokenType type, const std::string &value, const bool caseInsensitive)
+bool TokenStream::match(const SqlTokenType type, const std::string &value, const bool caseInsensitive)
 {
     const Token &currentToken = peek();
     if (currentToken.getType() != type) {
@@ -90,17 +90,17 @@ bool TokenStream::match(const TokenType type, const std::string &value, const bo
     return true;
 }
 
-bool TokenStream::consumeOptional(const TokenType type)
+bool TokenStream::consumeOptional(const SqlTokenType type)
 {
     return match(type);
 }
 
-bool TokenStream::consumeOptional(const TokenType type, const std::string &value, const bool caseInsensitive)
+bool TokenStream::consumeOptional(const SqlTokenType type, const std::string &value, const bool caseInsensitive)
 {
     return match(type, value, caseInsensitive);
 }
 
-const Token &TokenStream::expect(const TokenType type, const std::string &message)
+const Token &TokenStream::expect(const SqlTokenType type, const std::string &message)
 {
     if (peek().getType() != type) {
         throw ParserException(message, cursor);
@@ -110,7 +110,7 @@ const Token &TokenStream::expect(const TokenType type, const std::string &messag
 }
 
 const Token &TokenStream::expect(
-    const TokenType type,
+    const SqlTokenType type,
     const std::string &value,
     const std::string &message,
     const bool caseInsensitive)

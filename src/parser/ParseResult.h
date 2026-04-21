@@ -9,7 +9,7 @@
 /**
  * @struct ParseResult
  * @brief Parser 统一输出结果
- * @details 用于承载语法分析是否成功、AST 根节点以及错误定位信息。
+ * @details 承载语法分析是否成功、AST 根节点和错误定位信息。
  * @author YuzhSong
  */
 struct ParseResult
@@ -27,7 +27,7 @@ struct ParseResult
     std::shared_ptr<SQLStatement> statement;
 
     /**
-     * @brief 失败时的错误信息
+     * @brief 失败时的错误消息
      * @author YuzhSong
      */
     std::string errorMessage;
@@ -39,10 +39,10 @@ struct ParseResult
     std::size_t errorTokenIndex;
 
     /**
-     * @brief 创建成功结果
+     * @brief 构造成功结果
      * @author YuzhSong
-     * @param statement 语法分析得到的 AST 根节点
-     * @return 成功状态的 ParseResult
+     * @param statement 解析得到的 AST 根节点
+     * @return 成功状态 ParseResult
      */
     static ParseResult makeSuccess(const std::shared_ptr<SQLStatement> &statement)
     {
@@ -50,13 +50,13 @@ struct ParseResult
     }
 
     /**
-     * @brief 创建失败结果
+     * @brief 构造失败结果
      * @author YuzhSong
-     * @param errorMessage 错误信息
+     * @param errorMessage 错误消息
      * @param errorTokenIndex 出错 token 下标
-     * @return 失败状态的 ParseResult
+     * @return 失败状态 ParseResult
      */
-    static ParseResult makeFailure(const std::string &errorMessage, std::size_t errorTokenIndex)
+    static ParseResult makeFailure(const std::string &errorMessage, const std::size_t errorTokenIndex)
     {
         return ParseResult{false, nullptr, errorMessage, errorTokenIndex};
     }

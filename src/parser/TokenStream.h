@@ -9,8 +9,8 @@
 
 /**
  * @class TokenStream
- * @brief Token 流游标封装器
- * @details 提供 peek、advance、match、expect、consumeOptional 等通用游标能力，供 Parser 语法分析阶段复用。
+ * @brief token 流游标封装器
+ * @details 提供 peek、advance、match、expect、consumeOptional 等通用能力，供 Parser 复用。
  * @author YuzhSong
  */
 class TokenStream
@@ -31,9 +31,9 @@ public:
     std::size_t position() const;
 
     /**
-     * @brief 判断是否已经到达流末尾
+     * @brief 判断是否到达流末尾
      * @author YuzhSong
-     * @return 若到达末尾则返回 true
+     * @return 到达末尾返回 true
      */
     bool isAtEnd() const;
 
@@ -41,7 +41,7 @@ public:
      * @brief 预览当前或后续 token
      * @author YuzhSong
      * @param offset 相对当前游标的偏移量
-     * @return 对应位置的 token 引用；越界时返回 EndOfFile 哨兵 token
+     * @return 对应位置 token；越界时返回 EndOfFile 哨兵 token
      */
     const Token &peek(std::size_t offset = 0) const;
 
@@ -92,7 +92,7 @@ public:
      * @brief 断言当前 token 类型必须匹配并消费
      * @author YuzhSong
      * @param type 目标 token 类型
-     * @param message 不匹配时的异常信息
+     * @param message 不匹配时抛出的异常消息
      * @return 被消费的 token 引用
      * @throw ParserException 当 token 不匹配时抛出
      */
@@ -103,7 +103,7 @@ public:
      * @author YuzhSong
      * @param type 目标 token 类型
      * @param value 目标 token 值
-     * @param message 不匹配时的异常信息
+     * @param message 不匹配时抛出的异常消息
      * @param caseInsensitive 是否大小写不敏感比较
      * @return 被消费的 token 引用
      * @throw ParserException 当 token 不匹配时抛出
@@ -115,7 +115,7 @@ public:
         bool caseInsensitive = true);
 
 private:
-    const std::vector<Token> &tokens;
-    std::size_t cursor;
-    Token eofToken;
+    const std::vector<Token> &tokens; ///< 底层 token 序列引用
+    std::size_t cursor;               ///< 当前游标
+    Token eofToken;                   ///< 越界时返回的 EOF 哨兵 token
 };

@@ -8,12 +8,12 @@ namespace
 /**
  * @brief 比较两个字符串是否相等
  * @author YuzhSong
- * @param lhs 左侧字符串
- * @param rhs 右侧字符串
+ * @param lhs 左值
+ * @param rhs 右值
  * @param caseInsensitive 是否忽略大小写
  * @return 相等返回 true，否则返回 false
  */
-bool equalsString(const std::string &lhs, const std::string &rhs, bool caseInsensitive)
+bool equalsString(const std::string &lhs, const std::string &rhs, const bool caseInsensitive)
 {
     if (!caseInsensitive) {
         return lhs == rhs;
@@ -45,7 +45,7 @@ bool TokenStream::isAtEnd() const
     return cursor >= tokens.size() || peek().getType() == TokenType::EndOfFile;
 }
 
-const Token &TokenStream::peek(std::size_t offset) const
+const Token &TokenStream::peek(const std::size_t offset) const
 {
     const std::size_t targetIndex = cursor + offset;
     if (targetIndex >= tokens.size()) {
@@ -65,7 +65,7 @@ const Token &TokenStream::advance()
     return currentToken;
 }
 
-bool TokenStream::match(TokenType type)
+bool TokenStream::match(const TokenType type)
 {
     if (peek().getType() != type) {
         return false;
@@ -75,7 +75,7 @@ bool TokenStream::match(TokenType type)
     return true;
 }
 
-bool TokenStream::match(TokenType type, const std::string &value, bool caseInsensitive)
+bool TokenStream::match(const TokenType type, const std::string &value, const bool caseInsensitive)
 {
     const Token &currentToken = peek();
     if (currentToken.getType() != type) {
@@ -90,17 +90,17 @@ bool TokenStream::match(TokenType type, const std::string &value, bool caseInsen
     return true;
 }
 
-bool TokenStream::consumeOptional(TokenType type)
+bool TokenStream::consumeOptional(const TokenType type)
 {
     return match(type);
 }
 
-bool TokenStream::consumeOptional(TokenType type, const std::string &value, bool caseInsensitive)
+bool TokenStream::consumeOptional(const TokenType type, const std::string &value, const bool caseInsensitive)
 {
     return match(type, value, caseInsensitive);
 }
 
-const Token &TokenStream::expect(TokenType type, const std::string &message)
+const Token &TokenStream::expect(const TokenType type, const std::string &message)
 {
     if (peek().getType() != type) {
         throw ParserException(message, cursor);
@@ -110,10 +110,10 @@ const Token &TokenStream::expect(TokenType type, const std::string &message)
 }
 
 const Token &TokenStream::expect(
-    TokenType type,
+    const TokenType type,
     const std::string &value,
     const std::string &message,
-    bool caseInsensitive)
+    const bool caseInsensitive)
 {
     const Token &currentToken = peek();
     if (currentToken.getType() != type || !equalsString(currentToken.getValue(), value, caseInsensitive)) {

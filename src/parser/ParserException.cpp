@@ -1,6 +1,6 @@
 #include "ParserException.h"
 
-ParserException::ParserException(const std::string &message, std::size_t tokenIndex)
+ParserException::ParserException(const std::string &message, const std::size_t tokenIndex)
     : message(message), tokenIndex(tokenIndex)
 {
 }

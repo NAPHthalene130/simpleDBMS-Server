@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "models/parser/CreateDbStmt.h"
@@ -15,7 +17,7 @@
 /**
  * @class Parser
  * @brief SQL 语法分析器
- * @details 负责消费 Tokenizer 产出的 token 流，进行语法分析并构造 AST。
+ * @details 负责消费 Tokenizer 产出的 token 流，完成语法级校验并构建 AST。
  * @author YuzhSong
  */
 class Parser
@@ -25,7 +27,7 @@ public:
      * @brief 语法分析统一入口
      * @author YuzhSong
      * @param tokens 由 Tokenizer 产出的 token 序列
-     * @return 语法分析结果
+     * @return 解析结果，成功时包含 AST，失败时包含错误消息与 token 下标
      */
     ParseResult parse(const std::vector<Token> &tokens) const;
 
@@ -79,7 +81,40 @@ private:
     std::shared_ptr<SelectStmt> parseSelectStatement(TokenStream &tokenStream) const;
 
     /**
-     * @brief 断言语句结尾无多余 token
+     * @brief 解析字段定义并构造 FieldBlock
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @param fieldOrder 字段顺序号
+     * @return 构造完成的字段块
+     */
+    FieldBlock parseFieldDefinition(TokenStream &tokenStream, std::int32_t fieldOrder) const;
+
+    /**
+     * @brief 解析字段类型定义
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @param fieldBlock 待填充字段块
+     */
+    void parseFieldType(TokenStream &tokenStream, FieldBlock &fieldBlock) const;
+
+    /**
+     * @brief 解析标识符列表
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return 标识符序列
+     */
+    std::vector<std::string> parseIdentifierList(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析值列表
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return 值序列（按 token 文本保留）
+     */
+    std::vector<std::string> parseValueList(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 断言语句结尾无多余 token，并消费可选分号与 EndOfFile
      * @author YuzhSong
      * @param tokenStream token 游标流
      */

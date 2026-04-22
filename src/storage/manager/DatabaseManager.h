@@ -31,6 +31,12 @@ public:
      * @note 需要校验表名长度、表是否已存在，并完成相关物理文件与元数据写入
      */
     bool createTable(TableBlock tbInfo);
+    bool createTable(const std::string &dbName,
+                     const std::string &tableName,
+                     const std::vector<std::string> &columns);
+    bool insertRow(const std::string &dbName,
+                   const std::string &tableName,
+                   const std::vector<std::string> &values);
 
     /**
      * @brief 删除数据表

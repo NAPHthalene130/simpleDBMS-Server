@@ -1,20 +1,25 @@
 #include "ClientSessionManager.h"
 
+#include "log/LogWriter.h"
+
 ClientSessionManager::ClientSessionManager(Core *core)
     : core(core)
 {
+    LogWriter::info("network", "ClientSessionManager", "ClientSessionManager", "Client session manager initialized.");
 }
 
 void ClientSessionManager::addSession(asio::ip::tcp::socket *clientSocket)
 {
     // TODO: Initialize session context after authentication flow is defined.
     static_cast<void>(clientSocket);
+    LogWriter::debug("network", "ClientSessionManager", "addSession", "Session placeholder added for client.");
 }
 
 void ClientSessionManager::removeSession(asio::ip::tcp::socket *clientSocket)
 {
     // TODO: Remove session state when lifecycle management is finalized.
     static_cast<void>(clientSocket);
+    LogWriter::debug("network", "ClientSessionManager", "removeSession", "Session placeholder removed for client.");
 }
 
 NetworkExecutionContext *ClientSessionManager::findSessionContext(asio::ip::tcp::socket *clientSocket)
@@ -22,6 +27,7 @@ NetworkExecutionContext *ClientSessionManager::findSessionContext(asio::ip::tcp:
     std::lock_guard<std::mutex> lock(sessionMutex);
     const auto iterator = sessionMap.find(clientSocket);
     if (iterator == sessionMap.end()) {
+        LogWriter::warning("network", "ClientSessionManager", "findSessionContext", "Session context was not found.");
         return nullptr;
     }
 

@@ -1,5 +1,7 @@
 #include "InsertExecutor.h"
 
+#include "log/LogWriter.h"
+
 namespace {
 ExecutionResult buildFailureResult(const std::string &message,
                                    const std::string &dbName = "",
@@ -27,10 +29,12 @@ ExecutionStatementType InsertExecutor::getSupportedType() const
 ExecutionResult InsertExecutor::execute(const SQLStatement *statement, ExecutionContext *executionContext)
 {
     if (statement == nullptr || executionContext == nullptr) {
+        LogWriter::error("executor", "InsertExecutor", "execute", "Insert input pointer is invalid.");
         return buildFailureResult("InsertExecutor received null input pointer.");
     }
 
     if (statement->getStmtType() != getSupportedType()) {
+        LogWriter::error("executor", "InsertExecutor", "execute", "Received mismatched statement type.");
         return buildFailureResult("InsertExecutor received mismatched statement type.");
     }
 
@@ -43,9 +47,17 @@ ExecutionResult InsertExecutor::executeInsert(const InsertStmt *insertStmt, Exec
     const std::string tableName = insertStmt != nullptr ? insertStmt->getTableName() : "";
 
     if (!validateInsertStmt(insertStmt)) {
+        LogWriter::warning("executor",
+                           "InsertExecutor",
+                           "executeInsert",
+                           "Insert statement columns and values do not match.");
         return buildFailureResult("Insert statement columns and values do not match.", dbName, tableName);
     }
 
+    LogWriter::warning("executor",
+                       "InsertExecutor",
+                       "executeInsert",
+                       "Insert executor is invoked but storage logic is not implemented yet.");
     return buildFailureResult("InsertExecutor is registered, but execution logic is not implemented yet.",
                               dbName,
                               tableName);

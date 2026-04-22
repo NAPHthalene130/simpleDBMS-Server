@@ -5,6 +5,8 @@
 #include <cctype>
 #include <cstring>
 
+#include "log/LogWriter.h"
+
 namespace {
 ExecutionResult buildFailureResult(const std::string &message,
                                    const std::string &dbName = "",
@@ -70,10 +72,12 @@ ExecutionStatementType SelectExecutor::getSupportedType() const
 ExecutionResult SelectExecutor::execute(const SQLStatement *statement, ExecutionContext *executionContext)
 {
     if (statement == nullptr || executionContext == nullptr) {
+        LogWriter::error("executor", "SelectExecutor", "execute", "Select input pointer is invalid.");
         return buildFailureResult("SelectExecutor received null input pointer.");
     }
 
     if (statement->getStmtType() != getSupportedType()) {
+        LogWriter::error("executor", "SelectExecutor", "execute", "Received mismatched statement type.");
         return buildFailureResult("SelectExecutor received mismatched statement type.");
     }
 
@@ -90,33 +94,56 @@ ExecutionResult SelectExecutor::executeSelect(const SelectStmt *selectStmt, Exec
     const std::string tableName = selectStmt->getTableName();
 
     if (!validateTargetFields(selectStmt) || !validateMetadataFields(selectStmt)) {
+        LogWriter::warning("executor",
+                           "SelectExecutor",
+                           "executeSelect",
+                           "Select statement target fields are invalid.");
         return buildFailureResult("Select statement target fields are invalid.", dbName, tableName);
     }
 
     if (selectStmt->getWhereCondition() != nullptr && !evaluateCondition(selectStmt->getWhereCondition().get())) {
+        LogWriter::warning("executor",
+                           "SelectExecutor",
+                           "executeSelect",
+                           "Unsupported WHERE clause detected in metadata query.");
         return buildFailureResult("WHERE clause is not supported by metadata queries.", dbName, tableName);
     }
 
     if (isShowDatabaseQuery(selectStmt)) {
         if (systemCatalogManager == nullptr) {
+            LogWriter::error("executor",
+                             "SelectExecutor",
+                             "executeSelect",
+                             "System catalog manager is not initialized.");
             return buildFailureResult("System catalog manager is not initialized.", dbName, tableName);
         }
 
+        LogWriter::info("executor", "SelectExecutor", "executeSelect", "Show databases query executed successfully.");
         return buildSuccessResult("Show databases succeeded.", buildResultSet(selectStmt), dbName, tableName);
     }
 
     if (isShowTablesQuery(selectStmt)) {
         if (dbName.empty()) {
+            LogWriter::warning("executor", "SelectExecutor", "executeSelect", "Show tables query has no active database.");
             return buildFailureResult("No database is selected.", dbName, tableName);
         }
 
         if (databaseManager == nullptr) {
+            LogWriter::error("executor", "SelectExecutor", "executeSelect", "Database manager is not initialized.");
             return buildFailureResult("Database manager is not initialized.", dbName, tableName);
         }
 
+        LogWriter::info("executor",
+                        "SelectExecutor",
+                        "executeSelect",
+                        "Show tables query executed successfully in database " + dbName + ".");
         return buildSuccessResult("Show tables succeeded.", buildResultSet(selectStmt), dbName, tableName);
     }
 
+    LogWriter::warning("executor",
+                       "SelectExecutor",
+                       "executeSelect",
+                       "Unsupported select query outside metadata scope.");
     return buildFailureResult("Only metadata select queries for databases and tables are supported.",
                               dbName,
                               tableName);

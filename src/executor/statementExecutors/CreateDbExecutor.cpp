@@ -5,6 +5,8 @@
 #include <chrono>
 #include <ctime>
 
+#include "log/LogWriter.h"
+
 namespace {
 ExecutionResult buildFailureResult(const std::string &message, const std::string &dbName = "")
 {
@@ -78,10 +80,12 @@ ExecutionStatementType CreateDbExecutor::getSupportedType() const
 ExecutionResult CreateDbExecutor::execute(const SQLStatement *statement, ExecutionContext *executionContext)
 {
     if (statement == nullptr || executionContext == nullptr) {
+        LogWriter::error("executor", "CreateDbExecutor", "execute", "Create database input pointer is invalid.");
         return buildFailureResult("CreateDbExecutor received null input pointer.");
     }
 
     if (statement->getStmtType() != getSupportedType()) {
+        LogWriter::error("executor", "CreateDbExecutor", "execute", "Received mismatched statement type.");
         return buildFailureResult("CreateDbExecutor received mismatched statement type.");
     }
 
@@ -102,22 +106,33 @@ ExecutionResult CreateDbExecutor::executeCreateDb(const CreateDbStmt *createDbSt
 
     const std::string &dbName = createDbStmt->getDbName();
     if (dbName.empty()) {
+        LogWriter::warning("executor", "CreateDbExecutor", "executeCreateDb", "Database name is empty.");
         return buildFailureResult("Database name cannot be empty.", dbName);
     }
 
     if (dbName.size() >= 128) {
+        LogWriter::warning("executor", "CreateDbExecutor", "executeCreateDb", "Database name is too long.");
         return buildFailureResult("Database name exceeds the maximum length.", dbName);
     }
 
     if (systemCatalogManager->checkDbExists(dbName)) {
+        LogWriter::warning("executor",
+                           "CreateDbExecutor",
+                           "executeCreateDb",
+                           "Database already exists: " + dbName + ".");
         return buildFailureResult("Database already exists.", dbName);
     }
 
     const DatabaseBlock databaseBlock = buildDatabaseBlock(createDbStmt);
     if (!systemCatalogManager->createDatabase(databaseBlock)) {
+        LogWriter::error("executor",
+                         "CreateDbExecutor",
+                         "executeCreateDb",
+                         "Storage layer failed to create database " + dbName + ".");
         return buildFailureResult("Create database failed in storage layer.", dbName);
     }
 
+    LogWriter::info("executor", "CreateDbExecutor", "executeCreateDb", "Database created successfully: " + dbName + ".");
     return buildSuccessResult("Create database succeeded.", dbName);
 }
 

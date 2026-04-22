@@ -6,6 +6,8 @@
 #include <ctime>
 #include <unordered_set>
 
+#include "log/LogWriter.h"
+
 namespace {
 ExecutionResult buildFailureResult(const std::string &message,
                                    const std::string &dbName = "",
@@ -82,10 +84,12 @@ ExecutionStatementType CreateTableExecutor::getSupportedType() const
 ExecutionResult CreateTableExecutor::execute(const SQLStatement *statement, ExecutionContext *executionContext)
 {
     if (statement == nullptr || executionContext == nullptr) {
+        LogWriter::error("executor", "CreateTableExecutor", "execute", "Create table input pointer is invalid.");
         return buildFailureResult("CreateTableExecutor received null input pointer.");
     }
 
     if (statement->getStmtType() != getSupportedType()) {
+        LogWriter::error("executor", "CreateTableExecutor", "execute", "Received mismatched statement type.");
         return buildFailureResult("CreateTableExecutor received mismatched statement type.");
     }
 
@@ -108,19 +112,26 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
     }
 
     if (dbName.empty()) {
+        LogWriter::warning("executor", "CreateTableExecutor", "executeCreateTable", "No database is selected.");
         return buildFailureResult("No database is selected.", dbName, tableName);
     }
 
     if (tableName.empty()) {
+        LogWriter::warning("executor", "CreateTableExecutor", "executeCreateTable", "Table name is empty.");
         return buildFailureResult("Table name cannot be empty.", dbName, tableName);
     }
 
     if (tableName.size() >= 128) {
+        LogWriter::warning("executor", "CreateTableExecutor", "executeCreateTable", "Table name is too long.");
         return buildFailureResult("Table name exceeds the maximum length.", dbName, tableName);
     }
 
     const std::vector<FieldBlock> fieldBlocks = buildFieldBlocks(createTableStmt);
     if (fieldBlocks.empty()) {
+        LogWriter::warning("executor",
+                           "CreateTableExecutor",
+                           "executeCreateTable",
+                           "Create table statement does not contain fields.");
         return buildFailureResult("Create table requires at least one field.", dbName, tableName);
     }
 
@@ -129,19 +140,32 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
     for (const FieldBlock &fieldBlock : fieldBlocks) {
         const std::string fieldName = fixedArrayToString(fieldBlock.getName());
         if (fieldName.empty()) {
+            LogWriter::warning("executor", "CreateTableExecutor", "executeCreateTable", "Field name is empty.");
             return buildFailureResult("Field name cannot be empty.", dbName, tableName);
         }
 
         if (!fieldNameSet.insert(fieldName).second) {
+            LogWriter::warning("executor",
+                               "CreateTableExecutor",
+                               "executeCreateTable",
+                               "Duplicate field name detected in create table statement.");
             return buildFailureResult("Duplicate field name exists in create table statement.", dbName, tableName);
         }
     }
 
     const TableBlock tableBlock = buildTableBlock(createTableStmt);
     if (!databaseManager->createTable(tableBlock)) {
+        LogWriter::error("executor",
+                         "CreateTableExecutor",
+                         "executeCreateTable",
+                         "Storage layer failed to create table " + tableName + " in database " + dbName + ".");
         return buildFailureResult("Create table failed in storage layer.", dbName, tableName);
     }
 
+    LogWriter::info("executor",
+                    "CreateTableExecutor",
+                    "executeCreateTable",
+                    "Table created successfully: " + dbName + "." + tableName + ".");
     return buildSuccessResult("Create table succeeded.", dbName, tableName);
 }
 

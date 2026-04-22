@@ -6,6 +6,7 @@
 #include "statementExecutors/CreateTableExecutor.h"
 #include "statementExecutors/InsertExecutor.h"
 #include "statementExecutors/SelectExecutor.h"
+#include "log/LogWriter.h"
 #include "storage/manager/StorageManager.h"
 
 ExecutorManager::ExecutorManager(Core *core)
@@ -19,14 +20,17 @@ ExecutorManager::ExecutorManager(Core *core)
                                         getDatabaseManager(),
                                         getTableDefManager()))
 {
+    LogWriter::info("executor", "ExecutorManager", "ExecutorManager", "Executor manager initialized.");
     executorEngine->registerExecutor(createDbExecutor);
     executorEngine->registerExecutor(createTableExecutor);
     executorEngine->registerExecutor(insertExecutor);
     executorEngine->registerExecutor(selectExecutor);
+    LogWriter::info("executor", "ExecutorManager", "ExecutorManager", "All default executors were registered.");
 }
 
 ExecutorManager::~ExecutorManager()
 {
+    LogWriter::info("executor", "ExecutorManager", "~ExecutorManager", "Executor manager is being destroyed.");
     delete selectExecutor;
     delete insertExecutor;
     delete createTableExecutor;

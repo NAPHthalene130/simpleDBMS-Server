@@ -102,7 +102,14 @@ void Tokenizer::initializeKeywords()
         "BOOLEAN",
         "DATE",
         "DATETIME",
-        "USE"
+        "USE",
+        "SHOW",
+        "DATABASES",
+        "TABLES",
+        "DROP",
+        "DELETE",
+        "UPDATE",
+        "SET"
     };
 }
 

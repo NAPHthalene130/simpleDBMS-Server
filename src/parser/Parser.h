@@ -5,22 +5,29 @@
 #include <string>
 #include <vector>
 
+#include "TokenStream.h"
+#include "models/parser/ConditionNode.h"
 #include "models/parser/CreateDbStmt.h"
 #include "models/parser/CreateTableStmt.h"
+#include "models/parser/DeleteStmt.h"
+#include "models/parser/DropStmt.h"
 #include "models/parser/InsertStmt.h"
+#include "models/parser/ParseResult.h"
 #include "models/parser/SQLStatement.h"
 #include "models/parser/SelectStmt.h"
 #include "models/parser/UseDbStmt.h"
 #include "models/parser/ParseResult.h"
+#include "models/parser/ShowStmt.h"
+#include "models/parser/UpdateStmt.h"
+#include "models/parser/UseStmt.h"
 #include "models/tokenizer/Token.h"
-#include "TokenStream.h"
 
 class Core;
 
 /**
  * @class Parser
  * @brief SQL 语法分析器
- * @details 负责消费 Tokenizer 产出的 token 流，完成语法级校验并构建 AST。
+ * @details 负责消费 Tokenizer 输出的 token 序列，完成语法校验并构建语句 AST。
  * @author YuzhSong
  */
 class Parser
@@ -28,7 +35,7 @@ class Parser
 public:
     /**
      * @brief 构造函数
-     * @author NAPH130
+     * @author YuzhSong
      * @param core 服务端核心对象指针
      */
     explicit Parser(Core *core = nullptr);
@@ -36,8 +43,8 @@ public:
     /**
      * @brief 语法分析统一入口
      * @author YuzhSong
-     * @param tokens 由 Tokenizer 产出的 token 序列
-     * @return 解析结果，成功时包含 AST，失败时包含错误消息与 token 下标
+     * @param tokens 词法分析输出的 token 序列
+     * @return 解析结果，成功时包含 AST，失败时包含错误信息和 token 下标
      */
     ParseResult parse(const std::vector<Token> &tokens) const;
 
@@ -45,10 +52,10 @@ private:
     Core *core;
 
     /**
-     * @brief 解析通用 SQL 语句入口
+     * @brief 解析 SQL 语句入口
      * @author YuzhSong
      * @param tokenStream token 游标流
-     * @return AST 根节点
+     * @return SQL 语句 AST 根节点
      */
     std::shared_ptr<SQLStatement> parseStatement(TokenStream &tokenStream) const;
 
@@ -99,6 +106,81 @@ private:
      * @return UseDbStmt 节点
      */
     std::shared_ptr<UseDbStmt> parseUseStatement(TokenStream &tokenStream) const;
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return UseStmt 节点
+     */
+    std::shared_ptr<UseStmt> parseUseStatement(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 SHOW 语句
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return ShowStmt 节点
+     */
+    std::shared_ptr<ShowStmt> parseShowStatement(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 DROP 语句
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return DropStmt 节点
+     */
+    std::shared_ptr<DropStmt> parseDropStatement(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 DELETE 语句
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return DeleteStmt 节点
+     */
+    std::shared_ptr<DeleteStmt> parseDeleteStatement(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 UPDATE 语句
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return UpdateStmt 节点
+     */
+    std::shared_ptr<UpdateStmt> parseUpdateStatement(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 UPDATE SET 赋值列表
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @param columnNames 输出字段名列表
+     * @param values 输出字段值列表
+     */
+    void parseUpdateAssignmentList(TokenStream &tokenStream,
+                                   std::vector<std::string> &columnNames,
+                                   std::vector<std::string> &values) const;
+
+    /**
+     * @brief 解析 WHERE 条件中的 OR 表达式层级
+     * @details OR 为最低优先级，按左结合构建条件树。
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return OR 层级条件树根节点
+     */
+    std::shared_ptr<ConditionNode> parseConditionOr(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 WHERE 条件中的 AND 表达式层级
+     * @details AND 优先级高于 OR，按左结合构建条件树。
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return AND 层级条件树根节点
+     */
+    std::shared_ptr<ConditionNode> parseConditionAnd(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 WHERE 条件中的基础谓词
+     * @details 支持括号表达式与比较表达式（如 col = 1）。
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return 基础谓词条件节点
+     */
+    std::shared_ptr<ConditionNode> parsePredicate(TokenStream &tokenStream) const;
 
     /**
      * @brief 解析字段定义并构造 FieldBlock
@@ -129,12 +211,12 @@ private:
      * @brief 解析值列表
      * @author YuzhSong
      * @param tokenStream token 游标流
-     * @return 值序列（按 token 文本保留）
+     * @return 值序列（保持 token 文本）
      */
     std::vector<std::string> parseValueList(TokenStream &tokenStream) const;
 
     /**
-     * @brief 断言语句结尾无多余 token，并消费可选分号与 EndOfFile
+     * @brief 断言语句结束并消费分号与 EndOfFile
      * @author YuzhSong
      * @param tokenStream token 游标流
      */

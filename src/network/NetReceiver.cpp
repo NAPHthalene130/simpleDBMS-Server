@@ -44,6 +44,9 @@ ExecutionResult buildParseFailureResult(const std::string &message, const SqlDat
     return executionResult;
 }
 }
+#include "core/SqlPipeline.h"
+#include "models/network/NetData.h"
+#include "models/network/NetworkExecutionContext.h"
 
 NetReceiver::NetReceiver(Core *core, unsigned short listenPort)
     : core(core),
@@ -112,6 +115,13 @@ void NetReceiver::stop()
     LogWriter::info("network", "NetReceiver", "stop", "Receiver service stopped.");
 }
 
+/**
+ * @brief 处理客户端完整请求并返回响应
+ * @details 网络层仅负责收发与分发，将 JSON 校验、SQL 编排和错误收敛交由 SqlPipeline 处理。
+ * @author YuzhSong
+ * @param clientSocket 客户端套接字
+ * @param msg 网络层接收到的完整消息
+ */
 void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket, const std::string &msg)
 {
     {
@@ -215,7 +225,22 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                          "NetReceiver",
                          "processMsg",
                          std::string("Message processing failed: ") + exception.what());
+    if (core == nullptr || core->getSqlPipeline() == nullptr
+        || core->getNetworkManager() == nullptr || core->getNetworkManager()->getNetSender() == nullptr) {
+        std::cout << "NetReceiver::processMsg skipped because pipeline or sender is unavailable." << std::endl;
+        return;
     }
+
+    NetworkExecutionContext *networkExecutionContext = nullptr;
+    if (core->getNetworkManager()->getClientSessionManager() != nullptr && clientSocket != nullptr) {
+        networkExecutionContext =
+            core->getNetworkManager()->getClientSessionManager()->findSessionContext(clientSocket.get());
+    }
+
+    const NetData responseData = core->getSqlPipeline()->handleRequest(msg, networkExecutionContext);
+    core->getNetworkManager()->getNetSender()->send(clientSocket, responseData.toJson());
+
+    std::cout << "Server processed request and sent response: type=" << responseData.getType() << std::endl;
 }
 
 std::string NetReceiver::getLastReceivedMessage() const

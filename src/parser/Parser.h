@@ -12,7 +12,6 @@
 #include "models/parser/DeleteStmt.h"
 #include "models/parser/DropStmt.h"
 #include "models/parser/InsertStmt.h"
-#include "models/parser/ParseResult.h"
 #include "models/parser/SQLStatement.h"
 #include "models/parser/SelectStmt.h"
 #include "models/parser/UseDbStmt.h"
@@ -101,16 +100,12 @@ private:
 
     /**
      * @brief 解析 USE 语句
+     * @details 支持 `USE dbName` 与 `USE DATABASE dbName` 两种写法。
      * @author NAPH130
      * @param tokenStream token 游标流
-     * @return UseDbStmt 节点
+     * @return USE 语句 AST 节点
      */
-    std::shared_ptr<UseDbStmt> parseUseStatement(TokenStream &tokenStream) const;
-     * @author YuzhSong
-     * @param tokenStream token 游标流
-     * @return UseStmt 节点
-     */
-    std::shared_ptr<UseStmt> parseUseStatement(TokenStream &tokenStream) const;
+    std::shared_ptr<SQLStatement> parseUseStatement(TokenStream &tokenStream) const;
 
     /**
      * @brief 解析 SHOW 语句

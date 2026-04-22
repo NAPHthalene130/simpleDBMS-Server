@@ -327,12 +327,23 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement(TokenStream &tokenStrea
 
 /**
  * @brief 解析 USE 语句
- * @author YuzhSong
+ * @details 支持 `USE dbName` 与 `USE DATABASE dbName` 两种写法。
+ * @author NAPH130
  * @param tokenStream token 游标流
- * @return UseStmt 节点
+ * @return USE 语句节点
  */
-std::shared_ptr<UseStmt> Parser::parseUseStatement(TokenStream &tokenStream) const
+std::shared_ptr<SQLStatement> Parser::parseUseStatement(TokenStream &tokenStream) const
 {
+    if (tokenStream.match(SqlTokenType::Keyword, "DATABASE")) {
+        const Token &databaseNameToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "USE DATABASE statement requires a database identifier.");
+
+        const std::shared_ptr<UseDbStmt> statement = std::make_shared<UseDbStmt>();
+        statement->setDbName(databaseNameToken.getValue());
+        return statement;
+    }
+
     const Token &databaseNameToken = tokenStream.expect(
         SqlTokenType::Identifier,
         "USE statement requires a database identifier.");
@@ -477,17 +488,6 @@ std::shared_ptr<UpdateStmt> Parser::parseUpdateStatement(TokenStream &tokenStrea
     statement->setColumnNames(columnNames);
     statement->setValues(values);
     statement->setWhereCondition(whereCondition);
-    return statement;
-}
-
-std::shared_ptr<UseDbStmt> Parser::parseUseStatement(TokenStream &tokenStream) const
-{
-    const Token &databaseNameToken = tokenStream.expect(
-        SqlTokenType::Identifier,
-        "USE statement requires a database identifier.");
-
-    const std::shared_ptr<UseDbStmt> statement = std::make_shared<UseDbStmt>();
-    statement->setDbName(databaseNameToken.getValue());
     return statement;
 }
 

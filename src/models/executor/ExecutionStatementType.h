@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 /**
  * @enum ExecutionStatementType
@@ -12,5 +12,31 @@ enum class ExecutionStatementType
     CreateTable,
     Insert,
     Select,
+    UseDatabase,
+    /**
+     * @brief USE 语句类型
+     * @author YuzhSong
+     */
+    Use,
+    /**
+     * @brief SHOW 语句类型
+     * @author YuzhSong
+     */
+    Show,
+    /**
+     * @brief DROP 语句类型
+     * @author YuzhSong
+     */
+    Drop,
+    /**
+     * @brief DELETE 语句类型
+     * @author YuzhSong
+     */
+    Delete,
+    /**
+     * @brief UPDATE 语句类型
+     * @author YuzhSong
+     */
+    Update,
     Unknown
 };

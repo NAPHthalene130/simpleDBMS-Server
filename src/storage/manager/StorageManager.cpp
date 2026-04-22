@@ -4,6 +4,7 @@
 #include "FileManager.h"
 #include "SystemCatalogManager.h"
 #include "TableDefManager.h"
+#include "log/LogWriter.h"
 
 StorageManager::StorageManager(Core *core)
     : core(core),
@@ -12,10 +13,12 @@ StorageManager::StorageManager(Core *core)
       databaseManager(new DatabaseManager(core)),
       tableDefManager(new TableDefManager(core))
 {
+    LogWriter::info("storage", "StorageManager", "StorageManager", "Storage manager initialized.");
 }
 
 StorageManager::~StorageManager()
 {
+    LogWriter::info("storage", "StorageManager", "~StorageManager", "Storage manager is being released.");
     delete tableDefManager;
     delete databaseManager;
     delete systemCatalogManager;
@@ -25,6 +28,7 @@ StorageManager::~StorageManager()
     databaseManager = nullptr;
     systemCatalogManager = nullptr;
     fileManager = nullptr;
+    LogWriter::info("storage", "StorageManager", "~StorageManager", "Storage sub-managers released.");
 }
 
 FileManager *StorageManager::getFileManager() const

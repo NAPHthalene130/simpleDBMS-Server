@@ -3,6 +3,21 @@
 #include <exception>
 #include <string>
 
+#include "log/LogWriter.h"
+
+namespace {
+ExecutionResult buildFailureResult(const std::string &message, const ExecutionContext *executionContext)
+{
+    ExecutionResult executionResult;
+    executionResult.setStatus(ExecutionStatus::Failure);
+    executionResult.setMessage(message);
+    if (executionContext != nullptr) {
+        executionResult.setDbName(executionContext->getCurrentDbName());
+    }
+    return executionResult;
+}
+}
+
 ExecutorEngine::ExecutorEngine(Core *core)
     : core(core)
 {
@@ -11,15 +26,24 @@ ExecutorEngine::ExecutorEngine(Core *core)
 void ExecutorEngine::registerExecutor(StatementExecutor *statementExecutor)
 {
     if (statementExecutor == nullptr) {
+        LogWriter::warning("executor", "ExecutorEngine", "registerExecutor", "Skip null statement executor.");
         return;
     }
 
     ExecutionStatementType statementType = statementExecutor->getSupportedType();
     if (statementType == ExecutionStatementType::Unknown || hasExecutor(statementType)) {
+        LogWriter::warning("executor",
+                           "ExecutorEngine",
+                           "registerExecutor",
+                           "Skip duplicated or unknown statement executor registration.");
         return;
     }
 
     statementExecutors.push_back(statementExecutor);
+    LogWriter::info("executor",
+                    "ExecutorEngine",
+                    "registerExecutor",
+                    "Registered statement executor successfully.");
 }
 
 bool ExecutorEngine::hasExecutor(ExecutionStatementType statementType) const
@@ -30,32 +54,28 @@ bool ExecutorEngine::hasExecutor(ExecutionStatementType statementType) const
 ExecutionResult ExecutorEngine::execute(const SQLStatement *statement, ExecutionContext *executionContext)
 {
     if (statement == nullptr || executionContext == nullptr) {
-        ExecutionResult executionResult;
-        executionResult.setStatus(ExecutionStatus::Failure);
-        executionResult.setMessage("Invalid execute input pointer.");
-        return executionResult;
+        LogWriter::error("executor", "ExecutorEngine", "execute", "Execute input pointer is invalid.");
+        return buildFailureResult("Invalid execute input pointer.", executionContext);
     }
 
     StatementExecutor *statementExecutor = findExecutor(statement->getStmtType());
     if (statementExecutor == nullptr) {
-        ExecutionResult executionResult;
-        executionResult.setStatus(ExecutionStatus::Failure);
-        executionResult.setMessage("Unsupported SQL statement type.");
-        return executionResult;
+        LogWriter::error("executor", "ExecutorEngine", "execute", "No executor matches current statement type.");
+        return buildFailureResult("Unsupported SQL statement type.", executionContext);
     }
 
     try {
+        LogWriter::debug("executor", "ExecutorEngine", "execute", "Dispatching SQL statement to executor.");
         return statementExecutor->execute(statement, executionContext);
     } catch (const std::exception &exception) {
-        ExecutionResult executionResult;
-        executionResult.setStatus(ExecutionStatus::Failure);
-        executionResult.setMessage(std::string("Executor exception: ") + exception.what());
-        return executionResult;
+        LogWriter::error("executor",
+                         "ExecutorEngine",
+                         "execute",
+                         std::string("Executor threw standard exception: ") + exception.what());
+        return buildFailureResult(std::string("Executor exception: ") + exception.what(), executionContext);
     } catch (...) {
-        ExecutionResult executionResult;
-        executionResult.setStatus(ExecutionStatus::Failure);
-        executionResult.setMessage("Unknown executor exception.");
-        return executionResult;
+        LogWriter::fatal("executor", "ExecutorEngine", "execute", "Executor threw unknown exception.");
+        return buildFailureResult("Unknown executor exception.", executionContext);
     }
 }
 

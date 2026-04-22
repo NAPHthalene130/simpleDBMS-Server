@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "log/LogWriter.h"
 #include "storage/object/Table.h"
 
 namespace {
@@ -86,10 +87,19 @@ bool DatabaseManager::createTable(TableBlock tbInfo)
         const std::string tableName = arrayToString(tbInfo.getName());
         const std::string dbName = inferDbNameFromTableBlock(tbInfo);
         if (tableName.empty() || dbName.empty()) {
+            LogWriter::warning("storage",
+                               "DatabaseManager",
+                               "createTable",
+                               "Rejected createTable(TableBlock) with empty table or database name.");
             return false;
         }
+        LogWriter::info("storage",
+                        "DatabaseManager",
+                        "createTable",
+                        std::string("Creating table from TableBlock: ") + dbName + "." + tableName);
         return createTable(dbName, tableName, buildColumns(tbInfo));
     } catch (...) {
+        LogWriter::error("storage", "DatabaseManager", "createTable", "Unknown exception in createTable(TableBlock).");
         return false;
     }
 }
@@ -99,17 +109,33 @@ bool DatabaseManager::createTable(const std::string &dbName,
                                   const std::vector<std::string> &columns)
 {
     if (dbName.empty() || tableName.empty() || columns.empty()) {
+        LogWriter::warning("storage",
+                           "DatabaseManager",
+                           "createTable",
+                           "Rejected createTable with empty database name, table name, or columns.");
         return false;
     }
 
     try {
         const auto dbPath = std::filesystem::path(kDbRootPath) / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
+            LogWriter::warning("storage",
+                               "DatabaseManager",
+                               "createTable",
+                               std::string("Database directory not found: ") + dbName);
             return false;
         }
         storage::Table::create(dbPath, tableName, columns);
+        LogWriter::info("storage",
+                        "DatabaseManager",
+                        "createTable",
+                        std::string("Table created successfully: ") + dbName + "." + tableName);
         return true;
     } catch (...) {
+        LogWriter::error("storage",
+                         "DatabaseManager",
+                         "createTable",
+                         std::string("Unknown exception while creating table: ") + dbName + "." + tableName);
         return false;
     }
 }
@@ -119,19 +145,36 @@ bool DatabaseManager::insertRow(const std::string &dbName,
                                 const std::vector<std::string> &values)
 {
     if (dbName.empty() || tableName.empty() || values.empty()) {
+        LogWriter::warning("storage",
+                           "DatabaseManager",
+                           "insertRow",
+                           "Rejected insertRow with empty database name, table name, or values.");
         return false;
     }
 
     try {
         const auto dbPath = std::filesystem::path(kDbRootPath) / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
+            LogWriter::warning("storage",
+                               "DatabaseManager",
+                               "insertRow",
+                               std::string("Database directory not found: ") + dbName);
             return false;
         }
 
         auto table = storage::Table::load(dbPath, tableName);
         table.insert(values);
+        LogWriter::info("storage",
+                        "DatabaseManager",
+                        "insertRow",
+                        std::string("Inserted row into ") + dbName + "." + tableName
+                            + ", value count=" + std::to_string(values.size()));
         return true;
     } catch (...) {
+        LogWriter::error("storage",
+                         "DatabaseManager",
+                         "insertRow",
+                         std::string("Unknown exception while inserting row into ") + dbName + "." + tableName);
         return false;
     }
 }
@@ -139,11 +182,13 @@ bool DatabaseManager::insertRow(const std::string &dbName,
 bool DatabaseManager::dropTable(std::string tableName)
 {
     if (tableName.empty()) {
+        LogWriter::warning("storage", "DatabaseManager", "dropTable", "Rejected empty table name.");
         return false;
     }
 
     const auto dbRootPath = std::filesystem::path(kDbRootPath);
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
+        LogWriter::warning("storage", "DatabaseManager", "dropTable", "Database root directory not found.");
         return false;
     }
 
@@ -165,6 +210,10 @@ bool DatabaseManager::dropTable(std::string tableName)
             }
         }
     }
+    LogWriter::info("storage",
+                    "DatabaseManager",
+                    "dropTable",
+                    std::string("Drop table result for ") + tableName + ": " + (removedAny ? "success" : "not found"));
     return removedAny;
 }
 
@@ -178,11 +227,13 @@ bool DatabaseManager::modifyTable(std::string tableName, TableBlock newTbInfo)
 TableBlock DatabaseManager::getTableInfo(std::string tableName)
 {
     if (tableName.empty()) {
+        LogWriter::warning("storage", "DatabaseManager", "getTableInfo", "Rejected empty table name.");
         return {};
     }
 
     const auto dbRootPath = std::filesystem::path(kDbRootPath);
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
+        LogWriter::warning("storage", "DatabaseManager", "getTableInfo", "Database root directory not found.");
         return {};
     }
 
@@ -192,9 +243,14 @@ TableBlock DatabaseManager::getTableInfo(std::string tableName)
         }
         const auto dbPath = entry.path();
         if (std::filesystem::exists(dbPath / (tableName + ".tdf"))) {
+            LogWriter::debug("storage",
+                             "DatabaseManager",
+                             "getTableInfo",
+                             std::string("Found table info for ") + tableName + " in " + dbPath.filename().string());
             return buildTableBlock(dbPath, tableName);
         }
     }
+    LogWriter::debug("storage", "DatabaseManager", "getTableInfo", std::string("Table info not found for ") + tableName);
     return {};
 }
 
@@ -203,6 +259,7 @@ std::vector<TableBlock> DatabaseManager::getAllTables()
     std::vector<TableBlock> blocks;
     const auto dbRootPath = std::filesystem::path(kDbRootPath);
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
+        LogWriter::warning("storage", "DatabaseManager", "getAllTables", "Database root directory not found.");
         return blocks;
     }
 
@@ -218,5 +275,9 @@ std::vector<TableBlock> DatabaseManager::getAllTables()
             blocks.push_back(buildTableBlock(dbPath, dbFile.path().stem().string()));
         }
     }
+    LogWriter::debug("storage",
+                     "DatabaseManager",
+                     "getAllTables",
+                     std::string("Enumerated table count=") + std::to_string(blocks.size()));
     return blocks;
 }

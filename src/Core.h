@@ -5,6 +5,7 @@ class ExecutorManager;
 class StorageManager;
 class Tokenizer;
 class ParserManager;
+class SqlPipeline;
 
 /**
  * @class Core
@@ -49,6 +50,12 @@ public:
     StorageManager *getStorageManager();
     Tokenizer *getTokenizer();
     ParserManager *getParserManager();
+    /**
+     * @brief 获取 SQL 编排服务
+     * @author YuzhSong
+     * @return SQL 编排服务指针
+     */
+    SqlPipeline *getSqlPipeline();
 
 private:
     NetworkManager *networkManager;
@@ -56,4 +63,5 @@ private:
     ExecutorManager *executorManager;
     Tokenizer *tokenizer;
     ParserManager *parserManager;
+    SqlPipeline *sqlPipeline;
 };

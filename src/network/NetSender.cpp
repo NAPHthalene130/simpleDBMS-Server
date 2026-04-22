@@ -1,8 +1,8 @@
 #include "NetSender.h"
 
-#include <iostream>
-
 #include <asio/write.hpp>
+
+#include "log/LogWriter.h"
 
 NetSender::NetSender(Core *core)
     : core(core)
@@ -14,6 +14,7 @@ NetSender::~NetSender() = default;
 void NetSender::send(std::shared_ptr<asio::ip::tcp::socket> clientSocket, const std::string &msg)
 {
     if (clientSocket == nullptr || !clientSocket->is_open() || msg.empty()) {
+        LogWriter::warning("network", "NetSender", "send", "Skip sending because socket or message is invalid.");
         return;
     }
 
@@ -21,8 +22,15 @@ void NetSender::send(std::shared_ptr<asio::ip::tcp::socket> clientSocket, const 
         const std::array<unsigned char, 4> lengthHeader = buildLengthHeader(static_cast<std::uint32_t>(msg.size()));
         asio::write(*clientSocket, asio::buffer(lengthHeader));
         asio::write(*clientSocket, asio::buffer(msg));
+        LogWriter::debug("network",
+                         "NetSender",
+                         "send",
+                         "Sent message with body length " + std::to_string(msg.size()) + ".");
     } catch (const std::exception &exception) {
-        std::cerr << "NetSender::send failed: " << exception.what() << std::endl;
+        LogWriter::error("network",
+                         "NetSender",
+                         "send",
+                         std::string("Send message failed: ") + exception.what());
     }
 }
 

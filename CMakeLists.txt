@@ -31,6 +31,9 @@ file(GLOB_RECURSE SERVER_SOURCE_FILES CONFIGURE_DEPENDS
     "${SERVER_SOURCE_DIR}/*.h"
 )
 
+list(FILTER SERVER_SOURCE_FILES EXCLUDE REGEX ".*/src/storage/tests/.*\\.cpp$")
+list(FILTER SERVER_SOURCE_FILES EXCLUDE REGEX ".*/src/storage/object/StorageDemo\\.cpp$")
+
 add_executable(simpleDBMS-Server
     ${SERVER_SOURCE_FILES}
 )
@@ -39,6 +42,13 @@ target_include_directories(simpleDBMS-Server
     PRIVATE
         ${SERVER_SOURCE_DIR}
 )
+
+if(WIN32)
+    target_compile_definitions(simpleDBMS-Server
+        PRIVATE
+            _WIN32_WINNT=0x0601
+    )
+endif()
 
 target_link_libraries(simpleDBMS-Server
     PRIVATE

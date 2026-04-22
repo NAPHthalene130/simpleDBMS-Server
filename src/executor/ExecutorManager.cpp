@@ -4,8 +4,15 @@
 #include "ExecutorEngine.h"
 #include "statementExecutors/CreateDbExecutor.h"
 #include "statementExecutors/CreateTableExecutor.h"
+#include "statementExecutors/DeleteExecutor.h"
+#include "statementExecutors/DropExecutor.h"
 #include "statementExecutors/InsertExecutor.h"
 #include "statementExecutors/SelectExecutor.h"
+#include "statementExecutors/UseDbExecutor.h"
+#include "log/LogWriter.h"
+#include "statementExecutors/ShowExecutor.h"
+#include "statementExecutors/UpdateExecutor.h"
+#include "statementExecutors/UseExecutor.h"
 #include "storage/manager/StorageManager.h"
 
 ExecutorManager::ExecutorManager(Core *core)
@@ -14,26 +21,56 @@ ExecutorManager::ExecutorManager(Core *core)
       createDbExecutor(new CreateDbExecutor(core, getSystemCatalogManager())),
       createTableExecutor(new CreateTableExecutor(core, getDatabaseManager(), getTableDefManager())),
       insertExecutor(new InsertExecutor(core, getDatabaseManager(), getTableDefManager())),
-      selectExecutor(new SelectExecutor(core, getDatabaseManager(), getTableDefManager()))
+      selectExecutor(new SelectExecutor(core,
+                                        getSystemCatalogManager(),
+                                        getDatabaseManager(),
+                                        getTableDefManager())),
+      useDbExecutor(new UseDbExecutor(core, getSystemCatalogManager())),
+      useExecutor(new UseExecutor(core)),
+      showExecutor(new ShowExecutor(core)),
+      dropExecutor(new DropExecutor(core, getSystemCatalogManager(), getDatabaseManager())),
+      deleteExecutor(new DeleteExecutor(core, getDatabaseManager())),
+      updateExecutor(new UpdateExecutor(core, getDatabaseManager()))
 {
+    LogWriter::info("executor", "ExecutorManager", "ExecutorManager", "Executor manager initialized.");
     executorEngine->registerExecutor(createDbExecutor);
     executorEngine->registerExecutor(createTableExecutor);
     executorEngine->registerExecutor(insertExecutor);
     executorEngine->registerExecutor(selectExecutor);
+    executorEngine->registerExecutor(useDbExecutor);
+    LogWriter::info("executor", "ExecutorManager", "ExecutorManager", "All default executors were registered.");
+    executorEngine->registerExecutor(useExecutor);
+    executorEngine->registerExecutor(showExecutor);
+    executorEngine->registerExecutor(dropExecutor);
+    executorEngine->registerExecutor(deleteExecutor);
+    executorEngine->registerExecutor(updateExecutor);
 }
 
 ExecutorManager::~ExecutorManager()
 {
+    LogWriter::info("executor", "ExecutorManager", "~ExecutorManager", "Executor manager is being destroyed.");
+    delete useDbExecutor;
+    delete updateExecutor;
+    delete deleteExecutor;
+    delete dropExecutor;
+    delete showExecutor;
+    delete useExecutor;
     delete selectExecutor;
     delete insertExecutor;
     delete createTableExecutor;
     delete createDbExecutor;
     delete executorEngine;
 
+    updateExecutor = nullptr;
+    deleteExecutor = nullptr;
+    dropExecutor = nullptr;
+    showExecutor = nullptr;
+    useExecutor = nullptr;
     selectExecutor = nullptr;
     insertExecutor = nullptr;
     createTableExecutor = nullptr;
     createDbExecutor = nullptr;
+    useDbExecutor = nullptr;
     executorEngine = nullptr;
 }
 
@@ -60,6 +97,36 @@ InsertExecutor *ExecutorManager::getInsertExecutor() const
 SelectExecutor *ExecutorManager::getSelectExecutor() const
 {
     return selectExecutor;
+}
+
+UseDbExecutor *ExecutorManager::getUseDbExecutor() const
+{
+    return useDbExecutor;
+}
+
+UseExecutor *ExecutorManager::getUseExecutor() const
+{
+    return useExecutor;
+}
+
+ShowExecutor *ExecutorManager::getShowExecutor() const
+{
+    return showExecutor;
+}
+
+DropExecutor *ExecutorManager::getDropExecutor() const
+{
+    return dropExecutor;
+}
+
+DeleteExecutor *ExecutorManager::getDeleteExecutor() const
+{
+    return deleteExecutor;
+}
+
+UpdateExecutor *ExecutorManager::getUpdateExecutor() const
+{
+    return updateExecutor;
 }
 
 SystemCatalogManager *ExecutorManager::getSystemCatalogManager() const

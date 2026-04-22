@@ -178,6 +178,10 @@ $RECYCLE.BIN/
 
 # 以下自定义
 /cmake-build-debug/*
+/build-tests-cmake/
 /.idea
 /build
 /CMakeUserPresets.json
+src/log/logs.log
+src/storage/data/StartaleDB.db
+src/storage/data/StartaleDB/

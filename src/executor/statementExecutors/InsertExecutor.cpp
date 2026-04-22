@@ -1,11 +1,17 @@
 #include "InsertExecutor.h"
 
+#include "log/LogWriter.h"
+
 namespace {
-ExecutionResult buildFailureResult(const std::string &message)
+ExecutionResult buildFailureResult(const std::string &message,
+                                   const std::string &dbName = "",
+                                   const std::string &tableName = "")
 {
     ExecutionResult executionResult;
     executionResult.setStatus(ExecutionStatus::Failure);
     executionResult.setMessage(message);
+    executionResult.setDbName(dbName);
+    executionResult.setTableName(tableName);
     return executionResult;
 }
 }
@@ -23,10 +29,12 @@ ExecutionStatementType InsertExecutor::getSupportedType() const
 ExecutionResult InsertExecutor::execute(const SQLStatement *statement, ExecutionContext *executionContext)
 {
     if (statement == nullptr || executionContext == nullptr) {
+        LogWriter::error("executor", "InsertExecutor", "execute", "Insert input pointer is invalid.");
         return buildFailureResult("InsertExecutor received null input pointer.");
     }
 
     if (statement->getStmtType() != getSupportedType()) {
+        LogWriter::error("executor", "InsertExecutor", "execute", "Received mismatched statement type.");
         return buildFailureResult("InsertExecutor received mismatched statement type.");
     }
 
@@ -35,12 +43,24 @@ ExecutionResult InsertExecutor::execute(const SQLStatement *statement, Execution
 
 ExecutionResult InsertExecutor::executeInsert(const InsertStmt *insertStmt, ExecutionContext *executionContext)
 {
-    (void)executionContext;
+    const std::string dbName = executionContext != nullptr ? executionContext->getCurrentDbName() : "";
+    const std::string tableName = insertStmt != nullptr ? insertStmt->getTableName() : "";
+
     if (!validateInsertStmt(insertStmt)) {
-        return buildFailureResult("Insert statement columns and values do not match.");
+        LogWriter::warning("executor",
+                           "InsertExecutor",
+                           "executeInsert",
+                           "Insert statement columns and values do not match.");
+        return buildFailureResult("Insert statement columns and values do not match.", dbName, tableName);
     }
 
-    return buildFailureResult("InsertExecutor is registered, but execution logic is not implemented yet.");
+    LogWriter::warning("executor",
+                       "InsertExecutor",
+                       "executeInsert",
+                       "Insert executor is invoked but storage logic is not implemented yet.");
+    return buildFailureResult("InsertExecutor is registered, but execution logic is not implemented yet.",
+                              dbName,
+                              tableName);
 }
 
 bool InsertExecutor::validateInsertStmt(const InsertStmt *insertStmt) const

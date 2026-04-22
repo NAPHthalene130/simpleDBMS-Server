@@ -10,6 +10,7 @@
 #include "models/parser/InsertStmt.h"
 #include "models/parser/SQLStatement.h"
 #include "models/parser/SelectStmt.h"
+#include "models/parser/UseDbStmt.h"
 #include "models/parser/ParseResult.h"
 #include "models/tokenizer/Token.h"
 #include "TokenStream.h"
@@ -90,6 +91,14 @@ private:
      * @return SelectStmt 节点
      */
     std::shared_ptr<SelectStmt> parseSelectStatement(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 USE 语句
+     * @author NAPH130
+     * @param tokenStream token 游标流
+     * @return UseDbStmt 节点
+     */
+    std::shared_ptr<UseDbStmt> parseUseStatement(TokenStream &tokenStream) const;
 
     /**
      * @brief 解析字段定义并构造 FieldBlock

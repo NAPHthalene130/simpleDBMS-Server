@@ -10,15 +10,31 @@ ClientSessionManager::ClientSessionManager(Core *core)
 
 void ClientSessionManager::addSession(asio::ip::tcp::socket *clientSocket)
 {
-    // TODO: Initialize session context after authentication flow is defined.
-    static_cast<void>(clientSocket);
+    if (clientSocket == nullptr) {
+        LogWriter::warning("network", "ClientSessionManager", "addSession", "Client socket is null.");
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(sessionMutex);
+    if (sessionMap.find(clientSocket) != sessionMap.end()) {
+        LogWriter::warning("network", "ClientSessionManager", "addSession", "Session already exists for client.");
+        return;
+    }
+
+    NetworkExecutionContext networkExecutionContext;
+    sessionMap.emplace(clientSocket, networkExecutionContext);
     LogWriter::debug("network", "ClientSessionManager", "addSession", "Session placeholder added for client.");
 }
 
 void ClientSessionManager::removeSession(asio::ip::tcp::socket *clientSocket)
 {
-    // TODO: Remove session state when lifecycle management is finalized.
-    static_cast<void>(clientSocket);
+    if (clientSocket == nullptr) {
+        LogWriter::warning("network", "ClientSessionManager", "removeSession", "Client socket is null.");
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(sessionMutex);
+    sessionMap.erase(clientSocket);
     LogWriter::debug("network", "ClientSessionManager", "removeSession", "Session placeholder removed for client.");
 }
 

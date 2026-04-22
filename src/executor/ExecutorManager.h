@@ -9,6 +9,7 @@ class InsertExecutor;
 class SelectExecutor;
 class SystemCatalogManager;
 class TableDefManager;
+class UseDbExecutor;
 
 /**
  * @class ExecutorManager
@@ -37,6 +38,7 @@ public:
     CreateTableExecutor *getCreateTableExecutor() const;
     InsertExecutor *getInsertExecutor() const;
     SelectExecutor *getSelectExecutor() const;
+    UseDbExecutor *getUseDbExecutor() const;
 
     SystemCatalogManager *getSystemCatalogManager() const;
     DatabaseManager *getDatabaseManager() const;
@@ -50,4 +52,5 @@ private:
     CreateTableExecutor *createTableExecutor;
     InsertExecutor *insertExecutor;
     SelectExecutor *selectExecutor;
+    UseDbExecutor *useDbExecutor;
 };

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 /**
  * @enum ExecutionStatementType
@@ -12,5 +12,6 @@ enum class ExecutionStatementType
     CreateTable,
     Insert,
     Select,
+    UseDatabase,
     Unknown
 };

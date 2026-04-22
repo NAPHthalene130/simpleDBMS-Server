@@ -99,6 +99,10 @@ std::shared_ptr<SQLStatement> Parser::parseStatement(TokenStream &tokenStream) c
         return parseSelectStatement(tokenStream);
     }
 
+    if (tokenStream.match(SqlTokenType::Keyword, "USE")) {
+        return parseUseStatement(tokenStream);
+    }
+
     throw ParserException("Unsupported statement type.", tokenStream.position());
 }
 
@@ -218,6 +222,17 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement(TokenStream &tokenStrea
     statement->setSelectAllFields(selectAllFields);
     statement->setTargetFields(targetFields);
     statement->setWhereCondition(nullptr);
+    return statement;
+}
+
+std::shared_ptr<UseDbStmt> Parser::parseUseStatement(TokenStream &tokenStream) const
+{
+    const Token &databaseNameToken = tokenStream.expect(
+        SqlTokenType::Identifier,
+        "USE statement requires a database identifier.");
+
+    const std::shared_ptr<UseDbStmt> statement = std::make_shared<UseDbStmt>();
+    statement->setDbName(databaseNameToken.getValue());
     return statement;
 }
 

@@ -169,12 +169,25 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 }
             }
             executionContext.setCurrentUser(sqlData.getUserID());
-            executionContext.setCurrentDbName(sqlData.getDbName());
+            if (!sqlData.getDbName().empty()) {
+                executionContext.setCurrentDbName(sqlData.getDbName());
+            }
 
             ExecutionResult executionResult =
                 core->getExecutorManager()->getExecutorEngine()->execute(
                     parseResult.statement.get(),
                     &executionContext);
+
+            if (executionResult.getStatus() == ExecutionStatus::Success
+                && core->getNetworkManager() != nullptr
+                && core->getNetworkManager()->getClientSessionManager() != nullptr) {
+                NetworkExecutionContext *networkExecutionContext =
+                    core->getNetworkManager()->getClientSessionManager()->findSessionContext(clientSocket.get());
+                if (networkExecutionContext != nullptr && !executionResult.getDbName().empty()) {
+                    // 将执行成功后的当前数据库写回会话，供后续请求复用。
+                    networkExecutionContext->setCurrentDbName(executionResult.getDbName());
+                }
+            }
 
             if (executionResult.getDbName().empty()) {
                 executionResult.setDbName(sqlData.getDbName());

@@ -6,6 +6,7 @@
 #include "statementExecutors/CreateTableExecutor.h"
 #include "statementExecutors/InsertExecutor.h"
 #include "statementExecutors/SelectExecutor.h"
+#include "statementExecutors/UseDbExecutor.h"
 #include "log/LogWriter.h"
 #include "storage/manager/StorageManager.h"
 
@@ -18,19 +19,22 @@ ExecutorManager::ExecutorManager(Core *core)
       selectExecutor(new SelectExecutor(core,
                                         getSystemCatalogManager(),
                                         getDatabaseManager(),
-                                        getTableDefManager()))
+                                        getTableDefManager())),
+      useDbExecutor(new UseDbExecutor(core, getSystemCatalogManager()))
 {
     LogWriter::info("executor", "ExecutorManager", "ExecutorManager", "Executor manager initialized.");
     executorEngine->registerExecutor(createDbExecutor);
     executorEngine->registerExecutor(createTableExecutor);
     executorEngine->registerExecutor(insertExecutor);
     executorEngine->registerExecutor(selectExecutor);
+    executorEngine->registerExecutor(useDbExecutor);
     LogWriter::info("executor", "ExecutorManager", "ExecutorManager", "All default executors were registered.");
 }
 
 ExecutorManager::~ExecutorManager()
 {
     LogWriter::info("executor", "ExecutorManager", "~ExecutorManager", "Executor manager is being destroyed.");
+    delete useDbExecutor;
     delete selectExecutor;
     delete insertExecutor;
     delete createTableExecutor;
@@ -41,6 +45,7 @@ ExecutorManager::~ExecutorManager()
     insertExecutor = nullptr;
     createTableExecutor = nullptr;
     createDbExecutor = nullptr;
+    useDbExecutor = nullptr;
     executorEngine = nullptr;
 }
 
@@ -67,6 +72,11 @@ InsertExecutor *ExecutorManager::getInsertExecutor() const
 SelectExecutor *ExecutorManager::getSelectExecutor() const
 {
     return selectExecutor;
+}
+
+UseDbExecutor *ExecutorManager::getUseDbExecutor() const
+{
+    return useDbExecutor;
 }
 
 SystemCatalogManager *ExecutorManager::getSystemCatalogManager() const

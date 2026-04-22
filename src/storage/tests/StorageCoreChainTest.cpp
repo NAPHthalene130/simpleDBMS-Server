@@ -56,6 +56,11 @@ private:
 
 int main()
 {
+    const std::filesystem::path storageDir = std::filesystem::current_path() / "src" / "storage";
+    ensure(std::filesystem::exists(storageDir) && std::filesystem::is_directory(storageDir),
+           "storage directory not found: " + storageDir.string());
+    std::filesystem::current_path(storageDir);
+
     const std::string dbName = "StartaleDB";
     const std::string tableName = "StartaleTB";
     const std::filesystem::path dbRoot("data");

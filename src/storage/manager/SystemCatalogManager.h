@@ -1,9 +1,12 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
 class Core;
+
+using uInt64 = std::uint64_t;
 
 #include "models/storage/DatabaseBlock.h"
 
@@ -57,6 +60,22 @@ public:
      * @note 当前仅预留接口，暂未实现
      */
     bool checkDbExists(std::string dbName);
+
+    /**
+     * @brief 获取数据库版本号
+     * @author GPT-5.4
+     * @param dbName 数据库名称
+     * @return 对应数据库当前版本号，不存在时返回 0
+     */
+    uInt64 getDatabaseVersion(std::string dbName);
+
+    /**
+     * @brief 增加数据库版本号
+     * @author GPT-5.4
+     * @param dbName 数据库名称
+     * @details 若数据库尚无版本记录，则初始化为 1；否则在原值基础上加 1
+     */
+    void addDatabaseVersion(std::string dbName);
 
 private:
     Core *core;

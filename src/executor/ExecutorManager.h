@@ -12,6 +12,7 @@ class SelectExecutor;
 class ShowExecutor;
 class SystemCatalogManager;
 class TableDefManager;
+class UseDbExecutor;
 class UpdateExecutor;
 class UseExecutor;
 
@@ -42,6 +43,7 @@ public:
     CreateTableExecutor *getCreateTableExecutor() const;
     InsertExecutor *getInsertExecutor() const;
     SelectExecutor *getSelectExecutor() const;
+    UseDbExecutor *getUseDbExecutor() const;
 
     /**
      * @brief 获取 USE 语句执行器
@@ -90,6 +92,7 @@ private:
     CreateTableExecutor *createTableExecutor;
     InsertExecutor *insertExecutor;
     SelectExecutor *selectExecutor;
+    UseDbExecutor *useDbExecutor;
     UseExecutor *useExecutor;
     ShowExecutor *showExecutor;
     DropExecutor *dropExecutor;

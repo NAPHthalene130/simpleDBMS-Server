@@ -8,6 +8,8 @@
 #include "statementExecutors/DropExecutor.h"
 #include "statementExecutors/InsertExecutor.h"
 #include "statementExecutors/SelectExecutor.h"
+#include "statementExecutors/UseDbExecutor.h"
+#include "log/LogWriter.h"
 #include "statementExecutors/ShowExecutor.h"
 #include "statementExecutors/UpdateExecutor.h"
 #include "statementExecutors/UseExecutor.h"
@@ -19,6 +21,11 @@ ExecutorManager::ExecutorManager(Core *core)
       createDbExecutor(new CreateDbExecutor(core, getSystemCatalogManager())),
       createTableExecutor(new CreateTableExecutor(core, getDatabaseManager(), getTableDefManager())),
       insertExecutor(new InsertExecutor(core, getDatabaseManager(), getTableDefManager())),
+      selectExecutor(new SelectExecutor(core,
+                                        getSystemCatalogManager(),
+                                        getDatabaseManager(),
+                                        getTableDefManager())),
+      useDbExecutor(new UseDbExecutor(core, getSystemCatalogManager()))
       selectExecutor(new SelectExecutor(core, getDatabaseManager(), getTableDefManager())),
       useExecutor(new UseExecutor(core)),
       showExecutor(new ShowExecutor(core)),
@@ -26,10 +33,13 @@ ExecutorManager::ExecutorManager(Core *core)
       deleteExecutor(new DeleteExecutor(core, getDatabaseManager())),
       updateExecutor(new UpdateExecutor(core, getDatabaseManager()))
 {
+    LogWriter::info("executor", "ExecutorManager", "ExecutorManager", "Executor manager initialized.");
     executorEngine->registerExecutor(createDbExecutor);
     executorEngine->registerExecutor(createTableExecutor);
     executorEngine->registerExecutor(insertExecutor);
     executorEngine->registerExecutor(selectExecutor);
+    executorEngine->registerExecutor(useDbExecutor);
+    LogWriter::info("executor", "ExecutorManager", "ExecutorManager", "All default executors were registered.");
     executorEngine->registerExecutor(useExecutor);
     executorEngine->registerExecutor(showExecutor);
     executorEngine->registerExecutor(dropExecutor);
@@ -39,6 +49,8 @@ ExecutorManager::ExecutorManager(Core *core)
 
 ExecutorManager::~ExecutorManager()
 {
+    LogWriter::info("executor", "ExecutorManager", "~ExecutorManager", "Executor manager is being destroyed.");
+    delete useDbExecutor;
     delete updateExecutor;
     delete deleteExecutor;
     delete dropExecutor;
@@ -59,6 +71,7 @@ ExecutorManager::~ExecutorManager()
     insertExecutor = nullptr;
     createTableExecutor = nullptr;
     createDbExecutor = nullptr;
+    useDbExecutor = nullptr;
     executorEngine = nullptr;
 }
 
@@ -87,6 +100,9 @@ SelectExecutor *ExecutorManager::getSelectExecutor() const
     return selectExecutor;
 }
 
+UseDbExecutor *ExecutorManager::getUseDbExecutor() const
+{
+    return useDbExecutor;
 UseExecutor *ExecutorManager::getUseExecutor() const
 {
     return useExecutor;

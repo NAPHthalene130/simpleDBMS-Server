@@ -480,6 +480,17 @@ std::shared_ptr<UpdateStmt> Parser::parseUpdateStatement(TokenStream &tokenStrea
     return statement;
 }
 
+std::shared_ptr<UseDbStmt> Parser::parseUseStatement(TokenStream &tokenStream) const
+{
+    const Token &databaseNameToken = tokenStream.expect(
+        SqlTokenType::Identifier,
+        "USE statement requires a database identifier.");
+
+    const std::shared_ptr<UseDbStmt> statement = std::make_shared<UseDbStmt>();
+    statement->setDbName(databaseNameToken.getValue());
+    return statement;
+}
+
 /**
  * @brief 解析 UPDATE SET 赋值列表
  * @author YuzhSong

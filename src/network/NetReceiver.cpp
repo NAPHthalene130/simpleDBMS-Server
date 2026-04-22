@@ -2,13 +2,48 @@
 
 #include <algorithm>
 #include <array>
-#include <iostream>
 #include <system_error>
 
 #include <asio/read.hpp>
 
 #include "Core.h"
 #include "NetworkManager.h"
+#include "executor/ExecutorEngine.h"
+#include "executor/ExecutorManager.h"
+#include "log/LogWriter.h"
+#include "models/executor/ExecutionContext.h"
+#include "models/executor/ExecutionResult.h"
+#include "models/network/NetData.h"
+#include "models/network/SqlData.h"
+#include "parser/Parser.h"
+#include "parser/ParserManager.h"
+#include "tokenizer/Tokenizer.h"
+
+namespace {
+bool isSqlRequestType(const std::string &type)
+{
+    return type == "SQL_USER" || type == "SQL_Client";
+}
+
+std::string buildSuccessResponseType(const std::string &requestType)
+{
+    return requestType == "SQL_USER" ? "SQL_USER_RESULT" : "SQL_Client_RESULT";
+}
+
+std::string buildFailureResponseType(const std::string &requestType)
+{
+    return requestType == "SQL_USER" ? "SQL_USER_ERROR" : "SQL_Client_ERROR";
+}
+
+ExecutionResult buildParseFailureResult(const std::string &message, const SqlData &sqlData)
+{
+    ExecutionResult executionResult;
+    executionResult.setStatus(ExecutionStatus::Failure);
+    executionResult.setMessage(message);
+    executionResult.setDbName(sqlData.getDbName());
+    return executionResult;
+}
+}
 #include "core/SqlPipeline.h"
 #include "models/network/NetData.h"
 #include "models/network/NetworkExecutionContext.h"
@@ -28,17 +63,22 @@ NetReceiver::~NetReceiver()
 void NetReceiver::start()
 {
     if (isRunning.exchange(true)) {
+        LogWriter::warning("network", "NetReceiver", "start", "Receiver is already running.");
         return;
     }
 
+    LogWriter::info("network", "NetReceiver", "start", "Receiver service is starting.");
     serviceThread = std::thread(&NetReceiver::runService, this);
 }
 
 void NetReceiver::stop()
 {
     if (!isRunning.exchange(false)) {
+        LogWriter::warning("network", "NetReceiver", "stop", "Receiver is already stopped.");
         return;
     }
+
+    LogWriter::info("network", "NetReceiver", "stop", "Receiver service is stopping.");
 
     if (acceptor != nullptr) {
         std::error_code errorCode;
@@ -72,6 +112,7 @@ void NetReceiver::stop()
 
     acceptor.reset();
     ioContext.reset();
+    LogWriter::info("network", "NetReceiver", "stop", "Receiver service stopped.");
 }
 
 /**
@@ -88,6 +129,102 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
         lastReceivedMessage = msg;
     }
 
+    try {
+        const NetData netData = NetData::fromJson(msg);
+        LogWriter::debug("network",
+                         "NetReceiver",
+                         "processMsg",
+                         "Received message type: " + netData.getType());
+        if (isSqlRequestType(netData.getType())) {
+            if (core == nullptr || core->getTokenizer() == nullptr || core->getParserManager() == nullptr
+                || core->getParserManager()->getParser() == nullptr || core->getExecutorManager() == nullptr
+                || core->getExecutorManager()->getExecutorEngine() == nullptr) {
+                LogWriter::fatal("network", "NetReceiver", "processMsg", "SQL pipeline is not initialized.");
+                throw std::runtime_error("SQL pipeline is not initialized.");
+            }
+
+            const SqlData sqlData = SqlData::fromJson(netData.getContent());
+
+            Tokenizer *tokenizer = core->getTokenizer();
+            tokenizer->reset(sqlData.getSql());
+            const std::vector<Token> tokens = tokenizer->tokenize();
+
+            const ParseResult parseResult = core->getParserManager()->getParser()->parse(tokens);
+            if (!parseResult.success || parseResult.statement == nullptr) {
+                ExecutionResult executionResult = buildParseFailureResult(
+                    "Parse failed at token " + std::to_string(parseResult.errorTokenIndex)
+                        + ": " + parseResult.errorMessage,
+                    sqlData);
+                LogWriter::warning("network",
+                                   "NetReceiver",
+                                   "processMsg",
+                                   "SQL parse failed for request type " + netData.getType() + ".");
+                if (core->getNetworkManager() != nullptr && core->getNetworkManager()->getNetSender() != nullptr) {
+                    core->getNetworkManager()->getNetSender()->send(
+                        clientSocket,
+                        NetData(buildFailureResponseType(netData.getType()), executionResult.toJson()).toJson());
+                }
+                return;
+            }
+
+            ExecutionContext executionContext;
+            if (core->getNetworkManager() != nullptr
+                && core->getNetworkManager()->getClientSessionManager() != nullptr) {
+                NetworkExecutionContext *networkExecutionContext =
+                    core->getNetworkManager()->getClientSessionManager()->findSessionContext(clientSocket.get());
+                if (networkExecutionContext != nullptr) {
+                    executionContext.setConnectionId(networkExecutionContext->getConnectionId());
+                    executionContext.setCurrentUser(networkExecutionContext->getCurrentUser());
+                    executionContext.setCurrentDbName(networkExecutionContext->getCurrentDbName());
+                }
+            }
+            executionContext.setCurrentUser(sqlData.getUserID());
+            if (!sqlData.getDbName().empty()) {
+                executionContext.setCurrentDbName(sqlData.getDbName());
+            }
+
+            ExecutionResult executionResult =
+                core->getExecutorManager()->getExecutorEngine()->execute(
+                    parseResult.statement.get(),
+                    &executionContext);
+
+            if (executionResult.getStatus() == ExecutionStatus::Success
+                && core->getNetworkManager() != nullptr
+                && core->getNetworkManager()->getClientSessionManager() != nullptr) {
+                NetworkExecutionContext *networkExecutionContext =
+                    core->getNetworkManager()->getClientSessionManager()->findSessionContext(clientSocket.get());
+                if (networkExecutionContext != nullptr && !executionResult.getDbName().empty()) {
+                    // 将执行成功后的当前数据库写回会话，供后续请求复用。
+                    networkExecutionContext->setCurrentDbName(executionResult.getDbName());
+                }
+            }
+
+            if (executionResult.getDbName().empty()) {
+                executionResult.setDbName(sqlData.getDbName());
+            }
+
+            const std::string responseType =
+                executionResult.getStatus() == ExecutionStatus::Success
+                    ? buildSuccessResponseType(netData.getType())
+                    : buildFailureResponseType(netData.getType());
+            const std::string responseContent = executionResult.toJson();
+            LogWriter::info("network",
+                            "NetReceiver",
+                            "processMsg",
+                            "SQL request processed with response type " + responseType + ".");
+
+            if (core->getNetworkManager() != nullptr && core->getNetworkManager()->getNetSender() != nullptr) {
+                core->getNetworkManager()->getNetSender()->send(
+                    clientSocket,
+                    NetData(responseType, responseContent).toJson());
+            }
+        }
+        
+    } catch (const std::exception &exception) {
+        LogWriter::error("network",
+                         "NetReceiver",
+                         "processMsg",
+                         std::string("Message processing failed: ") + exception.what());
     if (core == nullptr || core->getSqlPipeline() == nullptr
         || core->getNetworkManager() == nullptr || core->getNetworkManager()->getNetSender() == nullptr) {
         std::cout << "NetReceiver::processMsg skipped because pipeline or sender is unavailable." << std::endl;
@@ -127,9 +264,13 @@ void NetReceiver::runService()
         acceptor->bind(endpoint);
         acceptor->listen(asio::socket_base::max_listen_connections);
 
+        LogWriter::info("network", "NetReceiver", "runService", "Receiver service is listening for connections.");
         acceptLoop();
     } catch (const std::exception &exception) {
-        std::cout << "NetReceiver::runService failed: " << exception.what() << std::endl;
+        LogWriter::error("network",
+                         "NetReceiver",
+                         "runService",
+                         std::string("Receiver service failed: ") + exception.what());
     }
 }
 
@@ -142,11 +283,15 @@ void NetReceiver::acceptLoop()
 
         if (errorCode) {
             if (isRunning.load()) {
-                std::cout << "NetReceiver::acceptLoop failed: " << errorCode.message() << std::endl;
+                LogWriter::error("network",
+                                 "NetReceiver",
+                                 "acceptLoop",
+                                 "Accept client failed: " + errorCode.message());
             }
             continue;
         }
 
+        LogWriter::info("network", "NetReceiver", "acceptLoop", "Accepted a client connection.");
         addActiveSocket(clientSocket);
         if (core != nullptr && core->getNetworkManager() != nullptr
             && core->getNetworkManager()->getClientSessionManager() != nullptr) {
@@ -172,9 +317,10 @@ void NetReceiver::handleClientSession(std::shared_ptr<asio::ip::tcp::socket> cli
         }
 
         if (errorCode) {
-            std::cout << "NetReceiver::handleClientSession header read failed: "
-                      << errorCode.message()
-                      << std::endl;
+            LogWriter::error("network",
+                             "NetReceiver",
+                             "handleClientSession",
+                             "Read message header failed: " + errorCode.message());
             break;
         }
 
@@ -187,9 +333,10 @@ void NetReceiver::handleClientSession(std::shared_ptr<asio::ip::tcp::socket> cli
         }
 
         if (errorCode) {
-            std::cout << "NetReceiver::handleClientSession body read failed: "
-                      << errorCode.message()
-                      << std::endl;
+            LogWriter::error("network",
+                             "NetReceiver",
+                             "handleClientSession",
+                             "Read message body failed: " + errorCode.message());
             break;
         }
 
@@ -203,12 +350,17 @@ void NetReceiver::handleClientSession(std::shared_ptr<asio::ip::tcp::socket> cli
         core->getNetworkManager()->disconnected(clientSocket);
     }
     removeActiveSocket(clientSocket);
+    LogWriter::info("network", "NetReceiver", "handleClientSession", "Client session finished.");
 }
 
 void NetReceiver::addActiveSocket(std::shared_ptr<asio::ip::tcp::socket> clientSocket)
 {
     std::lock_guard<std::mutex> lock(socketMutex);
     activeClientSockets.push_back(clientSocket);
+    LogWriter::debug("network",
+                     "NetReceiver",
+                     "addActiveSocket",
+                     "Active client count is now " + std::to_string(activeClientSockets.size()) + ".");
 }
 
 void NetReceiver::removeActiveSocket(std::shared_ptr<asio::ip::tcp::socket> clientSocket)
@@ -216,6 +368,10 @@ void NetReceiver::removeActiveSocket(std::shared_ptr<asio::ip::tcp::socket> clie
     std::lock_guard<std::mutex> lock(socketMutex);
     activeClientSockets.erase(std::remove(activeClientSockets.begin(), activeClientSockets.end(), clientSocket),
                               activeClientSockets.end());
+    LogWriter::debug("network",
+                     "NetReceiver",
+                     "removeActiveSocket",
+                     "Active client count is now " + std::to_string(activeClientSockets.size()) + ".");
 }
 
 std::uint32_t NetReceiver::parseLengthHeader(const std::array<unsigned char, 4> &lengthHeader) const

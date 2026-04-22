@@ -17,6 +17,14 @@ namespace storage {
 // MinDegree = t
 // - 每个节点最多 2t - 1 个键
 // - 每个非根节点最少 t - 1 个键
+/**
+ * @class BTree
+ * @brief 通用 B 树模板容器
+ * @author Startale
+ * @tparam Key 键类型
+ * @tparam Value 值类型
+ * @tparam Compare 键比较器
+ */
 template <typename Key, typename Value, typename Compare = std::less<Key>>
 class BTree {
 public:
@@ -39,6 +47,12 @@ private:
     };
 
 public:
+    /**
+     * @brief 构造 B 树
+     * @author Startale
+     * @param minDegree 最小度，必须大于等于 2
+     * @param comp 比较器
+     */
     explicit BTree(std::size_t minDegree = 2, Compare comp = Compare())
         : t_(minDegree), comp_(std::move(comp)), root_(std::make_unique<Node>(true)) {
         if (t_ < 2) {
@@ -52,27 +66,66 @@ public:
     BTree(BTree&&) noexcept = default;
     BTree& operator=(BTree&&) noexcept = default;
 
+    /**
+     * @brief 清空整棵树
+     * @author Startale
+     */
     void clear() {
         root_ = std::make_unique<Node>(true);
         size_ = 0;
     }
 
+    /**
+     * @brief 获取元素数量
+     * @author Startale
+     * @return 当前元素数量
+     */
     std::size_t size() const { return size_; }
+
+    /**
+     * @brief 判断容器是否为空
+     * @author Startale
+     * @return 是否为空
+     */
     bool empty() const { return size_ == 0; }
 
+    /**
+     * @brief 判断键是否存在
+     * @author Startale
+     * @param key 键值
+     * @return 是否存在
+     */
     bool contains(const Key& key) const {
         return find(key) != nullptr;
     }
 
+    /**
+     * @brief 查找键对应的可写值
+     * @author Startale
+     * @param key 键值
+     * @return 值指针，未找到返回 nullptr
+     */
     Value* find(const Key& key) {
         return findInternal(root_.get(), key);
     }
 
+    /**
+     * @brief 查找键对应的只读值
+     * @author Startale
+     * @param key 键值
+     * @return 值指针，未找到返回 nullptr
+     */
     const Value* find(const Key& key) const {
         return findInternal(root_.get(), key);
     }
 
-    // 若 key 已存在，则更新 value 并返回 false；否则插入并返回 true。
+    /**
+     * @brief 插入键值对（左值版本）
+     * @author Startale
+     * @param key 键值
+     * @param value 值
+     * @return true 表示新插入，false 表示更新已有键
+     */
     bool insert(const Key& key, const Value& value) {
         if (root_->entries.size() == maxKeys()) {
             auto newRoot = std::make_unique<Node>(false);
@@ -88,6 +141,13 @@ public:
         return inserted;
     }
 
+    /**
+     * @brief 插入键值对（右值版本）
+     * @author Startale
+     * @param key 键值
+     * @param value 值
+     * @return true 表示新插入，false 表示更新已有键
+     */
     bool insert(Key&& key, Value&& value) {
         if (root_->entries.size() == maxKeys()) {
             auto newRoot = std::make_unique<Node>(false);
@@ -103,6 +163,12 @@ public:
         return inserted;
     }
 
+    /**
+     * @brief 中序遍历
+     * @author Startale
+     * @tparam Visitor 访问器类型
+     * @param visitor 访问器回调
+     */
     template <typename Visitor>
     void inorder(Visitor&& visitor) const {
         inorderInternal(root_.get(), visitor);

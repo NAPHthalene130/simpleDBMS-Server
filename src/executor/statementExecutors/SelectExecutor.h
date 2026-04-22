@@ -5,6 +5,7 @@
 #include "models/parser/ConditionNode.h"
 #include "models/parser/SelectStmt.h"
 #include "storage/manager/DatabaseManager.h"
+#include "storage/manager/SystemCatalogManager.h"
 #include "storage/manager/TableDefManager.h"
 #include "../StatementExecutor.h"
 
@@ -21,10 +22,14 @@ public:
      * @brief 构造函数
      * @author NAPH130
      * @param core 服务端核心对象指针
+     * @param systemCatalogManager 系统目录管理器指针
      * @param databaseManager 数据库管理器指针
      * @param tableDefManager 表定义管理器指针
      */
-    SelectExecutor(Core *core, DatabaseManager *databaseManager, TableDefManager *tableDefManager);
+    SelectExecutor(Core *core,
+                   SystemCatalogManager *systemCatalogManager,
+                   DatabaseManager *databaseManager,
+                   TableDefManager *tableDefManager);
 
     /**
      * @brief 获取当前执行器支持的语句类型
@@ -76,7 +81,32 @@ private:
      */
     std::vector<std::vector<std::string>> buildResultSet(const SelectStmt *selectStmt) const;
 
+    /**
+     * @brief 判断是否为数据库列表查询
+     * @author NAPH130
+     * @param selectStmt 查询语句对象
+     * @return 是否为数据库元数据查询
+     */
+    bool isShowDatabaseQuery(const SelectStmt *selectStmt) const;
+
+    /**
+     * @brief 判断是否为数据表列表查询
+     * @author NAPH130
+     * @param selectStmt 查询语句对象
+     * @return 是否为数据表元数据查询
+     */
+    bool isShowTablesQuery(const SelectStmt *selectStmt) const;
+
+    /**
+     * @brief 校验元数据查询字段是否合法
+     * @author NAPH130
+     * @param selectStmt 查询语句对象
+     * @return 是否通过字段校验
+     */
+    bool validateMetadataFields(const SelectStmt *selectStmt) const;
+
 private:
+    SystemCatalogManager *systemCatalogManager;
     DatabaseManager *databaseManager;
     TableDefManager *tableDefManager;
 };

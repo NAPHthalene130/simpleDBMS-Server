@@ -14,7 +14,10 @@ ExecutorManager::ExecutorManager(Core *core)
       createDbExecutor(new CreateDbExecutor(core, getSystemCatalogManager())),
       createTableExecutor(new CreateTableExecutor(core, getDatabaseManager(), getTableDefManager())),
       insertExecutor(new InsertExecutor(core, getDatabaseManager(), getTableDefManager())),
-      selectExecutor(new SelectExecutor(core, getDatabaseManager(), getTableDefManager()))
+      selectExecutor(new SelectExecutor(core,
+                                        getSystemCatalogManager(),
+                                        getDatabaseManager(),
+                                        getTableDefManager()))
 {
     executorEngine->registerExecutor(createDbExecutor);
     executorEngine->registerExecutor(createTableExecutor);

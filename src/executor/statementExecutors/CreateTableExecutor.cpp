@@ -1,5 +1,11 @@
 #include "CreateTableExecutor.h"
 
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <ctime>
+#include <unordered_set>
+
 namespace {
 ExecutionResult buildFailureResult(const std::string &message)
 {
@@ -7,6 +13,51 @@ ExecutionResult buildFailureResult(const std::string &message)
     executionResult.setStatus(ExecutionStatus::Failure);
     executionResult.setMessage(message);
     return executionResult;
+}
+
+ExecutionResult buildSuccessResult(const std::string &message)
+{
+    ExecutionResult executionResult;
+    executionResult.setStatus(ExecutionStatus::Success);
+    executionResult.setMessage(message);
+    return executionResult;
+}
+
+std::string fixedArrayToString(const std::array<char, 128> &value)
+{
+    const auto endIterator = std::find(value.begin(), value.end(), '\0');
+    return std::string(value.begin(), endIterator);
+}
+
+std::array<char, 256> toFileNameArray(const std::string &value)
+{
+    std::array<char, 256> target{};
+    const std::size_t copySize = std::min(value.size(), target.size() - 1);
+    std::copy_n(value.data(), copySize, target.begin());
+    target[copySize] = '\0';
+    return target;
+}
+
+DateTime buildCurrentDateTime()
+{
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
+    std::tm localTime{};
+    localtime_s(&localTime, &currentTime);
+
+    const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now.time_since_epoch()) % 1000;
+
+    DateTime dateTime;
+    dateTime.setYear(static_cast<std::uint16_t>(localTime.tm_year + 1900));
+    dateTime.setMonth(static_cast<std::uint16_t>(localTime.tm_mon + 1));
+    dateTime.setDayOfWeek(static_cast<std::uint16_t>(localTime.tm_wday));
+    dateTime.setDay(static_cast<std::uint16_t>(localTime.tm_mday));
+    dateTime.setHour(static_cast<std::uint16_t>(localTime.tm_hour));
+    dateTime.setMinute(static_cast<std::uint16_t>(localTime.tm_min));
+    dateTime.setSecond(static_cast<std::uint16_t>(localTime.tm_sec));
+    dateTime.setMilliseconds(static_cast<std::uint16_t>(milliseconds.count()));
+    return dateTime;
 }
 }
 
@@ -36,15 +87,74 @@ ExecutionResult CreateTableExecutor::execute(const SQLStatement *statement, Exec
 ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *createTableStmt,
                                                         ExecutionContext *executionContext)
 {
-    (void)createTableStmt;
-    (void)executionContext;
-    return buildFailureResult("CreateTableExecutor is registered, but execution logic is not implemented yet.");
+    (void)tableDefManager;
+    if (createTableStmt == nullptr || executionContext == nullptr) {
+        return buildFailureResult("Create table input is invalid.");
+    }
+
+    if (databaseManager == nullptr) {
+        return buildFailureResult("Database manager is not initialized.");
+    }
+
+    if (executionContext->getCurrentDbName().empty()) {
+        return buildFailureResult("No database is selected.");
+    }
+
+    const std::string tableName = fixedArrayToString(createTableStmt->getTableName());
+    if (tableName.empty()) {
+        return buildFailureResult("Table name cannot be empty.");
+    }
+
+    if (tableName.size() >= 128) {
+        return buildFailureResult("Table name exceeds the maximum length.");
+    }
+
+    const std::vector<FieldBlock> fieldBlocks = buildFieldBlocks(createTableStmt);
+    if (fieldBlocks.empty()) {
+        return buildFailureResult("Create table requires at least one field.");
+    }
+
+    std::unordered_set<std::string> fieldNameSet;
+    fieldNameSet.reserve(fieldBlocks.size());
+    for (const FieldBlock &fieldBlock : fieldBlocks) {
+        const std::string fieldName = fixedArrayToString(fieldBlock.getName());
+        if (fieldName.empty()) {
+            return buildFailureResult("Field name cannot be empty.");
+        }
+
+        if (!fieldNameSet.insert(fieldName).second) {
+            return buildFailureResult("Duplicate field name exists in create table statement.");
+        }
+    }
+
+    const TableBlock tableBlock = buildTableBlock(createTableStmt);
+    if (!databaseManager->createTable(tableBlock)) {
+        return buildFailureResult("Create table failed in storage layer.");
+    }
+
+    return buildSuccessResult("Create table succeeded.");
 }
 
 TableBlock CreateTableExecutor::buildTableBlock(const CreateTableStmt *createTableStmt) const
 {
-    (void)createTableStmt;
-    return TableBlock();
+    TableBlock tableBlock;
+    if (createTableStmt == nullptr) {
+        return tableBlock;
+    }
+
+    const std::string tableName = fixedArrayToString(createTableStmt->getTableName());
+    const DateTime currentDateTime = buildCurrentDateTime();
+
+    tableBlock.setName(createTableStmt->getTableName());
+    tableBlock.setRecordNum(0);
+    tableBlock.setFieldNum(static_cast<std::int32_t>(buildFieldBlocks(createTableStmt).size()));
+    tableBlock.setTdf(toFileNameArray(tableName + ".tdf"));
+    tableBlock.setTic(toFileNameArray(tableName + ".tic"));
+    tableBlock.setTrd(toFileNameArray(tableName + ".trd"));
+    tableBlock.setTid(toFileNameArray(tableName + ".tid"));
+    tableBlock.setCreateTime(currentDateTime);
+    tableBlock.setModifyTime(currentDateTime);
+    return tableBlock;
 }
 
 std::vector<FieldBlock> CreateTableExecutor::buildFieldBlocks(const CreateTableStmt *createTableStmt) const
@@ -53,5 +163,12 @@ std::vector<FieldBlock> CreateTableExecutor::buildFieldBlocks(const CreateTableS
         return {};
     }
 
-    return createTableStmt->getFields();
+    std::vector<FieldBlock> fieldBlocks = createTableStmt->getFields();
+    const DateTime currentDateTime = buildCurrentDateTime();
+    for (std::size_t index = 0; index < fieldBlocks.size(); ++index) {
+        fieldBlocks[index].setOrder(static_cast<std::int32_t>(index));
+        fieldBlocks[index].setModifyTime(currentDateTime);
+    }
+
+    return fieldBlocks;
 }

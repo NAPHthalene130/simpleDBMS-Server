@@ -2,10 +2,13 @@
 
 #include <cctype>
 
+#include "log/LogWriter.h"
+
 Tokenizer::Tokenizer(Core *core)
     : core(core), currentPosition(0)
 {
     initializeKeywords();
+    LogWriter::debug("tokenizer", "Tokenizer", "Tokenizer", "Tokenizer initialized without SQL text.");
 }
 
 Tokenizer::Tokenizer(Core *core, const std::string &sqlText)
@@ -14,12 +17,20 @@ Tokenizer::Tokenizer(Core *core, const std::string &sqlText)
       currentPosition(0)
 {
     initializeKeywords();
+    LogWriter::debug("tokenizer",
+                     "Tokenizer",
+                     "Tokenizer",
+                     std::string("Tokenizer initialized with SQL size=") + std::to_string(sqlText.size()));
 }
 
 void Tokenizer::reset(const std::string &sqlText)
 {
     this->sqlText = sqlText;
     currentPosition = 0;
+    LogWriter::debug("tokenizer",
+                     "Tokenizer",
+                     "reset",
+                     std::string("Tokenizer reset with SQL size=") + std::to_string(sqlText.size()));
 }
 
 std::size_t Tokenizer::getCurrentPosition() const
@@ -61,6 +72,7 @@ Token Tokenizer::peekToken()
 
 std::vector<Token> Tokenizer::tokenize()
 {
+    LogWriter::debug("tokenizer", "Tokenizer", "tokenize", "Starting tokenization.");
     std::vector<Token> tokens;
     Token token = nextToken();
 
@@ -70,6 +82,10 @@ std::vector<Token> Tokenizer::tokenize()
     }
 
     tokens.push_back(token);
+    LogWriter::info("tokenizer",
+                    "Tokenizer",
+                    "tokenize",
+                    std::string("Tokenization completed with token count=") + std::to_string(tokens.size()));
     return tokens;
 }
 
@@ -276,6 +292,10 @@ Token Tokenizer::buildStringToken()
     }
 
     // 未闭合字符串按 Unknown 处理，避免后续解析器误判。
+    LogWriter::warning("tokenizer",
+                       "Tokenizer",
+                       "buildStringToken",
+                       "Encountered unterminated string literal, token marked as Unknown.");
     return Token(SqlTokenType::Unknown, text);
 }
 
@@ -309,5 +329,9 @@ Token Tokenizer::buildOperatorOrSymbolToken()
     }
 
     advance();
+    LogWriter::warning("tokenizer",
+                       "Tokenizer",
+                       "buildOperatorOrSymbolToken",
+                       std::string("Encountered unknown token character: ") + first);
     return Token(SqlTokenType::Unknown, std::string(1, first));
 }

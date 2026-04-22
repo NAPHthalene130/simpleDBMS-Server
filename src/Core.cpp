@@ -1,5 +1,6 @@
 #include "Core.h"
 
+#include "log/LogWriter.h"
 #include "executor/ExecutorManager.h"
 #include "network/NetworkManager.h"
 #include "core/SqlPipeline.h"
@@ -15,10 +16,12 @@ Core::Core()
       parserManager(new ParserManager(this)),
       sqlPipeline(new SqlPipeline(this))
 {
+    LogWriter::info("core", "Core", "Core", "Core modules initialized.");
 }
 
 Core::~Core()
 {
+    LogWriter::info("core", "Core", "~Core", "Core is shutting down.");
     stop();
     delete sqlPipeline;
     delete parserManager;
@@ -32,20 +35,31 @@ Core::~Core()
     networkManager = nullptr;
     storageManager = nullptr;
     executorManager = nullptr;
+    LogWriter::info("core", "Core", "~Core", "Core modules released.");
 }
 
 void Core::start()
 {
+    LogWriter::info("core", "Core", "start", "Starting core services.");
     if (networkManager != nullptr) {
         networkManager->start();
+        LogWriter::info("core", "Core", "start", "Network manager started.");
+        return;
     }
+
+    LogWriter::warning("core", "Core", "start", "Network manager is null, startup skipped.");
 }
 
 void Core::stop()
 {
+    LogWriter::info("core", "Core", "stop", "Stopping core services.");
     if (networkManager != nullptr) {
         networkManager->stop();
+        LogWriter::info("core", "Core", "stop", "Network manager stopped.");
+        return;
     }
+
+    LogWriter::warning("core", "Core", "stop", "Network manager is null, stop skipped.");
 }
 
 NetworkManager *Core::getNetworkManager()

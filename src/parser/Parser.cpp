@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <unordered_set>
 
+#include "log/LogWriter.h"
 #include "models/parser/ParserException.h"
 
 namespace
@@ -110,14 +111,31 @@ Parser::Parser(Core *core)
  */
 ParseResult Parser::parse(const std::vector<Token> &tokens) const
 {
+    LogWriter::debug("parser",
+                     "Parser",
+                     "parse",
+                     std::string("Starting parse with token count=") + std::to_string(tokens.size()));
     try {
         TokenStream tokenStream(core, tokens);
         const std::shared_ptr<SQLStatement> statement = parseStatement(tokenStream);
         expectStatementEnd(tokenStream);
+        LogWriter::info("parser",
+                        "Parser",
+                        "parse",
+                        std::string("Parse succeeded, statement type=")
+                            + std::to_string(static_cast<int>(statement->getStmtType())));
         return ParseResult::makeSuccess(statement);
     } catch (const ParserException &parserException) {
+        LogWriter::warning("parser",
+                           "Parser",
+                           "parse",
+                           std::string("Parse failed with parser exception: ") + parserException.what());
         return ParseResult::makeFailure(parserException.what(), parserException.getTokenIndex());
     } catch (const std::exception &exception) {
+        LogWriter::error("parser",
+                         "Parser",
+                         "parse",
+                         std::string("Parse failed with std::exception: ") + exception.what());
         return ParseResult::makeFailure(exception.what(), 0);
     }
 }
@@ -131,6 +149,7 @@ ParseResult Parser::parse(const std::vector<Token> &tokens) const
 std::shared_ptr<SQLStatement> Parser::parseStatement(TokenStream &tokenStream) const
 {
     if (tokenStream.isAtEnd()) {
+        LogWriter::warning("parser", "Parser", "parseStatement", "Token stream is empty.");
         throw ParserException("Empty token stream cannot be parsed.", tokenStream.position());
     }
 
@@ -166,6 +185,7 @@ std::shared_ptr<SQLStatement> Parser::parseStatement(TokenStream &tokenStream) c
         return parseUpdateStatement(tokenStream);
     }
 
+    LogWriter::warning("parser", "Parser", "parseStatement", "Encountered unsupported statement type.");
     throw ParserException("Unsupported statement type.", tokenStream.position());
 }
 

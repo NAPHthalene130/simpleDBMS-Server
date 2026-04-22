@@ -4,8 +4,13 @@
 #include "ExecutorEngine.h"
 #include "statementExecutors/CreateDbExecutor.h"
 #include "statementExecutors/CreateTableExecutor.h"
+#include "statementExecutors/DeleteExecutor.h"
+#include "statementExecutors/DropExecutor.h"
 #include "statementExecutors/InsertExecutor.h"
 #include "statementExecutors/SelectExecutor.h"
+#include "statementExecutors/ShowExecutor.h"
+#include "statementExecutors/UpdateExecutor.h"
+#include "statementExecutors/UseExecutor.h"
 #include "storage/manager/StorageManager.h"
 
 ExecutorManager::ExecutorManager(Core *core)
@@ -14,22 +19,42 @@ ExecutorManager::ExecutorManager(Core *core)
       createDbExecutor(new CreateDbExecutor(core, getSystemCatalogManager())),
       createTableExecutor(new CreateTableExecutor(core, getDatabaseManager(), getTableDefManager())),
       insertExecutor(new InsertExecutor(core, getDatabaseManager(), getTableDefManager())),
-      selectExecutor(new SelectExecutor(core, getDatabaseManager(), getTableDefManager()))
+      selectExecutor(new SelectExecutor(core, getDatabaseManager(), getTableDefManager())),
+      useExecutor(new UseExecutor(core)),
+      showExecutor(new ShowExecutor(core)),
+      dropExecutor(new DropExecutor(core, getSystemCatalogManager(), getDatabaseManager())),
+      deleteExecutor(new DeleteExecutor(core, getDatabaseManager())),
+      updateExecutor(new UpdateExecutor(core, getDatabaseManager()))
 {
     executorEngine->registerExecutor(createDbExecutor);
     executorEngine->registerExecutor(createTableExecutor);
     executorEngine->registerExecutor(insertExecutor);
     executorEngine->registerExecutor(selectExecutor);
+    executorEngine->registerExecutor(useExecutor);
+    executorEngine->registerExecutor(showExecutor);
+    executorEngine->registerExecutor(dropExecutor);
+    executorEngine->registerExecutor(deleteExecutor);
+    executorEngine->registerExecutor(updateExecutor);
 }
 
 ExecutorManager::~ExecutorManager()
 {
+    delete updateExecutor;
+    delete deleteExecutor;
+    delete dropExecutor;
+    delete showExecutor;
+    delete useExecutor;
     delete selectExecutor;
     delete insertExecutor;
     delete createTableExecutor;
     delete createDbExecutor;
     delete executorEngine;
 
+    updateExecutor = nullptr;
+    deleteExecutor = nullptr;
+    dropExecutor = nullptr;
+    showExecutor = nullptr;
+    useExecutor = nullptr;
     selectExecutor = nullptr;
     insertExecutor = nullptr;
     createTableExecutor = nullptr;
@@ -60,6 +85,31 @@ InsertExecutor *ExecutorManager::getInsertExecutor() const
 SelectExecutor *ExecutorManager::getSelectExecutor() const
 {
     return selectExecutor;
+}
+
+UseExecutor *ExecutorManager::getUseExecutor() const
+{
+    return useExecutor;
+}
+
+ShowExecutor *ExecutorManager::getShowExecutor() const
+{
+    return showExecutor;
+}
+
+DropExecutor *ExecutorManager::getDropExecutor() const
+{
+    return dropExecutor;
+}
+
+DeleteExecutor *ExecutorManager::getDeleteExecutor() const
+{
+    return deleteExecutor;
+}
+
+UpdateExecutor *ExecutorManager::getUpdateExecutor() const
+{
+    return updateExecutor;
 }
 
 SystemCatalogManager *ExecutorManager::getSystemCatalogManager() const

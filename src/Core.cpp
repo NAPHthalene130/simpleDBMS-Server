@@ -2,6 +2,7 @@
 
 #include "executor/ExecutorManager.h"
 #include "network/NetworkManager.h"
+#include "core/SqlPipeline.h"
 #include "storage/manager/StorageManager.h"
 #include "tokenizer/Tokenizer.h"
 #include "parser/ParserManager.h"
@@ -11,18 +12,21 @@ Core::Core()
       storageManager(new StorageManager(this)),
       executorManager(new ExecutorManager(this)),
       tokenizer(new Tokenizer(this)),
-      parserManager(new ParserManager(this))
+      parserManager(new ParserManager(this)),
+      sqlPipeline(new SqlPipeline(this))
 {
 }
 
 Core::~Core()
 {
     stop();
+    delete sqlPipeline;
     delete parserManager;
     delete tokenizer;
     delete networkManager;
     delete storageManager;
     delete executorManager;
+    sqlPipeline = nullptr;
     parserManager = nullptr;
     tokenizer = nullptr;
     networkManager = nullptr;
@@ -67,4 +71,14 @@ Tokenizer *Core::getTokenizer()
 ParserManager *Core::getParserManager()
 {
     return parserManager;
+}
+
+/**
+ * @brief 获取 SQL 编排服务
+ * @author YuzhSong
+ * @return SQL 编排服务指针
+ */
+SqlPipeline *Core::getSqlPipeline()
+{
+    return sqlPipeline;
 }

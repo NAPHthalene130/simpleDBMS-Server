@@ -25,8 +25,7 @@ ExecutorManager::ExecutorManager(Core *core)
                                         getSystemCatalogManager(),
                                         getDatabaseManager(),
                                         getTableDefManager())),
-      useDbExecutor(new UseDbExecutor(core, getSystemCatalogManager()))
-      selectExecutor(new SelectExecutor(core, getDatabaseManager(), getTableDefManager())),
+      useDbExecutor(new UseDbExecutor(core, getSystemCatalogManager())),
       useExecutor(new UseExecutor(core)),
       showExecutor(new ShowExecutor(core)),
       dropExecutor(new DropExecutor(core, getSystemCatalogManager(), getDatabaseManager())),
@@ -103,6 +102,8 @@ SelectExecutor *ExecutorManager::getSelectExecutor() const
 UseDbExecutor *ExecutorManager::getUseDbExecutor() const
 {
     return useDbExecutor;
+}
+
 UseExecutor *ExecutorManager::getUseExecutor() const
 {
     return useExecutor;

@@ -15,11 +15,9 @@
 #include "models/parser/ParseResult.h"
 #include "models/parser/SQLStatement.h"
 #include "models/parser/SelectStmt.h"
-#include "models/parser/UseDbStmt.h"
-#include "models/parser/ParseResult.h"
 #include "models/parser/ShowStmt.h"
 #include "models/parser/UpdateStmt.h"
-#include "models/parser/UseStmt.h"
+#include "models/parser/UseDbStmt.h"
 #include "models/tokenizer/Token.h"
 
 class Core;
@@ -106,11 +104,6 @@ private:
      * @return UseDbStmt 节点
      */
     std::shared_ptr<UseDbStmt> parseUseStatement(TokenStream &tokenStream) const;
-     * @author YuzhSong
-     * @param tokenStream token 游标流
-     * @return UseStmt 节点
-     */
-    std::shared_ptr<UseStmt> parseUseStatement(TokenStream &tokenStream) const;
 
     /**
      * @brief 解析 SHOW 语句

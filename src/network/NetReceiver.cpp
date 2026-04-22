@@ -44,8 +44,6 @@ ExecutionResult buildParseFailureResult(const std::string &message, const SqlDat
     return executionResult;
 }
 }
-#include "core/SqlPipeline.h"
-#include "models/network/NetData.h"
 #include "models/network/NetworkExecutionContext.h"
 
 NetReceiver::NetReceiver(Core *core, unsigned short listenPort)
@@ -219,28 +217,12 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                     NetData(responseType, responseContent).toJson());
             }
         }
-        
     } catch (const std::exception &exception) {
         LogWriter::error("network",
                          "NetReceiver",
                          "processMsg",
                          std::string("Message processing failed: ") + exception.what());
-    if (core == nullptr || core->getSqlPipeline() == nullptr
-        || core->getNetworkManager() == nullptr || core->getNetworkManager()->getNetSender() == nullptr) {
-        std::cout << "NetReceiver::processMsg skipped because pipeline or sender is unavailable." << std::endl;
-        return;
     }
-
-    NetworkExecutionContext *networkExecutionContext = nullptr;
-    if (core->getNetworkManager()->getClientSessionManager() != nullptr && clientSocket != nullptr) {
-        networkExecutionContext =
-            core->getNetworkManager()->getClientSessionManager()->findSessionContext(clientSocket.get());
-    }
-
-    const NetData responseData = core->getSqlPipeline()->handleRequest(msg, networkExecutionContext);
-    core->getNetworkManager()->getNetSender()->send(clientSocket, responseData.toJson());
-
-    std::cout << "Server processed request and sent response: type=" << responseData.getType() << std::endl;
 }
 
 std::string NetReceiver::getLastReceivedMessage() const

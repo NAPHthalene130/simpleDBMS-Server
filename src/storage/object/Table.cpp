@@ -1,5 +1,6 @@
 #include "Table.h"
 
+#include <cstdint>
 #include <fstream>
 
 namespace storage {
@@ -51,7 +52,7 @@ Table Table::load(const std::filesystem::path& dbPath,
         split(columnsLine.substr(8), '|')
     });
 
-    table.loadAllRowsIntoIndex();
+    table.loadIndexFromTid();
     return table;
 }
 
@@ -66,7 +67,8 @@ void Table::insert(const std::vector<std::string>& values) {
 
     Row row{values};
     index_.insert(primaryKey, row);
-    appendData(values);
+    const std::uint64_t offset = appendDataRow(values);
+    appendIndexEntry(primaryKey, offset);
 }
 
 bool Table::containsPrimaryKey(const std::string& key) const {
@@ -97,15 +99,26 @@ void Table::flushMeta() const {
     ofs << "columns=" << join(schema_.columns, "|") << '\n';
 }
 
-void Table::appendData(const std::vector<std::string>& values) const {
+std::uint64_t Table::appendDataRow(const std::vector<std::string>& values) const {
     std::ofstream ofs(dataFilePath(), std::ios::app);
     ensure(ofs.good(), "failed to open table data file: " + dataFilePath().string());
-    ofs << join(values, "|") << '\n';
+    const std::uint64_t offset = static_cast<std::uint64_t>(ofs.tellp());
+    ofs << "ROW|" << join(values, "|") << '\n';
+    return offset;
 }
 
-void Table::loadAllRowsIntoIndex() {
-    std::ifstream ifs(dataFilePath());
+void Table::appendIndexEntry(const std::string& key, std::uint64_t offset) const {
+    std::ofstream ofs(indexFilePath(), std::ios::app);
+    ensure(ofs.good(), "failed to open table index file: " + indexFilePath().string());
+    ofs << key << "|" << offset << '\n';
+}
+
+void Table::loadIndexFromTid() {
+    index_.clear();
+
+    std::ifstream ifs(indexFilePath());
     if (!ifs.good()) {
+        rebuildIndexFromData();
         return;
     }
 
@@ -114,11 +127,44 @@ void Table::loadAllRowsIntoIndex() {
         if (line.empty()) {
             continue;
         }
-        Row row = deserializeRow(line);
+        const std::size_t sepPos = line.find('|');
+        if (sepPos == std::string::npos || sepPos == 0) {
+            continue;
+        }
+        const std::string key = line.substr(0, sepPos);
+        index_.insert(key, Row{{key}});
+    }
+}
+
+void Table::rebuildIndexFromData() {
+    index_.clear();
+
+    std::ifstream ifs(dataFilePath());
+    if (!ifs.good()) {
+        return;
+    }
+    std::ofstream tidOfs(indexFilePath(), std::ios::trunc);
+    ensure(tidOfs.good(), "failed to rebuild table index file: " + indexFilePath().string());
+
+    std::string line;
+    std::uint64_t offset = 0;
+    while (std::getline(ifs, line)) {
+        const std::uint64_t lineStartOffset = offset;
+        offset += static_cast<std::uint64_t>(line.size()) + 1;
+
+        if (line.empty()) {
+            continue;
+        }
+        if (line.rfind("ROW|", 0) != 0) {
+            continue;
+        }
+        Row row = deserializeRow(line.substr(4));
         if (row.values.empty()) {
             continue;
         }
-        index_.insert(row.values.front(), row);
+        const std::string key = row.values.front();
+        index_.insert(key, Row{{key}});
+        tidOfs << key << "|" << lineStartOffset << '\n';
     }
 }
 

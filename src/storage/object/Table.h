@@ -4,6 +4,7 @@
 #include "StorageCommon.h"
 
 #include <filesystem>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -115,17 +116,32 @@ private:
     void flushMeta() const;
 
     /**
-     * @brief 追加一行数据到数据文件
+     * @brief 追加一行数据记录到 .trd 文件
      * @author Startale
      * @param values 行数据
+     * @return 写入前的字节偏移
      */
-    void appendData(const std::vector<std::string>& values) const;
+    std::uint64_t appendDataRow(const std::vector<std::string>& values) const;
+
+    /**
+     * @brief 追加主键索引记录到 .tid 文件
+     * @author Startale
+     * @param key 主键值
+     * @param offset 对应数据在 .trd 中的偏移
+     */
+    void appendIndexEntry(const std::string& key, std::uint64_t offset) const;
+
+    /**
+     * @brief 从 .tid 恢复内存索引
+     * @author Startale
+     */
+    void loadIndexFromTid();
 
     /**
      * @brief 将已有记录加载到内存索引
      * @author Startale
      */
-    void loadAllRowsIntoIndex();
+    void rebuildIndexFromData();
 
     /**
      * @brief 生成主键值

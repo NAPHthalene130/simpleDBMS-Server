@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <sstream>
+#include <string>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -17,6 +19,7 @@ namespace storage {
 // MinDegree = t
 // - 每个节点最多 2t - 1 个键
 // - 每个非根节点最少 t - 1 个键
+
 /**
  * @class BTree
  * @brief 通用 B 树模板容器
@@ -174,6 +177,20 @@ public:
         inorderInternal(root_.get(), visitor);
     }
 
+    /**
+     * @brief 导出 B 树节点快照文本
+     * @author Startale
+     * @tparam ValueFormatter 值格式化器
+     * @param formatter 将 Value 转换为字符串的回调
+     * @return 节点快照行列表
+     */
+    template <typename ValueFormatter>
+    std::vector<std::string> dumpNodeLines(ValueFormatter&& formatter) const {
+        std::vector<std::string> lines;
+        dumpNodeLinesInternal(root_.get(), 0, lines, formatter);
+        return lines;
+    }
+
 private:
     std::size_t t_;
     Compare comp_;
@@ -296,6 +313,31 @@ private:
             visitor(node->entries[i].key, node->entries[i].value);
         }
         inorderInternal(node->children.back().get(), visitor);
+    }
+
+    template <typename ValueFormatter>
+    void dumpNodeLinesInternal(const Node* node,
+                               std::size_t depth,
+                               std::vector<std::string>& lines,
+                               ValueFormatter& formatter) const {
+        std::ostringstream oss;
+        oss << "depth=" << depth
+            << ";leaf=" << (node->leaf ? 1 : 0)
+            << ";entries=";
+
+        for (std::size_t i = 0; i < node->entries.size(); ++i) {
+            if (i != 0) {
+                oss << ",";
+            }
+            oss << node->entries[i].key << "->" << formatter(node->entries[i].value);
+        }
+        lines.push_back(oss.str());
+
+        if (!node->leaf) {
+            for (const auto& child : node->children) {
+                dumpNodeLinesInternal(child.get(), depth + 1, lines, formatter);
+            }
+        }
     }
 };
 

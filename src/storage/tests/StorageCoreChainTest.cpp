@@ -68,6 +68,7 @@ int main()
     const std::filesystem::path dbFile = dbRoot / (dbName + ".db");
     const std::filesystem::path tdfFile = dbDir / (tableName + ".tdf");
     const std::filesystem::path trdFile = dbDir / (tableName + ".trd");
+    const std::filesystem::path tidFile = dbDir / (tableName + ".tid");
 
     if (std::filesystem::exists(dbDir)) {
         std::filesystem::remove_all(dbDir);
@@ -89,23 +90,37 @@ int main()
 
     ensure(databaseManager->createTable(dbName, tableName, {"A", "B", "C"}), "createTable failed");
     ensure(databaseManager->insertRow(dbName, tableName, {"v1", "v2", "v3"}), "insertRow failed");
-
+    ensure(databaseManager->insertRow(dbName, tableName, {"v5", "v2", "v3"}), "insertRow failed");
     ensure(std::filesystem::exists(dbFile), ".db file not found");
     ensure(std::filesystem::exists(tdfFile), ".tdf file not found");
     ensure(std::filesystem::exists(trdFile), ".trd file not found");
+    ensure(std::filesystem::exists(tidFile), ".tid file not found");
 
     std::ifstream tdf(tdfFile);
     std::ifstream trd(trdFile);
+    std::ifstream tid(tidFile);
     std::string tdfLine1;
     std::string tdfLine2;
-    std::string trdLine1;
+    bool foundRow = false;
+    bool foundTidKey = false;
+    std::string line;
     std::getline(tdf, tdfLine1);
     std::getline(tdf, tdfLine2);
-    std::getline(trd, trdLine1);
+    while (std::getline(trd, line)) {
+        if (line == "ROW|v1|v2|v3") {
+            foundRow = true;
+        }
+    }
+    while (std::getline(tid, line)) {
+        if (line.rfind("v1|", 0) == 0) {
+            foundTidKey = true;
+        }
+    }
 
     ensure(tdfLine1 == "table=" + tableName, "tdf table line mismatch");
     ensure(tdfLine2 == "columns=A|B|C", "tdf columns line mismatch");
-    ensure(trdLine1 == "v1|v2|v3", "trd row line mismatch");
+    ensure(foundRow, "trd row line mismatch");
+    ensure(foundTidKey, "tid key index missing");
 
     std::cout << "StorageCoreChainTest passed." << std::endl;
     return 0;

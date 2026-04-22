@@ -4,11 +4,16 @@ class Core;
 class CreateDbExecutor;
 class CreateTableExecutor;
 class DatabaseManager;
+class DeleteExecutor;
+class DropExecutor;
 class ExecutorEngine;
 class InsertExecutor;
 class SelectExecutor;
+class ShowExecutor;
 class SystemCatalogManager;
 class TableDefManager;
+class UpdateExecutor;
+class UseExecutor;
 
 /**
  * @class ExecutorManager
@@ -38,6 +43,41 @@ public:
     InsertExecutor *getInsertExecutor() const;
     SelectExecutor *getSelectExecutor() const;
 
+    /**
+     * @brief 获取 USE 语句执行器
+     * @author YuzhSong
+     * @return USE 语句执行器指针
+     */
+    UseExecutor *getUseExecutor() const;
+
+    /**
+     * @brief 获取 SHOW 语句执行器
+     * @author YuzhSong
+     * @return SHOW 语句执行器指针
+     */
+    ShowExecutor *getShowExecutor() const;
+
+    /**
+     * @brief 获取 DROP 语句执行器
+     * @author YuzhSong
+     * @return DROP 语句执行器指针
+     */
+    DropExecutor *getDropExecutor() const;
+
+    /**
+     * @brief 获取 DELETE 语句执行器
+     * @author YuzhSong
+     * @return DELETE 语句执行器指针
+     */
+    DeleteExecutor *getDeleteExecutor() const;
+
+    /**
+     * @brief 获取 UPDATE 语句执行器
+     * @author YuzhSong
+     * @return UPDATE 语句执行器指针
+     */
+    UpdateExecutor *getUpdateExecutor() const;
+
     SystemCatalogManager *getSystemCatalogManager() const;
     DatabaseManager *getDatabaseManager() const;
     TableDefManager *getTableDefManager() const;
@@ -50,4 +90,9 @@ private:
     CreateTableExecutor *createTableExecutor;
     InsertExecutor *insertExecutor;
     SelectExecutor *selectExecutor;
+    UseExecutor *useExecutor;
+    ShowExecutor *showExecutor;
+    DropExecutor *dropExecutor;
+    DeleteExecutor *deleteExecutor;
+    UpdateExecutor *updateExecutor;
 };

@@ -9,10 +9,15 @@
 #include "models/parser/ConditionNode.h"
 #include "models/parser/CreateDbStmt.h"
 #include "models/parser/CreateTableStmt.h"
+#include "models/parser/DeleteStmt.h"
+#include "models/parser/DropStmt.h"
 #include "models/parser/InsertStmt.h"
 #include "models/parser/ParseResult.h"
 #include "models/parser/SQLStatement.h"
 #include "models/parser/SelectStmt.h"
+#include "models/parser/ShowStmt.h"
+#include "models/parser/UpdateStmt.h"
+#include "models/parser/UseStmt.h"
 #include "models/tokenizer/Token.h"
 
 class Core;
@@ -91,6 +96,57 @@ private:
      * @return SelectStmt 节点
      */
     std::shared_ptr<SelectStmt> parseSelectStatement(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 USE 语句
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return UseStmt 节点
+     */
+    std::shared_ptr<UseStmt> parseUseStatement(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 SHOW 语句
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return ShowStmt 节点
+     */
+    std::shared_ptr<ShowStmt> parseShowStatement(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 DROP 语句
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return DropStmt 节点
+     */
+    std::shared_ptr<DropStmt> parseDropStatement(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 DELETE 语句
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return DeleteStmt 节点
+     */
+    std::shared_ptr<DeleteStmt> parseDeleteStatement(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 UPDATE 语句
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @return UpdateStmt 节点
+     */
+    std::shared_ptr<UpdateStmt> parseUpdateStatement(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 UPDATE SET 赋值列表
+     * @author YuzhSong
+     * @param tokenStream token 游标流
+     * @param columnNames 输出字段名列表
+     * @param values 输出字段值列表
+     */
+    void parseUpdateAssignmentList(TokenStream &tokenStream,
+                                   std::vector<std::string> &columnNames,
+                                   std::vector<std::string> &values) const;
 
     /**
      * @brief 解析 WHERE 条件中的 OR 表达式层级

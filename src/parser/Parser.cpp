@@ -146,6 +146,26 @@ std::shared_ptr<SQLStatement> Parser::parseStatement(TokenStream &tokenStream) c
         return parseSelectStatement(tokenStream);
     }
 
+    if (tokenStream.match(SqlTokenType::Keyword, "USE")) {
+        return parseUseStatement(tokenStream);
+    }
+
+    if (tokenStream.match(SqlTokenType::Keyword, "SHOW")) {
+        return parseShowStatement(tokenStream);
+    }
+
+    if (tokenStream.match(SqlTokenType::Keyword, "DROP")) {
+        return parseDropStatement(tokenStream);
+    }
+
+    if (tokenStream.match(SqlTokenType::Keyword, "DELETE")) {
+        return parseDeleteStatement(tokenStream);
+    }
+
+    if (tokenStream.match(SqlTokenType::Keyword, "UPDATE")) {
+        return parseUpdateStatement(tokenStream);
+    }
+
     throw ParserException("Unsupported statement type.", tokenStream.position());
 }
 
@@ -303,6 +323,195 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement(TokenStream &tokenStrea
     statement->setTargetFields(targetFields);
     statement->setWhereCondition(whereCondition);
     return statement;
+}
+
+/**
+ * @brief 解析 USE 语句
+ * @author YuzhSong
+ * @param tokenStream token 游标流
+ * @return UseStmt 节点
+ */
+std::shared_ptr<UseStmt> Parser::parseUseStatement(TokenStream &tokenStream) const
+{
+    const Token &databaseNameToken = tokenStream.expect(
+        SqlTokenType::Identifier,
+        "USE statement requires a database identifier.");
+
+    const std::shared_ptr<UseStmt> statement = std::make_shared<UseStmt>();
+    statement->setDbName(databaseNameToken.getValue());
+    return statement;
+}
+
+/**
+ * @brief 解析 SHOW 语句
+ * @author YuzhSong
+ * @param tokenStream token 游标流
+ * @return ShowStmt 节点
+ */
+std::shared_ptr<ShowStmt> Parser::parseShowStatement(TokenStream &tokenStream) const
+{
+    const std::shared_ptr<ShowStmt> statement = std::make_shared<ShowStmt>();
+    if (tokenStream.match(SqlTokenType::Keyword, "DATABASES")) {
+        statement->setTargetType(ShowTargetType::Databases);
+        return statement;
+    }
+
+    if (tokenStream.match(SqlTokenType::Keyword, "TABLES")) {
+        statement->setTargetType(ShowTargetType::Tables);
+        return statement;
+    }
+
+    if (tokenStream.match(SqlTokenType::Keyword, "DATABASE")) {
+        const Token &databaseNameToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "SHOW DATABASE statement requires a database identifier.");
+        statement->setTargetType(ShowTargetType::Database);
+        statement->setTargetName(databaseNameToken.getValue());
+        return statement;
+    }
+
+    if (tokenStream.match(SqlTokenType::Keyword, "TABLE")) {
+        const Token &tableNameToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "SHOW TABLE statement requires a table identifier.");
+        statement->setTargetType(ShowTargetType::Table);
+        statement->setTargetName(tableNameToken.getValue());
+        return statement;
+    }
+
+    throw ParserException(
+        "SHOW statement requires DATABASES, TABLES, DATABASE <name>, or TABLE <name>.",
+        tokenStream.position());
+}
+
+/**
+ * @brief 解析 DROP 语句
+ * @author YuzhSong
+ * @param tokenStream token 游标流
+ * @return DropStmt 节点
+ */
+std::shared_ptr<DropStmt> Parser::parseDropStatement(TokenStream &tokenStream) const
+{
+    const std::shared_ptr<DropStmt> statement = std::make_shared<DropStmt>();
+    if (tokenStream.match(SqlTokenType::Keyword, "DATABASE")) {
+        const Token &databaseNameToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "DROP DATABASE statement requires a database identifier.");
+        statement->setTargetType(DropTargetType::Database);
+        statement->setTargetName(databaseNameToken.getValue());
+        return statement;
+    }
+
+    if (tokenStream.match(SqlTokenType::Keyword, "TABLE")) {
+        const Token &tableNameToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "DROP TABLE statement requires a table identifier.");
+        statement->setTargetType(DropTargetType::Table);
+        statement->setTargetName(tableNameToken.getValue());
+        return statement;
+    }
+
+    throw ParserException("DROP statement requires DATABASE or TABLE keyword.", tokenStream.position());
+}
+
+/**
+ * @brief 解析 DELETE 语句
+ * @author YuzhSong
+ * @param tokenStream token 游标流
+ * @return DeleteStmt 节点
+ */
+std::shared_ptr<DeleteStmt> Parser::parseDeleteStatement(TokenStream &tokenStream) const
+{
+    tokenStream.expect(SqlTokenType::Keyword, "FROM", "DELETE statement requires FROM keyword.");
+    const Token &tableNameToken = tokenStream.expect(
+        SqlTokenType::Identifier,
+        "DELETE statement requires a table identifier after FROM.");
+
+    std::shared_ptr<ConditionNode> whereCondition = nullptr;
+    if (tokenStream.match(SqlTokenType::Keyword, "WHERE")) {
+        const Token &currentToken = tokenStream.peek();
+        if (currentToken.getType() == SqlTokenType::EndOfFile ||
+            (currentToken.getType() == SqlTokenType::Symbol && currentToken.getValue() == ";")) {
+            throw ParserException("WHERE clause requires a condition expression.", tokenStream.position());
+        }
+
+        whereCondition = parseConditionOr(tokenStream);
+    }
+
+    const std::shared_ptr<DeleteStmt> statement = std::make_shared<DeleteStmt>();
+    statement->setTableName(tableNameToken.getValue());
+    statement->setWhereCondition(whereCondition);
+    return statement;
+}
+
+/**
+ * @brief 解析 UPDATE 语句
+ * @author YuzhSong
+ * @param tokenStream token 游标流
+ * @return UpdateStmt 节点
+ */
+std::shared_ptr<UpdateStmt> Parser::parseUpdateStatement(TokenStream &tokenStream) const
+{
+    const Token &tableNameToken = tokenStream.expect(
+        SqlTokenType::Identifier,
+        "UPDATE statement requires a table identifier.");
+    tokenStream.expect(SqlTokenType::Keyword, "SET", "UPDATE statement requires SET keyword.");
+
+    std::vector<std::string> columnNames;
+    std::vector<std::string> values;
+    parseUpdateAssignmentList(tokenStream, columnNames, values);
+
+    std::shared_ptr<ConditionNode> whereCondition = nullptr;
+    if (tokenStream.match(SqlTokenType::Keyword, "WHERE")) {
+        const Token &currentToken = tokenStream.peek();
+        if (currentToken.getType() == SqlTokenType::EndOfFile ||
+            (currentToken.getType() == SqlTokenType::Symbol && currentToken.getValue() == ";")) {
+            throw ParserException("WHERE clause requires a condition expression.", tokenStream.position());
+        }
+
+        whereCondition = parseConditionOr(tokenStream);
+    }
+
+    const std::shared_ptr<UpdateStmt> statement = std::make_shared<UpdateStmt>();
+    statement->setTableName(tableNameToken.getValue());
+    statement->setColumnNames(columnNames);
+    statement->setValues(values);
+    statement->setWhereCondition(whereCondition);
+    return statement;
+}
+
+/**
+ * @brief 解析 UPDATE SET 赋值列表
+ * @author YuzhSong
+ * @param tokenStream token 游标流
+ * @param columnNames 输出字段名列表
+ * @param values 输出字段值列表
+ */
+void Parser::parseUpdateAssignmentList(TokenStream &tokenStream,
+                                       std::vector<std::string> &columnNames,
+                                       std::vector<std::string> &values) const
+{
+    do {
+        const Token &columnNameToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "UPDATE SET clause requires a column identifier.");
+        tokenStream.expect(
+            SqlTokenType::Operator,
+            "=",
+            "UPDATE SET clause requires '=' between column and value.");
+
+        const Token &valueToken = tokenStream.peek();
+        if (valueToken.getType() != SqlTokenType::Number &&
+            valueToken.getType() != SqlTokenType::String &&
+            valueToken.getType() != SqlTokenType::Identifier &&
+            valueToken.getType() != SqlTokenType::Keyword) {
+            throw ParserException("UPDATE SET clause contains invalid value token.", tokenStream.position());
+        }
+        tokenStream.advance();
+
+        columnNames.push_back(columnNameToken.getValue());
+        values.push_back(valueToken.getValue());
+    } while (tokenStream.consumeOptional(SqlTokenType::Symbol, ","));
 }
 
 /**

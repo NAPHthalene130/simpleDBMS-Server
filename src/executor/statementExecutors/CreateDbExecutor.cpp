@@ -6,19 +6,21 @@
 #include <ctime>
 
 namespace {
-ExecutionResult buildFailureResult(const std::string &message)
+ExecutionResult buildFailureResult(const std::string &message, const std::string &dbName = "")
 {
     ExecutionResult executionResult;
     executionResult.setStatus(ExecutionStatus::Failure);
     executionResult.setMessage(message);
+    executionResult.setDbName(dbName);
     return executionResult;
 }
 
-ExecutionResult buildSuccessResult(const std::string &message)
+ExecutionResult buildSuccessResult(const std::string &message, const std::string &dbName = "")
 {
     ExecutionResult executionResult;
     executionResult.setStatus(ExecutionStatus::Success);
     executionResult.setMessage(message);
+    executionResult.setDbName(dbName);
     return executionResult;
 }
 
@@ -100,23 +102,23 @@ ExecutionResult CreateDbExecutor::executeCreateDb(const CreateDbStmt *createDbSt
 
     const std::string &dbName = createDbStmt->getDbName();
     if (dbName.empty()) {
-        return buildFailureResult("Database name cannot be empty.");
+        return buildFailureResult("Database name cannot be empty.", dbName);
     }
 
     if (dbName.size() >= 128) {
-        return buildFailureResult("Database name exceeds the maximum length.");
+        return buildFailureResult("Database name exceeds the maximum length.", dbName);
     }
 
     if (systemCatalogManager->checkDbExists(dbName)) {
-        return buildFailureResult("Database already exists.");
+        return buildFailureResult("Database already exists.", dbName);
     }
 
     const DatabaseBlock databaseBlock = buildDatabaseBlock(createDbStmt);
     if (!systemCatalogManager->createDatabase(databaseBlock)) {
-        return buildFailureResult("Create database failed in storage layer.");
+        return buildFailureResult("Create database failed in storage layer.", dbName);
     }
 
-    return buildSuccessResult("Create database succeeded.");
+    return buildSuccessResult("Create database succeeded.", dbName);
 }
 
 DatabaseBlock CreateDbExecutor::buildDatabaseBlock(const CreateDbStmt *createDbStmt) const

@@ -3,6 +3,19 @@
 #include <exception>
 #include <string>
 
+namespace {
+ExecutionResult buildFailureResult(const std::string &message, const ExecutionContext *executionContext)
+{
+    ExecutionResult executionResult;
+    executionResult.setStatus(ExecutionStatus::Failure);
+    executionResult.setMessage(message);
+    if (executionContext != nullptr) {
+        executionResult.setDbName(executionContext->getCurrentDbName());
+    }
+    return executionResult;
+}
+}
+
 ExecutorEngine::ExecutorEngine(Core *core)
     : core(core)
 {
@@ -30,32 +43,20 @@ bool ExecutorEngine::hasExecutor(ExecutionStatementType statementType) const
 ExecutionResult ExecutorEngine::execute(const SQLStatement *statement, ExecutionContext *executionContext)
 {
     if (statement == nullptr || executionContext == nullptr) {
-        ExecutionResult executionResult;
-        executionResult.setStatus(ExecutionStatus::Failure);
-        executionResult.setMessage("Invalid execute input pointer.");
-        return executionResult;
+        return buildFailureResult("Invalid execute input pointer.", executionContext);
     }
 
     StatementExecutor *statementExecutor = findExecutor(statement->getStmtType());
     if (statementExecutor == nullptr) {
-        ExecutionResult executionResult;
-        executionResult.setStatus(ExecutionStatus::Failure);
-        executionResult.setMessage("Unsupported SQL statement type.");
-        return executionResult;
+        return buildFailureResult("Unsupported SQL statement type.", executionContext);
     }
 
     try {
         return statementExecutor->execute(statement, executionContext);
     } catch (const std::exception &exception) {
-        ExecutionResult executionResult;
-        executionResult.setStatus(ExecutionStatus::Failure);
-        executionResult.setMessage(std::string("Executor exception: ") + exception.what());
-        return executionResult;
+        return buildFailureResult(std::string("Executor exception: ") + exception.what(), executionContext);
     } catch (...) {
-        ExecutionResult executionResult;
-        executionResult.setStatus(ExecutionStatus::Failure);
-        executionResult.setMessage("Unknown executor exception.");
-        return executionResult;
+        return buildFailureResult("Unknown executor exception.", executionContext);
     }
 }
 

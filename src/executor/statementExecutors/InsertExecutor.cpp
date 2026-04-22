@@ -1,11 +1,15 @@
 #include "InsertExecutor.h"
 
 namespace {
-ExecutionResult buildFailureResult(const std::string &message)
+ExecutionResult buildFailureResult(const std::string &message,
+                                   const std::string &dbName = "",
+                                   const std::string &tableName = "")
 {
     ExecutionResult executionResult;
     executionResult.setStatus(ExecutionStatus::Failure);
     executionResult.setMessage(message);
+    executionResult.setDbName(dbName);
+    executionResult.setTableName(tableName);
     return executionResult;
 }
 }
@@ -35,12 +39,16 @@ ExecutionResult InsertExecutor::execute(const SQLStatement *statement, Execution
 
 ExecutionResult InsertExecutor::executeInsert(const InsertStmt *insertStmt, ExecutionContext *executionContext)
 {
-    (void)executionContext;
+    const std::string dbName = executionContext != nullptr ? executionContext->getCurrentDbName() : "";
+    const std::string tableName = insertStmt != nullptr ? insertStmt->getTableName() : "";
+
     if (!validateInsertStmt(insertStmt)) {
-        return buildFailureResult("Insert statement columns and values do not match.");
+        return buildFailureResult("Insert statement columns and values do not match.", dbName, tableName);
     }
 
-    return buildFailureResult("InsertExecutor is registered, but execution logic is not implemented yet.");
+    return buildFailureResult("InsertExecutor is registered, but execution logic is not implemented yet.",
+                              dbName,
+                              tableName);
 }
 
 bool InsertExecutor::validateInsertStmt(const InsertStmt *insertStmt) const

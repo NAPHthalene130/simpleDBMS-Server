@@ -6,21 +6,29 @@
 #include <cstring>
 
 namespace {
-ExecutionResult buildFailureResult(const std::string &message)
+ExecutionResult buildFailureResult(const std::string &message,
+                                   const std::string &dbName = "",
+                                   const std::string &tableName = "")
 {
     ExecutionResult executionResult;
     executionResult.setStatus(ExecutionStatus::Failure);
     executionResult.setMessage(message);
+    executionResult.setDbName(dbName);
+    executionResult.setTableName(tableName);
     return executionResult;
 }
 
 ExecutionResult buildSuccessResult(const std::string &message,
-                                   const std::vector<std::vector<std::string>> &resultSet)
+                                   const std::vector<std::vector<std::string>> &resultSet,
+                                   const std::string &dbName = "",
+                                   const std::string &tableName = "")
 {
     ExecutionResult executionResult;
     executionResult.setStatus(ExecutionStatus::Success);
     executionResult.setMessage(message);
     executionResult.setResultSet(resultSet);
+    executionResult.setDbName(dbName);
+    executionResult.setTableName(tableName);
     return executionResult;
 }
 
@@ -78,35 +86,40 @@ ExecutionResult SelectExecutor::executeSelect(const SelectStmt *selectStmt, Exec
         return buildFailureResult("SelectExecutor received null input pointer.");
     }
 
+    const std::string dbName = executionContext->getCurrentDbName();
+    const std::string tableName = selectStmt->getTableName();
+
     if (!validateTargetFields(selectStmt) || !validateMetadataFields(selectStmt)) {
-        return buildFailureResult("Select statement target fields are invalid.");
+        return buildFailureResult("Select statement target fields are invalid.", dbName, tableName);
     }
 
     if (selectStmt->getWhereCondition() != nullptr && !evaluateCondition(selectStmt->getWhereCondition().get())) {
-        return buildFailureResult("WHERE clause is not supported by metadata queries.");
+        return buildFailureResult("WHERE clause is not supported by metadata queries.", dbName, tableName);
     }
 
     if (isShowDatabaseQuery(selectStmt)) {
         if (systemCatalogManager == nullptr) {
-            return buildFailureResult("System catalog manager is not initialized.");
+            return buildFailureResult("System catalog manager is not initialized.", dbName, tableName);
         }
 
-        return buildSuccessResult("Show databases succeeded.", buildResultSet(selectStmt));
+        return buildSuccessResult("Show databases succeeded.", buildResultSet(selectStmt), dbName, tableName);
     }
 
     if (isShowTablesQuery(selectStmt)) {
-        if (executionContext->getCurrentDbName().empty()) {
-            return buildFailureResult("No database is selected.");
+        if (dbName.empty()) {
+            return buildFailureResult("No database is selected.", dbName, tableName);
         }
 
         if (databaseManager == nullptr) {
-            return buildFailureResult("Database manager is not initialized.");
+            return buildFailureResult("Database manager is not initialized.", dbName, tableName);
         }
 
-        return buildSuccessResult("Show tables succeeded.", buildResultSet(selectStmt));
+        return buildSuccessResult("Show tables succeeded.", buildResultSet(selectStmt), dbName, tableName);
     }
 
-    return buildFailureResult("Only metadata select queries for databases and tables are supported.");
+    return buildFailureResult("Only metadata select queries for databases and tables are supported.",
+                              dbName,
+                              tableName);
 }
 
 bool SelectExecutor::validateTargetFields(const SelectStmt *selectStmt) const

@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <iostream>
-#include <sstream>
 #include <system_error>
 
 #include <asio/read.hpp>
@@ -15,9 +14,36 @@
 #include "models/executor/ExecutionContext.h"
 #include "models/executor/ExecutionResult.h"
 #include "models/network/NetData.h"
+#include "models/network/SqlData.h"
 #include "parser/Parser.h"
 #include "parser/ParserManager.h"
 #include "tokenizer/Tokenizer.h"
+
+namespace {
+bool isSqlRequestType(const std::string &type)
+{
+    return type == "SQL_USER" || type == "SQL_Client";
+}
+
+std::string buildSuccessResponseType(const std::string &requestType)
+{
+    return requestType == "SQL_USER" ? "SQL_USER_RESULT" : "SQL_Client_RESULT";
+}
+
+std::string buildFailureResponseType(const std::string &requestType)
+{
+    return requestType == "SQL_USER" ? "SQL_USER_ERROR" : "SQL_Client_ERROR";
+}
+
+ExecutionResult buildParseFailureResult(const std::string &message, const SqlData &sqlData)
+{
+    ExecutionResult executionResult;
+    executionResult.setStatus(ExecutionStatus::Failure);
+    executionResult.setMessage(message);
+    executionResult.setDbName(sqlData.getDbName());
+    return executionResult;
+}
+}
 
 NetReceiver::NetReceiver(Core *core, unsigned short listenPort)
     : core(core),
@@ -89,34 +115,29 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
 
     try {
         const NetData netData = NetData::fromJson(msg);
-        std::cout << "Server received message from "
-                  << (clientSocket != nullptr && clientSocket->is_open()
-                          ? clientSocket->remote_endpoint().address().to_string()
-                          : std::string("unknown"))
-                  << ": type=" << netData.getType()
-                  << ", content=" << netData.getContent()
-                  << std::endl;
-        if (netData.getType() == "SQL") {
+        if (isSqlRequestType(netData.getType())) {
             if (core == nullptr || core->getTokenizer() == nullptr || core->getParserManager() == nullptr
                 || core->getParserManager()->getParser() == nullptr || core->getExecutorManager() == nullptr
                 || core->getExecutorManager()->getExecutorEngine() == nullptr) {
                 throw std::runtime_error("SQL pipeline is not initialized.");
             }
 
+            const SqlData sqlData = SqlData::fromJson(netData.getContent());
+
             Tokenizer *tokenizer = core->getTokenizer();
-            tokenizer->reset(netData.getContent());
+            tokenizer->reset(sqlData.getSql());
             const std::vector<Token> tokens = tokenizer->tokenize();
 
             const ParseResult parseResult = core->getParserManager()->getParser()->parse(tokens);
             if (!parseResult.success || parseResult.statement == nullptr) {
-                const std::string parseErrorMessage = "Parse failed at token "
-                                                     + std::to_string(parseResult.errorTokenIndex)
-                                                     + ": " + parseResult.errorMessage;
-                std::cout << parseErrorMessage << std::endl;
+                ExecutionResult executionResult = buildParseFailureResult(
+                    "Parse failed at token " + std::to_string(parseResult.errorTokenIndex)
+                        + ": " + parseResult.errorMessage,
+                    sqlData);
                 if (core->getNetworkManager() != nullptr && core->getNetworkManager()->getNetSender() != nullptr) {
                     core->getNetworkManager()->getNetSender()->send(
                         clientSocket,
-                        NetData("SQL_ERROR", parseErrorMessage).toJson());
+                        NetData(buildFailureResponseType(netData.getType()), executionResult.toJson()).toJson());
                 }
                 return;
             }
@@ -132,38 +153,23 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                     executionContext.setCurrentDbName(networkExecutionContext->getCurrentDbName());
                 }
             }
+            executionContext.setCurrentUser(sqlData.getUserID());
+            executionContext.setCurrentDbName(sqlData.getDbName());
 
-            const ExecutionResult executionResult =
+            ExecutionResult executionResult =
                 core->getExecutorManager()->getExecutorEngine()->execute(
                     parseResult.statement.get(),
                     &executionContext);
 
-            std::ostringstream responseStream;
-            responseStream << "status="
-                           << (executionResult.getStatus() == ExecutionStatus::Success ? "Success" : "Failure")
-                           << ", message=" << executionResult.getMessage()
-                           << ", affectedRows=" << executionResult.getAffectedRows();
-
-            const std::vector<std::vector<std::string>> &resultSet = executionResult.getResultSet();
-            if (!resultSet.empty()) {
-                responseStream << ", resultSet=";
-                for (std::size_t rowIndex = 0; rowIndex < resultSet.size(); ++rowIndex) {
-                    if (rowIndex > 0) {
-                        responseStream << " | ";
-                    }
-                    for (std::size_t columnIndex = 0; columnIndex < resultSet[rowIndex].size(); ++columnIndex) {
-                        if (columnIndex > 0) {
-                            responseStream << ",";
-                        }
-                        responseStream << resultSet[rowIndex][columnIndex];
-                    }
-                }
+            if (executionResult.getDbName().empty()) {
+                executionResult.setDbName(sqlData.getDbName());
             }
 
             const std::string responseType =
-                executionResult.getStatus() == ExecutionStatus::Success ? "SQL_RESULT" : "SQL_ERROR";
-            const std::string responseContent = responseStream.str();
-            std::cout << "SQL execution result: " << responseContent << std::endl;
+                executionResult.getStatus() == ExecutionStatus::Success
+                    ? buildSuccessResponseType(netData.getType())
+                    : buildFailureResponseType(netData.getType());
+            const std::string responseContent = executionResult.toJson();
 
             if (core->getNetworkManager() != nullptr && core->getNetworkManager()->getNetSender() != nullptr) {
                 core->getNetworkManager()->getNetSender()->send(
@@ -173,8 +179,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
         }
         
     } catch (const std::exception &exception) {
-        std::cout << "Server received raw message: " << msg << std::endl;
-        std::cout << "NetReceiver::processMsg failed: " << exception.what() << std::endl;
+        (void)exception;
     }
 }
 

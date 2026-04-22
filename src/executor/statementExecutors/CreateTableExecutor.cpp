@@ -7,19 +7,27 @@
 #include <unordered_set>
 
 namespace {
-ExecutionResult buildFailureResult(const std::string &message)
+ExecutionResult buildFailureResult(const std::string &message,
+                                   const std::string &dbName = "",
+                                   const std::string &tableName = "")
 {
     ExecutionResult executionResult;
     executionResult.setStatus(ExecutionStatus::Failure);
     executionResult.setMessage(message);
+    executionResult.setDbName(dbName);
+    executionResult.setTableName(tableName);
     return executionResult;
 }
 
-ExecutionResult buildSuccessResult(const std::string &message)
+ExecutionResult buildSuccessResult(const std::string &message,
+                                   const std::string &dbName = "",
+                                   const std::string &tableName = "")
 {
     ExecutionResult executionResult;
     executionResult.setStatus(ExecutionStatus::Success);
     executionResult.setMessage(message);
+    executionResult.setDbName(dbName);
+    executionResult.setTableName(tableName);
     return executionResult;
 }
 
@@ -92,26 +100,28 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
         return buildFailureResult("Create table input is invalid.");
     }
 
-    if (databaseManager == nullptr) {
-        return buildFailureResult("Database manager is not initialized.");
-    }
-
-    if (executionContext->getCurrentDbName().empty()) {
-        return buildFailureResult("No database is selected.");
-    }
-
+    const std::string dbName = executionContext->getCurrentDbName();
     const std::string tableName = fixedArrayToString(createTableStmt->getTableName());
+
+    if (databaseManager == nullptr) {
+        return buildFailureResult("Database manager is not initialized.", dbName, tableName);
+    }
+
+    if (dbName.empty()) {
+        return buildFailureResult("No database is selected.", dbName, tableName);
+    }
+
     if (tableName.empty()) {
-        return buildFailureResult("Table name cannot be empty.");
+        return buildFailureResult("Table name cannot be empty.", dbName, tableName);
     }
 
     if (tableName.size() >= 128) {
-        return buildFailureResult("Table name exceeds the maximum length.");
+        return buildFailureResult("Table name exceeds the maximum length.", dbName, tableName);
     }
 
     const std::vector<FieldBlock> fieldBlocks = buildFieldBlocks(createTableStmt);
     if (fieldBlocks.empty()) {
-        return buildFailureResult("Create table requires at least one field.");
+        return buildFailureResult("Create table requires at least one field.", dbName, tableName);
     }
 
     std::unordered_set<std::string> fieldNameSet;
@@ -119,20 +129,20 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
     for (const FieldBlock &fieldBlock : fieldBlocks) {
         const std::string fieldName = fixedArrayToString(fieldBlock.getName());
         if (fieldName.empty()) {
-            return buildFailureResult("Field name cannot be empty.");
+            return buildFailureResult("Field name cannot be empty.", dbName, tableName);
         }
 
         if (!fieldNameSet.insert(fieldName).second) {
-            return buildFailureResult("Duplicate field name exists in create table statement.");
+            return buildFailureResult("Duplicate field name exists in create table statement.", dbName, tableName);
         }
     }
 
     const TableBlock tableBlock = buildTableBlock(createTableStmt);
     if (!databaseManager->createTable(tableBlock)) {
-        return buildFailureResult("Create table failed in storage layer.");
+        return buildFailureResult("Create table failed in storage layer.", dbName, tableName);
     }
 
-    return buildSuccessResult("Create table succeeded.");
+    return buildSuccessResult("Create table succeeded.", dbName, tableName);
 }
 
 TableBlock CreateTableExecutor::buildTableBlock(const CreateTableStmt *createTableStmt) const

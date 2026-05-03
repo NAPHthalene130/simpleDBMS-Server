@@ -13,62 +13,97 @@
 #include "log/LogWriter.h"
 #include "models/executor/ExecutionContext.h"
 #include "models/executor/ExecutionResult.h"
-#include "models/network/NetData.h"
 #include "models/network/NetworkExecutionContext.h"
+#include "models/network/NetworkTransferData.h"
+#include "models/parser/SelectStmt.h"
+#include "models/parser/ShowStmt.h"
 #include "models/network/SqlData.h"
 #include "parser/Parser.h"
 #include "parser/ParserManager.h"
 #include "tokenizer/Tokenizer.h"
 
 namespace {
-bool isSqlRequestType(const std::string &type)
+bool isQueryStatementType(ExecutionStatementType statementType)
 {
-    return type == "SQL_USER" || type == "SQL_Client" || type == "sql";
+    return statementType == ExecutionStatementType::Select || statementType == ExecutionStatementType::Show;
 }
 
-std::string buildSuccessResponseType(const std::string &requestType)
+std::string buildResponseType(const std::string &requestType)
 {
-    if (requestType == "SQL_USER") {
-        return "SQL_USER_RESULT";
+    if (requestType == NetworkTransferData::SQL_QUERY_REQUEST) {
+        return NetworkTransferData::SQL_QUERY_RESPONSE;
     }
 
-    if (requestType == "SQL_Client") {
-        return "SQL_Client_RESULT";
+    if (requestType == NetworkTransferData::SQL_EXEC_REQUEST) {
+        return NetworkTransferData::SQL_EXEC_RESPONSE;
     }
 
-    return "sql_result";
-}
-
-std::string buildFailureResponseType(const std::string &requestType)
-{
-    if (requestType == "SQL_USER") {
-        return "SQL_USER_ERROR";
+    if (requestType == NetworkTransferData::LOGIN_REQUEST) {
+        return NetworkTransferData::LOGIN_RESPONSE;
     }
 
-    if (requestType == "SQL_Client") {
-        return "SQL_Client_ERROR";
+    if (requestType == NetworkTransferData::VERIFY_REQUEST) {
+        return NetworkTransferData::VERIFY_RESPONSE;
     }
 
-    return "sql_error";
+    if (requestType == NetworkTransferData::USE_DATABASE_REQUEST) {
+        return NetworkTransferData::USE_DATABASE_RESPONSE;
+    }
+
+    if (requestType == NetworkTransferData::DIRECTORY_REQUEST) {
+        return NetworkTransferData::DIRECTORY_RESPONSE;
+    }
+
+    return NetworkTransferData::ERROR_RESPONSE;
 }
 
-ExecutionResult buildParseFailureResult(const std::string &message, const SqlData &sqlData)
+NetworkTransferData buildFailureResponse(const std::string &message,
+                                         const NetworkTransferData *requestData = nullptr)
 {
-    ExecutionResult executionResult;
-    executionResult.setStatus(ExecutionStatus::Failure);
-    executionResult.setMessage(message);
-    executionResult.setDbName(sqlData.getDbName());
-    return executionResult;
+    const std::string requestType = requestData != nullptr ? requestData->getType() : "";
+    const std::string requestId = requestData != nullptr ? requestData->getId() : "";
+    NetworkTransferData responseData(buildResponseType(requestType), requestId);
+    responseData.setSuccess(false);
+    responseData.setMessage(message);
+    if (requestData != nullptr) {
+        responseData.setDbName(requestData->getDbName());
+    }
+    return responseData;
 }
 
-ExecutionResult buildFailureResult(const std::string &message, const SqlData &sqlData)
+NetworkTransferData buildExecutionResponse(const ExecutionResult &executionResult,
+                                           const NetworkTransferData &requestData)
 {
-    ExecutionResult executionResult;
-    executionResult.setStatus(ExecutionStatus::Failure);
-    executionResult.setMessage(message);
-    executionResult.setDbName(sqlData.getDbName());
-    return executionResult;
+    NetworkTransferData responseData(buildResponseType(requestData.getType()), requestData.getId());
+    responseData.setSuccess(executionResult.getStatus() == ExecutionStatus::Success);
+    responseData.setMessage(executionResult.getMessage());
+    responseData.setAffectedRows(executionResult.getAffectedRows());
+    responseData.setDbName(executionResult.getDbName());
+    responseData.setRows(executionResult.getResultSet());
+    return responseData;
 }
+
+std::vector<std::string> buildQueryColumns(const SQLStatement *statement)
+{
+    if (statement == nullptr) {
+        return {};
+    }
+
+    if (statement->getStmtType() == ExecutionStatementType::Select) {
+        const SelectStmt *selectStmt = static_cast<const SelectStmt *>(statement);
+        if (selectStmt->getSelectAllFields()) {
+            return {"name"};
+        }
+        return selectStmt->getTargetFields();
+    }
+
+    if (statement->getStmtType() == ExecutionStatementType::Show) {
+        return {"name"};
+    }
+
+    return {};
+}
+
 } // namespace
 
 NetReceiver::NetReceiver(Core *core, unsigned short listenPort)
@@ -141,137 +176,147 @@ void NetReceiver::stop()
 /**
  * @brief 处理客户端完整请求并返回响应
  * @details 网络层仅负责收发与分发，将 JSON 校验、SQL 编排和错误收敛交由 SqlPipeline 处理。
- * @author YuzhSong
+ * @author NAPH130
  * @param clientSocket 客户端套接字
- * @param msg 网络层接收到的完整消息
+ * @param networkTransferData 网络层接收到的完整传输对象
  */
-void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket, const std::string &msg)
+void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket,
+                             const NetworkTransferData &networkTransferData)
 {
     {
         std::lock_guard<std::mutex> lock(messageMutex);
-        lastReceivedMessage = msg;
+        lastReceivedMessage = networkTransferData.toJson();
     }
 
+    auto sendResponse = [this, &clientSocket](const NetworkTransferData &responseData) {
+        if (core == nullptr || core->getNetworkManager() == nullptr || core->getNetworkManager()->getNetSender() == nullptr) {
+            return;
+        }
+
+        core->getNetworkManager()->getNetSender()->send(clientSocket, responseData.toJson());
+    };
+
+    auto sendFailureResponse = [&](const std::string &message) {
+        sendResponse(buildFailureResponse(message, &networkTransferData));
+    };
+
     try {
-        const NetData netData = NetData::fromJson(msg);
-        LogWriter::debug("network",
-                         "NetReceiver",
-                         "processMsg",
-                         "Received message type: " + netData.getType());
-        if (!isSqlRequestType(netData.getType())) {
-            LogWriter::warning("network",
-                               "NetReceiver",
-                               "processMsg",
-                               "Unsupported message type: " + netData.getType() + ".");
+        if (networkTransferData.getType() == NetworkTransferData::LOGIN_REQUEST) {
+            // TODO: 处理登录请求
+            sendFailureResponse("LOGIN_REQUEST is not implemented yet.");
             return;
         }
 
-        if (core == nullptr || core->getParserManager() == nullptr || core->getParserManager()->getParser() == nullptr
-            || core->getExecutorManager() == nullptr || core->getExecutorManager()->getExecutorEngine() == nullptr) {
-            LogWriter::fatal("network", "NetReceiver", "processMsg", "SQL pipeline is not initialized.");
-            throw std::runtime_error("SQL pipeline is not initialized.");
-        }
-
-        SqlData sqlData;
-        if (netData.getType() == "sql") {
-            sqlData.setSql(netData.getContent());
-        } else {
-            sqlData = SqlData::fromJson(netData.getContent());
-        }
-
-        Tokenizer tokenizer(core, sqlData.getSql());
-        const std::vector<Token> tokens = tokenizer.tokenize();
-
-        const ParseResult parseResult = core->getParserManager()->getParser()->parse(tokens);
-        if (!parseResult.success || parseResult.statement == nullptr) {
-            ExecutionResult executionResult = buildParseFailureResult(
-                "Parse failed at token " + std::to_string(parseResult.errorTokenIndex)
-                    + ": " + parseResult.errorMessage,
-                sqlData);
-            LogWriter::warning("network",
-                               "NetReceiver",
-                               "processMsg",
-                               "SQL parse failed for request type " + netData.getType() + ".");
-            if (core->getNetworkManager() != nullptr && core->getNetworkManager()->getNetSender() != nullptr) {
-                core->getNetworkManager()->getNetSender()->send(
-                    clientSocket,
-                    NetData(buildFailureResponseType(netData.getType()), executionResult.toJson()).toJson());
-            }
+        if (networkTransferData.getType() == NetworkTransferData::VERIFY_REQUEST) {
+            // TODO: 处理连接验证请求
+            sendFailureResponse("VERIFY_REQUEST is not implemented yet.");
             return;
         }
 
-        ExecutionContext executionContext;
-        NetworkExecutionContext *networkExecutionContext = nullptr;
-        if (core->getNetworkManager() != nullptr
-            && core->getNetworkManager()->getClientSessionManager() != nullptr
-            && clientSocket != nullptr) {
-            networkExecutionContext =
-                core->getNetworkManager()->getClientSessionManager()->findSessionContext(clientSocket.get());
-            if (networkExecutionContext != nullptr) {
-                executionContext.setConnectionId(networkExecutionContext->getConnectionId());
-                executionContext.setCurrentUser(networkExecutionContext->getCurrentUser());
-                executionContext.setCurrentDbName(networkExecutionContext->getCurrentDbName());
+        if (networkTransferData.getType() == NetworkTransferData::USE_DATABASE_REQUEST) {
+            // TODO: 处理数据库切换请求
+            sendFailureResponse("USE_DATABASE_REQUEST is not implemented yet.");
+            return;
+        }
+
+        if (networkTransferData.getType() == NetworkTransferData::SQL_EXEC_REQUEST
+            || networkTransferData.getType() == NetworkTransferData::SQL_QUERY_REQUEST) {
+            if (core == nullptr || core->getParserManager() == nullptr || core->getParserManager()->getParser() == nullptr
+                || core->getExecutorManager() == nullptr || core->getExecutorManager()->getExecutorEngine() == nullptr) {
+                LogWriter::fatal("network", "NetReceiver", "processMsg", "SQL pipeline is not initialized.");
+                sendFailureResponse("SQL pipeline is not initialized.");
+                return;
             }
+
+            SqlData sqlData;
+            sqlData.setUserID(networkTransferData.getId());
+            sqlData.setDbName(networkTransferData.getDbName());
+            sqlData.setSql(networkTransferData.getSql());
+
+            if (sqlData.getSql().empty()) {
+                LogWriter::warning("network", "NetReceiver", "processMsg", "Rejected empty SQL request.");
+                sendFailureResponse("SQL content is empty.");
+                return;
+            }
+
+            Tokenizer tokenizer(core, sqlData.getSql());
+            const std::vector<Token> tokens = tokenizer.tokenize();
+            const ParseResult parseResult = core->getParserManager()->getParser()->parse(tokens);
+            if (!parseResult.success || parseResult.statement == nullptr) {
+                LogWriter::warning("network", "NetReceiver", "processMsg", "SQL parse failed.");
+                sendFailureResponse("Parse failed at token " + std::to_string(parseResult.errorTokenIndex)
+                                    + ": " + parseResult.errorMessage);
+                return;
+            }
+
+            const ExecutionStatementType statementType = parseResult.statement->getStmtType();
+            const bool isQueryRequest = networkTransferData.getType() == NetworkTransferData::SQL_QUERY_REQUEST;
+            const bool isQueryStatement = isQueryStatementType(statementType);
+            if (isQueryRequest && !isQueryStatement) {
+                sendFailureResponse("SQL_QUERY_REQUEST only supports query statements.");
+                return;
+            }
+
+            if (!isQueryRequest && isQueryStatement) {
+                sendFailureResponse("SQL_EXEC_REQUEST does not support query statements.");
+                return;
+            }
+
+            ExecutionContext executionContext;
+            NetworkExecutionContext *networkExecutionContext = nullptr;
+            if (core->getNetworkManager() != nullptr
+                && core->getNetworkManager()->getClientSessionManager() != nullptr
+                && clientSocket != nullptr) {
+                networkExecutionContext =
+                    core->getNetworkManager()->getClientSessionManager()->findSessionContext(clientSocket.get());
+                if (networkExecutionContext != nullptr) {
+                    executionContext.setConnectionId(networkExecutionContext->getConnectionId());
+                    executionContext.setCurrentUser(networkExecutionContext->getCurrentUser());
+                    executionContext.setCurrentDbName(networkExecutionContext->getCurrentDbName());
+                }
+            }
+
+            if (!sqlData.getUserID().empty()) {
+                executionContext.setCurrentUser(sqlData.getUserID());
+            }
+            if (!sqlData.getDbName().empty()) {
+                executionContext.setCurrentDbName(sqlData.getDbName());
+            }
+
+            ExecutionResult executionResult =
+                core->getExecutorManager()->getExecutorEngine()->execute(parseResult.statement.get(), &executionContext);
+            if (executionResult.getStatus() == ExecutionStatus::Success
+                && networkExecutionContext != nullptr
+                && !executionResult.getDbName().empty()) {
+                networkExecutionContext->setCurrentDbName(executionResult.getDbName());
+            }
+
+            if (executionResult.getDbName().empty()) {
+                executionResult.setDbName(executionContext.getCurrentDbName());
+            }
+
+            NetworkTransferData responseData = buildExecutionResponse(executionResult, networkTransferData);
+            if (isQueryRequest) {
+                responseData.setColumns(buildQueryColumns(parseResult.statement.get()));
+                responseData.setRows(executionResult.getResultSet());
+            }
+            sendResponse(responseData);
+            return;
         }
 
-        if (!sqlData.getUserID().empty()) {
-            executionContext.setCurrentUser(sqlData.getUserID());
-        }
-        if (!sqlData.getDbName().empty()) {
-            executionContext.setCurrentDbName(sqlData.getDbName());
-        }
-
-        ExecutionResult executionResult =
-            core->getExecutorManager()->getExecutorEngine()->execute(parseResult.statement.get(), &executionContext);
-
-        if (executionResult.getStatus() == ExecutionStatus::Success
-            && networkExecutionContext != nullptr
-            && !executionResult.getDbName().empty()) {
-            networkExecutionContext->setCurrentDbName(executionResult.getDbName());
+        if (networkTransferData.getType() == NetworkTransferData::DIRECTORY_REQUEST) {
+            // TODO: 处理数据库目录请求
+            sendFailureResponse("DIRECTORY_REQUEST is not implemented yet.");
+            return;
         }
 
-        if (executionResult.getDbName().empty()) {
-            executionResult.setDbName(executionContext.getCurrentDbName());
-        }
-
-        const std::string responseType =
-            executionResult.getStatus() == ExecutionStatus::Success
-                ? buildSuccessResponseType(netData.getType())
-                : buildFailureResponseType(netData.getType());
-        const std::string responseContent = executionResult.toJson();
-        LogWriter::info("network",
-                        "NetReceiver",
-                        "processMsg",
-                        "SQL request processed with response type " + responseType + ".");
-
-        if (core->getNetworkManager() != nullptr && core->getNetworkManager()->getNetSender() != nullptr) {
-            core->getNetworkManager()->getNetSender()->send(
-                clientSocket,
-                NetData(responseType, responseContent).toJson());
-        }
+        sendResponse(buildFailureResponse("Unsupported request type: " + networkTransferData.getType() + "."));
     } catch (const std::exception &exception) {
         LogWriter::error("network",
                          "NetReceiver",
                          "processMsg",
                          std::string("Message processing failed: ") + exception.what());
-
-        SqlData sqlData;
-        std::string responseType = "sql_error";
-        try {
-            const NetData netData = NetData::fromJson(msg);
-            responseType = buildFailureResponseType(netData.getType());
-            if (isSqlRequestType(netData.getType()) && netData.getType() != "sql") {
-                sqlData = SqlData::fromJson(netData.getContent());
-            }
-        } catch (const std::exception &) {
-        }
-
-        if (core != nullptr && core->getNetworkManager() != nullptr && core->getNetworkManager()->getNetSender() != nullptr) {
-            const ExecutionResult executionResult = buildFailureResult(exception.what(), sqlData);
-            core->getNetworkManager()->getNetSender()->send(
-                clientSocket,
-                NetData(responseType, executionResult.toJson()).toJson());
-        }
+        sendFailureResponse(exception.what());
     }
 }
 
@@ -372,7 +417,27 @@ void NetReceiver::handleClientSession(std::shared_ptr<asio::ip::tcp::socket> cli
             break;
         }
 
-        processMsg(clientSocket, msg);
+        try {
+            const NetworkTransferData networkTransferData = NetworkTransferData::fromJson(msg);
+            processMsg(clientSocket, networkTransferData);
+        } catch (const std::exception &exception) {
+            {
+                std::lock_guard<std::mutex> lock(messageMutex);
+                lastReceivedMessage = msg;
+            }
+
+            LogWriter::error("network",
+                             "NetReceiver",
+                             "handleClientSession",
+                             std::string("Parse request JSON failed: ") + exception.what());
+
+            if (core != nullptr && core->getNetworkManager() != nullptr
+                && core->getNetworkManager()->getNetSender() != nullptr) {
+                core->getNetworkManager()->getNetSender()->send(
+                    clientSocket,
+                    buildFailureResponse("Invalid request JSON.").toJson());
+            }
+        }
     }
 
     if (core != nullptr && core->getNetworkManager() != nullptr) {

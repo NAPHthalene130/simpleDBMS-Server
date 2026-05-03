@@ -346,6 +346,10 @@ bool Table::matchWhere(const Row& row, const std::vector<WhereCondition>& whereC
 }
 
 bool Table::compareValue(const std::string& left, CompareOp op, const std::string& right) {
+    if (op == CompareOp::LIKE) {
+        return likeMatch(left, right);
+    }
+
     double leftNum = 0.0;
     double rightNum = 0.0;
     const bool leftIsNum = tryParseNumber(left, leftNum);
@@ -365,6 +369,8 @@ bool Table::compareValue(const std::string& left, CompareOp op, const std::strin
                 return leftNum < rightNum;
             case CompareOp::LE:
                 return leftNum <= rightNum;
+        case CompareOp::LIKE:
+            return likeMatch(left, right);
         }
     }
 
@@ -381,8 +387,42 @@ bool Table::compareValue(const std::string& left, CompareOp op, const std::strin
             return left < right;
         case CompareOp::LE:
             return left <= right;
+        case CompareOp::LIKE:
+            return likeMatch(left, right);
     }
     return false;
+}
+
+bool Table::likeMatch(const std::string& text, const std::string& pattern) {
+    // Support SQL-like wildcard '%' (zero or more chars).
+    std::size_t t = 0;
+    std::size_t p = 0;
+    std::size_t star = std::string::npos;
+    std::size_t match = 0;
+
+    while (t < text.size()) {
+        if (p < pattern.size() && (pattern[p] == text[t])) {
+            ++t;
+            ++p;
+            continue;
+        }
+        if (p < pattern.size() && pattern[p] == '%') {
+            star = p++;
+            match = t;
+            continue;
+        }
+        if (star != std::string::npos) {
+            p = star + 1;
+            t = ++match;
+            continue;
+        }
+        return false;
+    }
+
+    while (p < pattern.size() && pattern[p] == '%') {
+        ++p;
+    }
+    return p == pattern.size();
 }
 
 std::string Table::makePrimaryKey(const std::vector<std::string>& values) const {

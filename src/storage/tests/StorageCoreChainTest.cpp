@@ -103,6 +103,24 @@ int main()
     ensure(selectedRows.front().values.size() == 2, "select projected column count mismatch");
     ensure(selectedRows.front().values[0] == "v1", "select value A mismatch");
     ensure(selectedRows.front().values[1] == "v3", "select value C mismatch");
+
+    const auto likeBoth = loadedTable.select(
+        {"A"},
+        {storage::Table::WhereCondition{"A", storage::Table::CompareOp::LIKE, "%1%"}}
+    );
+    ensure(likeBoth.size() == 1, "select like %field% mismatch");
+
+    const auto likeSuffix = loadedTable.select(
+        {"A"},
+        {storage::Table::WhereCondition{"A", storage::Table::CompareOp::LIKE, "%5"}}
+    );
+    ensure(likeSuffix.size() == 1, "select like %field mismatch");
+
+    const auto likePrefix = loadedTable.select(
+        {"A"},
+        {storage::Table::WhereCondition{"A", storage::Table::CompareOp::LIKE, "v%"}}
+    );
+    ensure(likePrefix.size() == 2, "select like field% mismatch");
     ensure(std::filesystem::exists(dbFile), ".db file not found");
     ensure(std::filesystem::exists(tdfFile), ".tdf file not found");
     ensure(std::filesystem::exists(trdFile), ".trd file not found");

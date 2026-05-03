@@ -25,7 +25,8 @@ public:
         GT,
         GE,
         LT,
-        LE
+        LE,
+        LIKE
     };
 
     struct WhereCondition {
@@ -216,6 +217,15 @@ private:
      * @return 比较结果
      */
     static bool compareValue(const std::string& left, CompareOp op, const std::string& right);
+
+    /**
+     * @brief LIKE 模式匹配
+     * @author Startale
+     * @param text 待匹配文本
+     * @param pattern LIKE 模式，支持 % 通配
+     * @return 是否匹配
+     */
+    static bool likeMatch(const std::string& text, const std::string& pattern);
 
     /**
      * @brief 生成主键值

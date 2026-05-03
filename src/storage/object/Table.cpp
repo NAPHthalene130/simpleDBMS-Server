@@ -1,9 +1,28 @@
 #include "Table.h"
 
+#include <algorithm>
+#include <cerrno>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
+#include <sstream>
 
 namespace storage {
+
+namespace {
+
+bool tryParseNumber(const std::string& text, double& value) {
+    errno = 0;
+    char* end = nullptr;
+    const double parsed = std::strtod(text.c_str(), &end);
+    if (end == text.c_str() || *end != '\0' || errno == ERANGE) {
+        return false;
+    }
+    value = parsed;
+    return true;
+}
+
+} // namespace
 
 Table::Table(std::filesystem::path dbPath, TableSchema schema)
     : dbPath_(std::move(dbPath)), schema_(std::move(schema)), index_(2) {}
@@ -27,6 +46,10 @@ Table Table::create(const std::filesystem::path& dbPath,
 
     std::ofstream indexOfs(table.indexFilePath(), std::ios::app);
     ensure(indexOfs.good(), "failed to create table index file: " + table.indexFilePath().string());
+    indexOfs.close();
+
+    table.flushIntegrityMeta();
+    table.initializeTidFile();
 
     return table;
 }
@@ -41,16 +64,25 @@ Table Table::load(const std::filesystem::path& dbPath,
 
     std::string nameLine;
     std::string columnsLine;
-    std::getline(ifs, nameLine);
-    std::getline(ifs, columnsLine);
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.rfind("table=", 0) == 0) {
+            nameLine = line;
+        } else if (line.rfind("columns=", 0) == 0) {
+            columnsLine = line;
+        }
+    }
 
-    ensure(nameLine.rfind("table=", 0) == 0, "invalid meta format: missing table line");
-    ensure(columnsLine.rfind("columns=", 0) == 0, "invalid meta format: missing columns line");
+    ensure(!nameLine.empty(), "invalid meta format: missing table line");
+    ensure(!columnsLine.empty(), "invalid meta format: missing columns line");
 
-    Table table(dbPath, TableSchema{
-        nameLine.substr(6),
-        split(columnsLine.substr(8), '|')
-    });
+    std::vector<std::string> parsedColumns;
+    for (const auto& colMeta : split(columnsLine.substr(8), '|')) {
+        const auto sepPos = colMeta.find(':');
+        parsedColumns.push_back(sepPos == std::string::npos ? colMeta : colMeta.substr(0, sepPos));
+    }
+
+    Table table(dbPath, TableSchema{nameLine.substr(6), parsedColumns});
 
     table.loadIndexFromTid();
     return table;
@@ -69,6 +101,51 @@ void Table::insert(const std::vector<std::string>& values) {
     index_.insert(primaryKey, row);
     const std::uint64_t offset = appendDataRow(values);
     appendIndexEntry(primaryKey, offset);
+}
+
+std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
+                               const std::vector<WhereCondition>& whereConditions) const {
+    std::vector<std::size_t> projectedIndexes;
+    const bool selectAll = targetColumns.empty()
+                           || (targetColumns.size() == 1 && targetColumns.front() == "*");
+    if (selectAll) {
+        projectedIndexes.resize(schema_.columns.size());
+        for (std::size_t i = 0; i < schema_.columns.size(); ++i) {
+            projectedIndexes[i] = i;
+        }
+    } else {
+        projectedIndexes.reserve(targetColumns.size());
+        for (const auto& column : targetColumns) {
+            projectedIndexes.push_back(columnIndex(column));
+        }
+    }
+
+    std::ifstream ifs(dataFilePath());
+    ensure(ifs.good(), "failed to open table data file: " + dataFilePath().string());
+
+    std::vector<Row> result;
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.rfind("ROW|", 0) != 0) {
+            continue;
+        }
+
+        Row row = deserializeRow(line.substr(4));
+        if (row.values.size() != schema_.columns.size()) {
+            continue;
+        }
+        if (!matchWhere(row, whereConditions)) {
+            continue;
+        }
+
+        Row projected;
+        projected.values.reserve(projectedIndexes.size());
+        for (const auto index : projectedIndexes) {
+            projected.values.push_back(row.values[index]);
+        }
+        result.push_back(std::move(projected));
+    }
+    return result;
 }
 
 bool Table::containsPrimaryKey(const std::string& key) const {
@@ -95,8 +172,26 @@ void Table::flushMeta() const {
     std::ofstream ofs(metaFilePath(), std::ios::trunc);
     ensure(ofs.good(), "failed to write table meta file: " + metaFilePath().string());
 
+    ofs << "schema_version=2\n";
     ofs << "table=" << schema_.name << '\n';
-    ofs << "columns=" << join(schema_.columns, "|") << '\n';
+    std::vector<std::string> columnMetas;
+    columnMetas.reserve(schema_.columns.size());
+    for (const auto& column : schema_.columns) {
+        columnMetas.push_back(column + ":TEXT");
+    }
+    ofs << "columns=" << join(columnMetas, "|") << '\n';
+    ofs << "primary_key=" << schema_.columns.front() << '\n';
+    ofs << "index_definitions=PRIMARY(" << schema_.columns.front() << "):BTREE:" << schema_.name << ".tid\n";
+}
+
+void Table::flushIntegrityMeta() const {
+    std::ofstream ofs(integrityFilePath(), std::ios::trunc);
+    ensure(ofs.good(), "failed to write table integrity file: " + integrityFilePath().string());
+
+    ofs << "constraints_version=1\n";
+    ofs << "constraint=PRIMARY_KEY(" << schema_.columns.front() << ")\n";
+    ofs << "constraint=NOT_NULL(" << schema_.columns.front() << ")\n";
+    ofs << "index=PRIMARY:" << schema_.name << ".tid\n";
 }
 
 std::uint64_t Table::appendDataRow(const std::vector<std::string>& values) const {
@@ -107,33 +202,38 @@ std::uint64_t Table::appendDataRow(const std::vector<std::string>& values) const
     return offset;
 }
 
-void Table::appendIndexEntry(const std::string& key, std::uint64_t offset) const {
+void Table::appendIndexEntry(const std::string& key, std::uint64_t offset) {
     std::ofstream ofs(indexFilePath(), std::ios::app);
     ensure(ofs.good(), "failed to open table index file: " + indexFilePath().string());
-    ofs << key << "|" << offset << '\n';
+    const std::uint32_t pageId = nextPageId_++;
+    ofs << "PAGE|" << pageId << "|leaf=1|parent=" << rootPageId_ << "|entry_count=1\n";
+    ofs << "ENTRY|" << key << "|" << offset << '\n';
+    ofs << "ENDPAGE\n";
 }
 
 void Table::loadIndexFromTid() {
     index_.clear();
-
-    std::ifstream ifs(indexFilePath());
-    if (!ifs.good()) {
-        rebuildIndexFromData();
+    if (tryLoadPagedTid()) {
         return;
     }
 
-    std::string line;
-    while (std::getline(ifs, line)) {
-        if (line.empty()) {
-            continue;
+    // Fallback: legacy "key|offset" format.
+    std::ifstream ifs(indexFilePath());
+    if (ifs.good()) {
+        std::string line;
+        while (std::getline(ifs, line)) {
+            if (line.empty()) {
+                continue;
+            }
+            const std::size_t sepPos = line.find('|');
+            if (sepPos == std::string::npos || sepPos == 0) {
+                continue;
+            }
+            const std::string key = line.substr(0, sepPos);
+            index_.insert(key, Row{{key}});
         }
-        const std::size_t sepPos = line.find('|');
-        if (sepPos == std::string::npos || sepPos == 0) {
-            continue;
-        }
-        const std::string key = line.substr(0, sepPos);
-        index_.insert(key, Row{{key}});
     }
+    rebuildIndexFromData();
 }
 
 void Table::rebuildIndexFromData() {
@@ -143,7 +243,8 @@ void Table::rebuildIndexFromData() {
     if (!ifs.good()) {
         return;
     }
-    std::ofstream tidOfs(indexFilePath(), std::ios::trunc);
+    initializeTidFile();
+    std::ofstream tidOfs(indexFilePath(), std::ios::app);
     ensure(tidOfs.good(), "failed to rebuild table index file: " + indexFilePath().string());
 
     std::string line;
@@ -164,8 +265,124 @@ void Table::rebuildIndexFromData() {
         }
         const std::string key = row.values.front();
         index_.insert(key, Row{{key}});
-        tidOfs << key << "|" << lineStartOffset << '\n';
+        const std::uint32_t pageId = nextPageId_++;
+        tidOfs << "PAGE|" << pageId << "|leaf=1|parent=" << rootPageId_ << "|entry_count=1\n";
+        tidOfs << "ENTRY|" << key << "|" << lineStartOffset << '\n';
+        tidOfs << "ENDPAGE\n";
     }
+}
+
+void Table::initializeTidFile() {
+    std::ofstream ofs(indexFilePath(), std::ios::trunc);
+    ensure(ofs.good(), "failed to initialize table index file: " + indexFilePath().string());
+    rootPageId_ = 1;
+    nextPageId_ = 2;
+
+    ofs << "TID_PAGED_V1\n";
+    ofs << "page_size=4096\n";
+    ofs << "root_page=" << rootPageId_ << '\n';
+    ofs << "PAGE|1|leaf=1|parent=0|entry_count=0\n";
+    ofs << "ENDPAGE\n";
+}
+
+bool Table::tryLoadPagedTid() {
+    std::ifstream ifs(indexFilePath());
+    if (!ifs.good()) {
+        return false;
+    }
+
+    std::string magic;
+    std::getline(ifs, magic);
+    if (magic != "TID_PAGED_V1") {
+        return false;
+    }
+
+    rootPageId_ = 1;
+    nextPageId_ = 2;
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.rfind("root_page=", 0) == 0) {
+            rootPageId_ = static_cast<std::uint32_t>(std::stoul(line.substr(10)));
+            continue;
+        }
+        if (line.rfind("PAGE|", 0) == 0) {
+            std::vector<std::string> parts = split(line, '|');
+            if (parts.size() >= 2) {
+                const std::uint32_t pageId = static_cast<std::uint32_t>(std::stoul(parts[1]));
+                if (pageId >= nextPageId_) {
+                    nextPageId_ = pageId + 1;
+                }
+            }
+            continue;
+        }
+        if (line.rfind("ENTRY|", 0) == 0) {
+            std::vector<std::string> parts = split(line, '|');
+            if (parts.size() < 3 || parts[1].empty()) {
+                continue;
+            }
+            index_.insert(parts[1], Row{{parts[1]}});
+        }
+    }
+    return true;
+}
+
+std::size_t Table::columnIndex(const std::string& columnName) const {
+    const auto it = std::find(schema_.columns.begin(), schema_.columns.end(), columnName);
+    ensure(it != schema_.columns.end(), "unknown column: " + columnName);
+    return static_cast<std::size_t>(std::distance(schema_.columns.begin(), it));
+}
+
+bool Table::matchWhere(const Row& row, const std::vector<WhereCondition>& whereConditions) const {
+    for (const auto& condition : whereConditions) {
+        const std::size_t idx = columnIndex(condition.column);
+        if (idx >= row.values.size()) {
+            return false;
+        }
+        if (!compareValue(row.values[idx], condition.op, condition.value)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Table::compareValue(const std::string& left, CompareOp op, const std::string& right) {
+    double leftNum = 0.0;
+    double rightNum = 0.0;
+    const bool leftIsNum = tryParseNumber(left, leftNum);
+    const bool rightIsNum = tryParseNumber(right, rightNum);
+
+    if (leftIsNum && rightIsNum) {
+        switch (op) {
+            case CompareOp::EQ:
+                return leftNum == rightNum;
+            case CompareOp::NE:
+                return leftNum != rightNum;
+            case CompareOp::GT:
+                return leftNum > rightNum;
+            case CompareOp::GE:
+                return leftNum >= rightNum;
+            case CompareOp::LT:
+                return leftNum < rightNum;
+            case CompareOp::LE:
+                return leftNum <= rightNum;
+        }
+    }
+
+    switch (op) {
+        case CompareOp::EQ:
+            return left == right;
+        case CompareOp::NE:
+            return left != right;
+        case CompareOp::GT:
+            return left > right;
+        case CompareOp::GE:
+            return left >= right;
+        case CompareOp::LT:
+            return left < right;
+        case CompareOp::LE:
+            return left <= right;
+    }
+    return false;
 }
 
 std::string Table::makePrimaryKey(const std::vector<std::string>& values) const {

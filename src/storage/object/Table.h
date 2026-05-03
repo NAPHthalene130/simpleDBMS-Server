@@ -4,6 +4,7 @@
 #include "StorageCommon.h"
 
 #include <filesystem>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -18,6 +19,21 @@ namespace storage {
  */
 class Table {
 public:
+    enum class CompareOp {
+        EQ,
+        NE,
+        GT,
+        GE,
+        LT,
+        LE
+    };
+
+    struct WhereCondition {
+        std::string column;
+        CompareOp op = CompareOp::EQ;
+        std::string value;
+    };
+
     /**
      * @brief 默认构造函数
      * @author Startale
@@ -62,6 +78,16 @@ public:
     void insert(const std::vector<std::string>& values);
 
     /**
+     * @brief 按列投影并按条件过滤查询数据
+     * @author Startale
+     * @param targetColumns 目标列名列表，传空或 {"*"} 表示返回全部列
+     * @param whereConditions where 条件列表，多个条件按 AND 关系处理
+     * @return 结果行集合
+     */
+    std::vector<Row> select(const std::vector<std::string>& targetColumns,
+                            const std::vector<WhereCondition>& whereConditions = {}) const;
+
+    /**
      * @brief 获取表结构
      * @author Startale
      * @return 表结构对象
@@ -80,6 +106,8 @@ private:
     std::filesystem::path dbPath_;
     TableSchema schema_;
     BTree<std::string, Row> index_{2};
+    std::uint32_t rootPageId_ = 1;
+    std::uint32_t nextPageId_ = 2;
 
     /**
      * @brief 获取表元数据文件路径
@@ -116,6 +144,12 @@ private:
     void flushMeta() const;
 
     /**
+     * @brief 持久化约束与索引元数据到 .tic 文件
+     * @author Startale
+     */
+    void flushIntegrityMeta() const;
+
+    /**
      * @brief 追加一行数据记录到 .trd 文件
      * @author Startale
      * @param values 行数据
@@ -129,7 +163,7 @@ private:
      * @param key 主键值
      * @param offset 对应数据在 .trd 中的偏移
      */
-    void appendIndexEntry(const std::string& key, std::uint64_t offset) const;
+    void appendIndexEntry(const std::string& key, std::uint64_t offset);
 
     /**
      * @brief 从 .tid 恢复内存索引
@@ -142,6 +176,46 @@ private:
      * @author Startale
      */
     void rebuildIndexFromData();
+
+    /**
+     * @brief 初始化页式 .tid 文件头
+     * @author Startale
+     */
+    void initializeTidFile();
+
+    /**
+     * @brief 从 .tid 读取并恢复页式索引
+     * @author Startale
+     * @return 是否成功按页式格式加载
+     */
+    bool tryLoadPagedTid();
+
+    /**
+     * @brief 获取列名对应下标
+     * @author Startale
+     * @param columnName 列名
+     * @return 列下标
+     */
+    std::size_t columnIndex(const std::string& columnName) const;
+
+    /**
+     * @brief 检查行是否满足 where 条件
+     * @author Startale
+     * @param row 行数据
+     * @param whereConditions 条件列表
+     * @return 是否满足
+     */
+    bool matchWhere(const Row& row, const std::vector<WhereCondition>& whereConditions) const;
+
+    /**
+     * @brief 比较两个字段值
+     * @author Startale
+     * @param left 左值
+     * @param op 比较操作符
+     * @param right 右值
+     * @return 比较结果
+     */
+    static bool compareValue(const std::string& left, CompareOp op, const std::string& right);
 
     /**
      * @brief 生成主键值

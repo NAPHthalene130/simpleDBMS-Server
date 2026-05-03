@@ -14,6 +14,7 @@
 #include <asio/thread_pool.hpp>
 
 class Core;
+class NetworkTransferData;
 
 /**
  * @class NetReceiver
@@ -56,9 +57,10 @@ public:
      * @brief 处理最终接收到的完整消息
      * @author NAPH130
      * @param clientSocket 消息来源客户端套接字
-     * @param msg 最终处理后的接收字符串
+     * @param networkTransferData 最终处理后的网络传输数据
      */
-    void processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket, const std::string &msg);
+    void processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket,
+                    const NetworkTransferData &networkTransferData);
 
     /**
      * @brief 获取最近一次处理的消息内容

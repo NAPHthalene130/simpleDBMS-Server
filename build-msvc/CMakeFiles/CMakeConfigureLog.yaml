@@ -1,0 +1,400 @@
+
+---
+events:
+  -
+    kind: "message-v1"
+    backtrace:
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/CMakeDetermineSystem.cmake:205 (message)"
+      - "CMakeLists.txt:10 (project)"
+    message: |
+      The system is: Windows - 10.0.26200 - AMD64
+  -
+    kind: "message-v1"
+    backtrace:
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/CMakeDetermineCXXCompiler.cmake:126 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:10 (project)"
+    message: |
+      Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" succeeded.
+      Compiler:  
+      Build flags: 
+      Id flags:  
+      
+      The output was:
+      0
+      适用于 .NET Framework MSBuild 版本 17.14.40+3e7442088
+      生成启动时间为 2026/5/5 4:26:28。
+      
+      节点 1 上的项目“F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\4.0.0-rc5\\CompilerIdCXX\\CompilerIdCXX.vcxproj”(默认目标)。
+      PrepareForBuild:
+        正在创建目录“Debug\\”。
+        已启用结构化输出。编译器诊断的格式设置将反映错误层次结构。有关详细信息，请参阅 https://aka.ms/cpp/structured-output。
+        正在创建目录“Debug\\CompilerIdCXX.tlog\\”。
+      InitializeBuildStatus:
+        正在创建“Debug\\CompilerIdCXX.tlog\\unsuccessfulbuild”，因为已指定“AlwaysCreate”。
+        正在对“Debug\\CompilerIdCXX.tlog\\unsuccessfulbuild”执行 Touch 任务。
+      VcpkgTripletSelection:
+        Using triplet "x64-windows" from "G:\\vcpkg\\installed\\x64-windows\\"
+        Using normalized configuration "Release"
+      VcpkgCheckManifestRoot:
+        The vcpkg manifest was disabled, but we found a manifest file in F:\\20570\\DBMS1\\simpleDBMS-Server\\. You may want to enable vcpkg manifests in your properties page or pass /p:VcpkgEnableManifest=true to the msbuild invocation.
+      ClCompile:
+        C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\CL.exe /c /I"G:\\vcpkg\\installed\\x64-windows\\include" /nologo /W0 /WX- /diagnostics:column /Od /D _MBCS /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"Debug\\\\" /Fd"Debug\\vc143.pdb" /external:W0 /Gd /TP /FC /errorReport:queue CMakeCXXCompilerId.cpp
+        CMakeCXXCompilerId.cpp
+      Link:
+        C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:".\\CompilerIdCXX.exe" /INCREMENTAL:NO /NOLOGO /LIBPATH:"G:\\vcpkg\\installed\\x64-windows\\lib" /LIBPATH:"G:\\vcpkg\\installed\\x64-windows\\lib\\manual-link" kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib "G:\\vcpkg\\installed\\x64-windows\\lib\\*.lib" /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /PDB:".\\CompilerIdCXX.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:".\\CompilerIdCXX.lib" /MACHINE:X64 Debug\\CMakeCXXCompilerId.obj
+        CompilerIdCXX.vcxproj -> F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\4.0.0-rc5\\CompilerIdCXX\\CompilerIdCXX.exe
+      AppLocalFromInstalled:
+        pwsh.exe -ExecutionPolicy Bypass -noprofile -File "G:\\vcpkg\\scripts\\buildsystems\\msbuild\\applocal.ps1" "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\4.0.0-rc5\\CompilerIdCXX\\CompilerIdCXX.exe" "G:\\vcpkg\\installed\\x64-windows\\bin" "Debug\\CompilerIdCXX.tlog\\CompilerIdCXX.write.1u.tlog" "Debug\\vcpkg.applocal.log"
+        'pwsh.exe' 不是内部或外部命令，也不是可运行的程序
+        或批处理文件。
+        命令“pwsh.exe -ExecutionPolicy Bypass -noprofile -File "G:\\vcpkg\\scripts\\buildsystems\\msbuild\\applocal.ps1" "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\4.0.0-rc5\\CompilerIdCXX\\CompilerIdCXX.exe" "G:\\vcpkg\\installed\\x64-windows\\bin" "Debug\\CompilerIdCXX.tlog\\CompilerIdCXX.write.1u.tlog" "Debug\\vcpkg.applocal.log"”已退出，代码为 9009。
+        "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -ExecutionPolicy Bypass -noprofile -File "G:\\vcpkg\\scripts\\buildsystems\\msbuild\\applocal.ps1" "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\4.0.0-rc5\\CompilerIdCXX\\CompilerIdCXX.exe" "G:\\vcpkg\\installed\\x64-windows\\bin" "Debug\\CompilerIdCXX.tlog\\CompilerIdCXX.write.1u.tlog" "Debug\\vcpkg.applocal.log"
+      PostBuildEvent:
+        for %%i in (cl.exe) do @echo CMAKE_CXX_COMPILER=%%~$PATH:i
+        :VCEnd
+        CMAKE_CXX_COMPILER=C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe
+      FinalizeBuildStatus:
+        正在删除文件“Debug\\CompilerIdCXX.tlog\\unsuccessfulbuild”。
+        正在对“Debug\\CompilerIdCXX.tlog\\CompilerIdCXX.lastbuildstate”执行 Touch 任务。
+      已完成生成项目“F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\4.0.0-rc5\\CompilerIdCXX\\CompilerIdCXX.vcxproj”(默认目标)的操作。
+      
+      已成功生成。
+          0 个警告
+          0 个错误
+      
+      已用时间 00:00:03.49
+      
+      
+      Compilation of the CXX compiler identification source "CMakeCXXCompilerId.cpp" produced "CompilerIdCXX.exe"
+      
+      Compilation of the CXX compiler identification source "CMakeCXXCompilerId.cpp" produced "CompilerIdCXX.vcxproj"
+      
+      The CXX compiler identification is MSVC, found in:
+        F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/4.0.0-rc5/CompilerIdCXX/CompilerIdCXX.exe
+      
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/CMakeDetermineCompilerABI.cmake:83 (try_compile)"
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:10 (project)"
+    checks:
+      - "Detecting CXX compiler ABI info"
+    directories:
+      source: "F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-hp3wn8"
+      binary: "F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-hp3wn8"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: "/DWIN32 /D_WINDOWS /EHsc"
+      CMAKE_CXX_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
+      CMAKE_CXX_SCAN_FOR_MODULES: "OFF"
+      CMAKE_EXE_LINKER_FLAGS: "/machine:x64"
+      VCPKG_INSTALLED_DIR: "F:/20570/DBMS1/simpleDBMS-Server/build-msvc/vcpkg_installed"
+      VCPKG_PREFER_SYSTEM_LIBS: "OFF"
+      VCPKG_TARGET_TRIPLET: "x64-windows"
+      Z_VCPKG_ROOT_DIR: "G:/vcpkg"
+    buildResult:
+      variable: "CMAKE_CXX_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: 'F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-hp3wn8'
+        
+        Run Build Command(s): "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_d940d.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
+        适用于 .NET Framework MSBuild 版本 17.14.40+3e7442088
+        生成启动时间为 2026/5/5 4:26:32。
+        
+        节点 1 上的项目“F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-hp3wn8\\cmTC_d940d.vcxproj”(默认目标)。
+        PrepareForBuild:
+          正在创建目录“cmTC_d940d.dir\\Debug\\”。
+          已启用结构化输出。编译器诊断的格式设置将反映错误层次结构。有关详细信息，请参阅 https://aka.ms/cpp/structured-output。
+          正在创建目录“F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-hp3wn8\\Debug\\”。
+          正在创建目录“cmTC_d940d.dir\\Debug\\cmTC_d940d.tlog\\”。
+        InitializeBuildStatus:
+          正在创建“cmTC_d940d.dir\\Debug\\cmTC_d940d.tlog\\unsuccessfulbuild”，因为已指定“AlwaysCreate”。
+          正在对“cmTC_d940d.dir\\Debug\\cmTC_d940d.tlog\\unsuccessfulbuild”执行 Touch 任务。
+        ClCompile:
+          C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_d940d.dir\\Debug\\\\" /Fd"cmTC_d940d.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "C:\\Program Files\\CMake\\share\\cmake-4.0\\Modules\\CMakeCXXCompilerABI.cpp"
+          用于 x64 的 Microsoft (R) C/C++ 优化编译器 19.44.35225 版
+          版权所有(C) Microsoft Corporation。保留所有权利。
+          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_d940d.dir\\Debug\\\\" /Fd"cmTC_d940d.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "C:\\Program Files\\CMake\\share\\cmake-4.0\\Modules\\CMakeCXXCompilerABI.cpp"
+          CMakeCXXCompilerABI.cpp
+        Link:
+          C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:"F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-hp3wn8\\Debug\\cmTC_d940d.exe" /INCREMENTAL /ILK:"cmTC_d940d.dir\\Debug\\cmTC_d940d.ilk" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-hp3wn8/Debug/cmTC_d940d.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-hp3wn8/Debug/cmTC_d940d.lib" /MACHINE:X64  /machine:x64 cmTC_d940d.dir\\Debug\\CMakeCXXCompilerABI.obj
+          cmTC_d940d.vcxproj -> F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-hp3wn8\\Debug\\cmTC_d940d.exe
+        FinalizeBuildStatus:
+          正在删除文件“cmTC_d940d.dir\\Debug\\cmTC_d940d.tlog\\unsuccessfulbuild”。
+          正在对“cmTC_d940d.dir\\Debug\\cmTC_d940d.tlog\\cmTC_d940d.lastbuildstate”执行 Touch 任务。
+        已完成生成项目“F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-hp3wn8\\cmTC_d940d.vcxproj”(默认目标)的操作。
+        
+        已成功生成。
+            0 个警告
+            0 个错误
+        
+        已用时间 00:00:00.59
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/CMakeDetermineCompilerABI.cmake:227 (message)"
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:10 (project)"
+    message: |
+      Parsed CXX implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|link\\.exe|lld-link(\\.exe)?|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|")?[ 	]*(([^"]*[/\\])?(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|link\\.exe|lld-link(\\.exe)?))("|,| |$)]
+        linker tool for 'CXX': C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/HostX64/x64/link.exe
+        implicit libs: []
+        implicit objs: []
+        implicit dirs: []
+        implicit fwks: []
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/Internal/CMakeDetermineLinkerId.cmake:36 (message)"
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/CMakeDetermineCompilerABI.cmake:264 (cmake_determine_linker_id)"
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:10 (project)"
+    message: |
+      Running the CXX compiler's linker: "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/HostX64/x64/link.exe" "-v"
+      Microsoft (R) Incremental Linker Version 14.44.35225.0
+      Copyright (C) Microsoft Corporation.  All rights reserved.
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/Internal/CheckSourceCompiles.cmake:104 (try_compile)"
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/CheckCXXSourceCompiles.cmake:58 (cmake_check_source_compiles)"
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/FindThreads.cmake:99 (check_cxx_source_compiles)"
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/FindThreads.cmake:163 (_threads_check_libc)"
+      - "G:/vcpkg/scripts/buildsystems/vcpkg.cmake:908 (_find_package)"
+      - "build-msvc/vcpkg_installed/x64-windows/share/asio/asio-config.cmake:1 (find_package)"
+      - "G:/vcpkg/scripts/buildsystems/vcpkg.cmake:908 (_find_package)"
+      - "CMakeLists.txt:21 (find_package)"
+    checks:
+      - "Performing Test CMAKE_HAVE_LIBC_PTHREAD"
+    directories:
+      source: "F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-zbnree"
+      binary: "F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-zbnree"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: "/DWIN32 /D_WINDOWS /EHsc"
+      CMAKE_CXX_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
+      CMAKE_EXE_LINKER_FLAGS: "/machine:x64"
+      VCPKG_INSTALLED_DIR: "F:/20570/DBMS1/simpleDBMS-Server/build-msvc/vcpkg_installed"
+      VCPKG_PREFER_SYSTEM_LIBS: "OFF"
+      VCPKG_TARGET_TRIPLET: "x64-windows"
+      Z_VCPKG_ROOT_DIR: "G:/vcpkg"
+    buildResult:
+      variable: "CMAKE_HAVE_LIBC_PTHREAD"
+      cached: true
+      stdout: |
+        Change Dir: 'F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-zbnree'
+        
+        Run Build Command(s): "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_70d83.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
+        适用于 .NET Framework MSBuild 版本 17.14.40+3e7442088
+        生成启动时间为 2026/5/5 4:26:34。
+        
+        节点 1 上的项目“F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\cmTC_70d83.vcxproj”(默认目标)。
+        PrepareForBuild:
+          正在创建目录“cmTC_70d83.dir\\Debug\\”。
+          已启用结构化输出。编译器诊断的格式设置将反映错误层次结构。有关详细信息，请参阅 https://aka.ms/cpp/structured-output。
+          正在创建目录“F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\Debug\\”。
+          正在创建目录“cmTC_70d83.dir\\Debug\\cmTC_70d83.tlog\\”。
+        InitializeBuildStatus:
+          正在创建“cmTC_70d83.dir\\Debug\\cmTC_70d83.tlog\\unsuccessfulbuild”，因为已指定“AlwaysCreate”。
+          正在对“cmTC_70d83.dir\\Debug\\cmTC_70d83.tlog\\unsuccessfulbuild”执行 Touch 任务。
+        SetModuleDependencies:
+          正在创建目录“cmTC_70d83.dir\\Debug\\cmTC_70d83_MD.tlog\\”。
+          正在扫描源以查找模块依赖项...
+          C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /FS /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CMAKE_HAVE_LIBC_PTHREAD /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /ifcOutput "cmTC_70d83.dir\\Debug\\\\" /scanDependencies "cmTC_70d83.dir\\Debug\\\\" /Fo"cmTC_70d83.dir\\Debug\\\\" /Fd"cmTC_70d83.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\src.cxx"
+          用于 x64 的 Microsoft (R) C/C++ 优化编译器 19.44.35225 版
+          版权所有(C) Microsoft Corporation。保留所有权利。
+          cl /c /Zi /W1 /WX- /diagnostics:column /FS /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CMAKE_HAVE_LIBC_PTHREAD /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /ifcOutput "cmTC_70d83.dir\\Debug\\\\" /scanDependencies "cmTC_70d83.dir\\Debug\\\\" /Fo"cmTC_70d83.dir\\Debug\\\\" /Fd"cmTC_70d83.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\src.cxx"
+          src.cxx
+        F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\src.cxx(1,10): fatal  error C1083: 无法打开包括文件: “pthread.h”: No such file or directory [F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\cmTC_70d83.vcxproj]
+        F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\src.cxx(1,10): error C1083: 无法打开包括文件: “pthread.h”: No such file or directory [F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\cmTC_70d83.vcxproj]
+        C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Microsoft\\VC\\v170\\Microsoft.CppCommon.targets(532,5): warning MSB8074: 无法读取模块依赖项文件 cmTC_70d83.dir\\Debug\\src.cxx.module.json: 应为来自命名空间“”的元素“root”。。遇到名称为“”、命名空间为“”的“None”。 生成顺序可能不正确。 [F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\cmTC_70d83.vcxproj]
+        ClCompile:
+          正在编译...
+          C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /FS /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CMAKE_HAVE_LIBC_PTHREAD /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /ifcOutput "cmTC_70d83.dir\\Debug\\\\" /Fo"cmTC_70d83.dir\\Debug\\\\" /Fd"cmTC_70d83.dir\\Debug\\vc143.pdb" /sourceDependencies "cmTC_70d83.dir\\Debug\\.d.json" /external:W1 /Gd /TP /errorReport:queue "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\src.cxx"
+          用于 x64 的 Microsoft (R) C/C++ 优化编译器 19.44.35225 版
+          版权所有(C) Microsoft Corporation。保留所有权利。
+          cl /c /Zi /W1 /WX- /diagnostics:column /FS /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CMAKE_HAVE_LIBC_PTHREAD /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /ifcOutput "cmTC_70d83.dir\\Debug\\\\" /Fo"cmTC_70d83.dir\\Debug\\\\" /Fd"cmTC_70d83.dir\\Debug\\vc143.pdb" /sourceDependencies "cmTC_70d83.dir\\Debug\\.d.json" /external:W1 /Gd /TP /errorReport:queue "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\src.cxx"
+          src.cxx
+        F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\src.cxx(1,10): error C1083: 无法打开包括文件: “pthread.h”: No such file or directory [F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\cmTC_70d83.vcxproj]
+        已完成生成项目“F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\cmTC_70d83.vcxproj”(默认目标)的操作 - 失败。
+        
+        生成失败。
+        
+        “F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\cmTC_70d83.vcxproj”(默认目标) (1) ->
+        (SetModuleDependencies 目标) -> 
+          C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Microsoft\\VC\\v170\\Microsoft.CppCommon.targets(532,5): warning MSB8074: 无法读取模块依赖项文件 cmTC_70d83.dir\\Debug\\src.cxx.module.json: 应为来自命名空间“”的元素“root”。。遇到名称为“”、命名空间为“”的“None”。 生成顺序可能不正确。 [F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\cmTC_70d83.vcxproj]
+        
+        
+        “F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\cmTC_70d83.vcxproj”(默认目标) (1) ->
+        (SetModuleDependencies 目标) -> 
+          F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\src.cxx(1,10): fatal  error C1083: 无法打开包括文件: “pthread.h”: No such file or directory [F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\cmTC_70d83.vcxproj]
+          F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\src.cxx(1,10): error C1083: 无法打开包括文件: “pthread.h”: No such file or directory [F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\cmTC_70d83.vcxproj]
+        
+        
+        “F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\cmTC_70d83.vcxproj”(默认目标) (1) ->
+        (ClCompile 目标) -> 
+          F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\src.cxx(1,10): error C1083: 无法打开包括文件: “pthread.h”: No such file or directory [F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-zbnree\\cmTC_70d83.vcxproj]
+        
+            1 个警告
+            3 个错误
+        
+        已用时间 00:00:00.80
+        
+      exitCode: 1
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/CheckLibraryExists.cmake:112 (try_compile)"
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/FindThreads.cmake:112 (check_library_exists)"
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/FindThreads.cmake:175 (_threads_check_lib)"
+      - "G:/vcpkg/scripts/buildsystems/vcpkg.cmake:908 (_find_package)"
+      - "build-msvc/vcpkg_installed/x64-windows/share/asio/asio-config.cmake:1 (find_package)"
+      - "G:/vcpkg/scripts/buildsystems/vcpkg.cmake:908 (_find_package)"
+      - "CMakeLists.txt:21 (find_package)"
+    checks:
+      - "Looking for pthread_create in pthreads"
+    directories:
+      source: "F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-95yhru"
+      binary: "F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-95yhru"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: "/DWIN32 /D_WINDOWS /EHsc"
+      CMAKE_CXX_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
+      CMAKE_EXE_LINKER_FLAGS: "/machine:x64"
+      VCPKG_INSTALLED_DIR: "F:/20570/DBMS1/simpleDBMS-Server/build-msvc/vcpkg_installed"
+      VCPKG_PREFER_SYSTEM_LIBS: "OFF"
+      VCPKG_TARGET_TRIPLET: "x64-windows"
+      Z_VCPKG_ROOT_DIR: "G:/vcpkg"
+    buildResult:
+      variable: "CMAKE_HAVE_PTHREADS_CREATE"
+      cached: true
+      stdout: |
+        Change Dir: 'F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-95yhru'
+        
+        Run Build Command(s): "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_72212.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
+        适用于 .NET Framework MSBuild 版本 17.14.40+3e7442088
+        生成启动时间为 2026/5/5 4:26:35。
+        
+        节点 1 上的项目“F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-95yhru\\cmTC_72212.vcxproj”(默认目标)。
+        PrepareForBuild:
+          正在创建目录“cmTC_72212.dir\\Debug\\”。
+          已启用结构化输出。编译器诊断的格式设置将反映错误层次结构。有关详细信息，请参阅 https://aka.ms/cpp/structured-output。
+          正在创建目录“F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-95yhru\\Debug\\”。
+          正在创建目录“cmTC_72212.dir\\Debug\\cmTC_72212.tlog\\”。
+        InitializeBuildStatus:
+          正在创建“cmTC_72212.dir\\Debug\\cmTC_72212.tlog\\unsuccessfulbuild”，因为已指定“AlwaysCreate”。
+          正在对“cmTC_72212.dir\\Debug\\cmTC_72212.tlog\\unsuccessfulbuild”执行 Touch 任务。
+        SetModuleDependencies:
+          正在创建目录“cmTC_72212.dir\\Debug\\cmTC_72212_MD.tlog\\”。
+          正在扫描源以查找模块依赖项...
+          C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /FS /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /ifcOutput "cmTC_72212.dir\\Debug\\\\" /scanDependencies "cmTC_72212.dir\\Debug\\\\" /Fo"cmTC_72212.dir\\Debug\\\\" /Fd"cmTC_72212.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-95yhru\\CheckFunctionExists.cxx"
+          用于 x64 的 Microsoft (R) C/C++ 优化编译器 19.44.35225 版
+          版权所有(C) Microsoft Corporation。保留所有权利。
+          cl /c /Zi /W1 /WX- /diagnostics:column /FS /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /ifcOutput "cmTC_72212.dir\\Debug\\\\" /scanDependencies "cmTC_72212.dir\\Debug\\\\" /Fo"cmTC_72212.dir\\Debug\\\\" /Fd"cmTC_72212.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-95yhru\\CheckFunctionExists.cxx"
+          CheckFunctionExists.cxx
+        ClCompile:
+          正在编译...
+          C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /FS /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /ifcOutput "cmTC_72212.dir\\Debug\\\\" /Fo"cmTC_72212.dir\\Debug\\\\" /Fd"cmTC_72212.dir\\Debug\\vc143.pdb" /sourceDependencies "cmTC_72212.dir\\Debug\\.d.json" /external:W1 /Gd /TP /errorReport:queue "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-95yhru\\CheckFunctionExists.cxx"
+          用于 x64 的 Microsoft (R) C/C++ 优化编译器 19.44.35225 版
+          版权所有(C) Microsoft Corporation。保留所有权利。
+          cl /c /Zi /W1 /WX- /diagnostics:column /FS /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /ifcOutput "cmTC_72212.dir\\Debug\\\\" /Fo"cmTC_72212.dir\\Debug\\\\" /Fd"cmTC_72212.dir\\Debug\\vc143.pdb" /sourceDependencies "cmTC_72212.dir\\Debug\\.d.json" /external:W1 /Gd /TP /errorReport:queue "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-95yhru\\CheckFunctionExists.cxx"
+          CheckFunctionExists.cxx
+        Link:
+          C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:"F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-95yhru\\Debug\\cmTC_72212.exe" /INCREMENTAL /ILK:"cmTC_72212.dir\\Debug\\cmTC_72212.ilk" /NOLOGO pthreads.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-95yhru/Debug/cmTC_72212.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-95yhru/Debug/cmTC_72212.lib" /MACHINE:X64  /machine:x64 cmTC_72212.dir\\Debug\\CheckFunctionExists.obj
+        LINK : fatal error LNK1104: 无法打开文件“pthreads.lib” [F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-95yhru\\cmTC_72212.vcxproj]
+        已完成生成项目“F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-95yhru\\cmTC_72212.vcxproj”(默认目标)的操作 - 失败。
+        
+        生成失败。
+        
+        “F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-95yhru\\cmTC_72212.vcxproj”(默认目标) (1) ->
+        (Link 目标) -> 
+          LINK : fatal error LNK1104: 无法打开文件“pthreads.lib” [F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-95yhru\\cmTC_72212.vcxproj]
+        
+            0 个警告
+            1 个错误
+        
+        已用时间 00:00:00.57
+        
+      exitCode: 1
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/CheckLibraryExists.cmake:112 (try_compile)"
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/FindThreads.cmake:112 (check_library_exists)"
+      - "C:/Program Files/CMake/share/cmake-4.0/Modules/FindThreads.cmake:176 (_threads_check_lib)"
+      - "G:/vcpkg/scripts/buildsystems/vcpkg.cmake:908 (_find_package)"
+      - "build-msvc/vcpkg_installed/x64-windows/share/asio/asio-config.cmake:1 (find_package)"
+      - "G:/vcpkg/scripts/buildsystems/vcpkg.cmake:908 (_find_package)"
+      - "CMakeLists.txt:21 (find_package)"
+    checks:
+      - "Looking for pthread_create in pthread"
+    directories:
+      source: "F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-rsmfvo"
+      binary: "F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-rsmfvo"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: "/DWIN32 /D_WINDOWS /EHsc"
+      CMAKE_CXX_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
+      CMAKE_EXE_LINKER_FLAGS: "/machine:x64"
+      VCPKG_INSTALLED_DIR: "F:/20570/DBMS1/simpleDBMS-Server/build-msvc/vcpkg_installed"
+      VCPKG_PREFER_SYSTEM_LIBS: "OFF"
+      VCPKG_TARGET_TRIPLET: "x64-windows"
+      Z_VCPKG_ROOT_DIR: "G:/vcpkg"
+    buildResult:
+      variable: "CMAKE_HAVE_PTHREAD_CREATE"
+      cached: true
+      stdout: |
+        Change Dir: 'F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-rsmfvo'
+        
+        Run Build Command(s): "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_7b448.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
+        适用于 .NET Framework MSBuild 版本 17.14.40+3e7442088
+        生成启动时间为 2026/5/5 4:26:36。
+        
+        节点 1 上的项目“F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-rsmfvo\\cmTC_7b448.vcxproj”(默认目标)。
+        PrepareForBuild:
+          正在创建目录“cmTC_7b448.dir\\Debug\\”。
+          已启用结构化输出。编译器诊断的格式设置将反映错误层次结构。有关详细信息，请参阅 https://aka.ms/cpp/structured-output。
+          正在创建目录“F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-rsmfvo\\Debug\\”。
+          正在创建目录“cmTC_7b448.dir\\Debug\\cmTC_7b448.tlog\\”。
+        InitializeBuildStatus:
+          正在创建“cmTC_7b448.dir\\Debug\\cmTC_7b448.tlog\\unsuccessfulbuild”，因为已指定“AlwaysCreate”。
+          正在对“cmTC_7b448.dir\\Debug\\cmTC_7b448.tlog\\unsuccessfulbuild”执行 Touch 任务。
+        SetModuleDependencies:
+          正在创建目录“cmTC_7b448.dir\\Debug\\cmTC_7b448_MD.tlog\\”。
+          正在扫描源以查找模块依赖项...
+          C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /FS /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /ifcOutput "cmTC_7b448.dir\\Debug\\\\" /scanDependencies "cmTC_7b448.dir\\Debug\\\\" /Fo"cmTC_7b448.dir\\Debug\\\\" /Fd"cmTC_7b448.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-rsmfvo\\CheckFunctionExists.cxx"
+          用于 x64 的 Microsoft (R) C/C++ 优化编译器 19.44.35225 版
+          版权所有(C) Microsoft Corporation。保留所有权利。
+          cl /c /Zi /W1 /WX- /diagnostics:column /FS /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /ifcOutput "cmTC_7b448.dir\\Debug\\\\" /scanDependencies "cmTC_7b448.dir\\Debug\\\\" /Fo"cmTC_7b448.dir\\Debug\\\\" /Fd"cmTC_7b448.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-rsmfvo\\CheckFunctionExists.cxx"
+          CheckFunctionExists.cxx
+        ClCompile:
+          正在编译...
+          C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /FS /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /ifcOutput "cmTC_7b448.dir\\Debug\\\\" /Fo"cmTC_7b448.dir\\Debug\\\\" /Fd"cmTC_7b448.dir\\Debug\\vc143.pdb" /sourceDependencies "cmTC_7b448.dir\\Debug\\.d.json" /external:W1 /Gd /TP /errorReport:queue "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-rsmfvo\\CheckFunctionExists.cxx"
+          用于 x64 的 Microsoft (R) C/C++ 优化编译器 19.44.35225 版
+          版权所有(C) Microsoft Corporation。保留所有权利。
+          cl /c /Zi /W1 /WX- /diagnostics:column /FS /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /ifcOutput "cmTC_7b448.dir\\Debug\\\\" /Fo"cmTC_7b448.dir\\Debug\\\\" /Fd"cmTC_7b448.dir\\Debug\\vc143.pdb" /sourceDependencies "cmTC_7b448.dir\\Debug\\.d.json" /external:W1 /Gd /TP /errorReport:queue "F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-rsmfvo\\CheckFunctionExists.cxx"
+          CheckFunctionExists.cxx
+        Link:
+          C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:"F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-rsmfvo\\Debug\\cmTC_7b448.exe" /INCREMENTAL /ILK:"cmTC_7b448.dir\\Debug\\cmTC_7b448.ilk" /NOLOGO pthread.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-rsmfvo/Debug/cmTC_7b448.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/CMakeScratch/TryCompile-rsmfvo/Debug/cmTC_7b448.lib" /MACHINE:X64  /machine:x64 cmTC_7b448.dir\\Debug\\CheckFunctionExists.obj
+        LINK : fatal error LNK1104: 无法打开文件“pthread.lib” [F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-rsmfvo\\cmTC_7b448.vcxproj]
+        已完成生成项目“F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-rsmfvo\\cmTC_7b448.vcxproj”(默认目标)的操作 - 失败。
+        
+        生成失败。
+        
+        “F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-rsmfvo\\cmTC_7b448.vcxproj”(默认目标) (1) ->
+        (Link 目标) -> 
+          LINK : fatal error LNK1104: 无法打开文件“pthread.lib” [F:\\20570\\DBMS1\\simpleDBMS-Server\\build-msvc\\CMakeFiles\\CMakeScratch\\TryCompile-rsmfvo\\cmTC_7b448.vcxproj]
+        
+            0 个警告
+            1 个错误
+        
+        已用时间 00:00:00.56
+        
+      exitCode: 1
+...

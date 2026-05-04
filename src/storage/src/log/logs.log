@@ -1,0 +1,20 @@
+[DEBUG][storage-FileManager-FileManager][2026-05-04 18:31:51]:File manager initialized.
+[DEBUG][storage-TableDefManager-TableDefManager][2026-05-04 18:31:51]:Table definition manager initialized.
+[INFO][storage-StorageManager-StorageManager][2026-05-04 18:31:51]:Storage manager initialized.
+[INFO][storage-SystemCatalogManager-createDatabase][2026-05-04 18:31:51]:Database created successfully: StartaleDB
+[INFO][storage-DatabaseManager-createTable][2026-05-04 18:31:51]:Table created successfully: StartaleDB.StartaleTB
+[INFO][storage-DatabaseManager-insertRow][2026-05-04 18:31:51]:Inserted row into StartaleDB.StartaleTB, value count=3
+[INFO][storage-DatabaseManager-insertRow][2026-05-04 18:31:51]:Inserted row into StartaleDB.StartaleTB, value count=3
+[INFO][storage-StorageManager-~StorageManager][2026-05-04 18:31:51]:Storage manager is being released.
+[INFO][storage-StorageManager-~StorageManager][2026-05-04 18:31:51]:Storage sub-managers released.
+[DEBUG][storage-FileManager-FileManager][2026-05-05 03:55:02]:File manager initialized.
+[DEBUG][storage-TableDefManager-TableDefManager][2026-05-05 03:55:02]:Table definition manager initialized.
+[INFO][storage-StorageManager-StorageManager][2026-05-05 03:55:02]:Storage manager initialized.
+[INFO][storage-SystemCatalogManager-createDatabase][2026-05-05 03:55:02]:Database created successfully: StartaleDB
+[INFO][storage-DatabaseManager-createTable][2026-05-05 03:55:02]:Table created successfully: StartaleDB.StartaleTB
+[INFO][storage-DatabaseManager-insertRow][2026-05-05 03:55:02]:Inserted row into StartaleDB.StartaleTB, value count=3
+[INFO][storage-DatabaseManager-insertRow][2026-05-05 03:55:02]:Inserted row into StartaleDB.StartaleTB, value count=3
+[INFO][storage-DatabaseManager-updateRowByPrimaryKey][2026-05-05 03:55:02]:Update row result for StartaleDB.StartaleTB, key=v1, updated=true
+[INFO][storage-DatabaseManager-deleteRowByPrimaryKey][2026-05-05 03:55:02]:Delete row result for StartaleDB.StartaleTB, key=v5, deleted=true
+[INFO][storage-StorageManager-~StorageManager][2026-05-05 03:55:02]:Storage manager is being released.
+[INFO][storage-StorageManager-~StorageManager][2026-05-05 03:55:02]:Storage sub-managers released.

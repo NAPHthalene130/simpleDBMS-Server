@@ -1,0 +1,4 @@
+F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/simpleDBMS-Server.dir
+F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/simpleDBMS-Server-NetworkSqlFlowTest.dir
+F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/ALL_BUILD.dir
+F:/20570/DBMS1/simpleDBMS-Server/build-msvc/CMakeFiles/ZERO_CHECK.dir

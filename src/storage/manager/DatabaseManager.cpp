@@ -179,6 +179,85 @@ bool DatabaseManager::insertRow(const std::string &dbName,
     }
 }
 
+bool DatabaseManager::updateRowByPrimaryKey(const std::string &dbName,
+                                            const std::string &tableName,
+                                            const std::string &primaryKey,
+                                            const std::vector<std::string> &newValues)
+{
+    if (dbName.empty() || tableName.empty() || primaryKey.empty() || newValues.empty()) {
+        LogWriter::warning("storage",
+                           "DatabaseManager",
+                           "updateRowByPrimaryKey",
+                           "Rejected update with empty database name, table name, primary key, or values.");
+        return false;
+    }
+
+    try {
+        const auto dbPath = std::filesystem::path(kDbRootPath) / dbName;
+        if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
+            LogWriter::warning("storage",
+                               "DatabaseManager",
+                               "updateRowByPrimaryKey",
+                               std::string("Database directory not found: ") + dbName);
+            return false;
+        }
+
+        auto table = storage::Table::load(dbPath, tableName);
+        const bool updated = table.updateByPrimaryKey(primaryKey, newValues);
+        LogWriter::info("storage",
+                        "DatabaseManager",
+                        "updateRowByPrimaryKey",
+                        std::string("Update row result for ") + dbName + "." + tableName + ", key=" + primaryKey
+                            + ", updated=" + (updated ? "true" : "false"));
+        return updated;
+    } catch (...) {
+        LogWriter::error("storage",
+                         "DatabaseManager",
+                         "updateRowByPrimaryKey",
+                         std::string("Unknown exception while updating row in ") + dbName + "." + tableName);
+        return false;
+    }
+}
+
+bool DatabaseManager::deleteRowByPrimaryKey(const std::string &dbName,
+                                            const std::string &tableName,
+                                            const std::string &primaryKey)
+{
+    if (dbName.empty() || tableName.empty() || primaryKey.empty()) {
+        LogWriter::warning("storage",
+                           "DatabaseManager",
+                           "deleteRowByPrimaryKey",
+                           "Rejected delete with empty database name, table name, or primary key.");
+        return false;
+    }
+
+    try {
+        const auto dbPath = std::filesystem::path(kDbRootPath) / dbName;
+        if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
+            LogWriter::warning("storage",
+                               "DatabaseManager",
+                               "deleteRowByPrimaryKey",
+                               std::string("Database directory not found: ") + dbName);
+            return false;
+        }
+
+        auto table = storage::Table::load(dbPath, tableName);
+        const bool deleted = table.deleteByPrimaryKey(primaryKey);
+        LogWriter::info("storage",
+                        "DatabaseManager",
+                        "deleteRowByPrimaryKey",
+                        std::string("Delete row result for ") + dbName + "." + tableName + ", key=" + primaryKey
+                            + ", deleted=" + (deleted ? "true" : "false"));
+        return deleted;
+    } catch (...) {
+        LogWriter::error("storage",
+                         "DatabaseManager",
+                         "deleteRowByPrimaryKey",
+                         std::string("Unknown exception while deleting row in ") + dbName + "." + tableName);
+        return false;
+    }
+}
+
 bool DatabaseManager::dropTable(std::string tableName)
 {
     if (tableName.empty()) {

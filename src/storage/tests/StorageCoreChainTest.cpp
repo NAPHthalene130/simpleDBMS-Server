@@ -93,6 +93,9 @@ int main()
     ensure(databaseManager->createTable(dbName, tableName, {"A", "B", "C"}), "createTable failed");
     ensure(databaseManager->insertRow(dbName, tableName, {"v1", "v2", "v3"}), "insertRow failed");
     ensure(databaseManager->insertRow(dbName, tableName, {"v5", "v2", "v3"}), "insertRow failed");
+    ensure(databaseManager->updateRowByPrimaryKey(dbName, tableName, "v1", {"v1", "v9", "v8"}),
+           "updateRowByPrimaryKey failed");
+    ensure(databaseManager->deleteRowByPrimaryKey(dbName, tableName, "v5"), "deleteRowByPrimaryKey failed");
 
     auto loadedTable = storage::Table::load(dbDir, tableName);
     const auto selectedRows = loadedTable.select(
@@ -102,7 +105,7 @@ int main()
     ensure(selectedRows.size() == 1, "select result row count mismatch");
     ensure(selectedRows.front().values.size() == 2, "select projected column count mismatch");
     ensure(selectedRows.front().values[0] == "v1", "select value A mismatch");
-    ensure(selectedRows.front().values[1] == "v3", "select value C mismatch");
+    ensure(selectedRows.front().values[1] == "v8", "select value C mismatch after update");
 
     const auto likeBoth = loadedTable.select(
         {"A"},
@@ -114,13 +117,13 @@ int main()
         {"A"},
         {storage::Table::WhereCondition{"A", storage::Table::CompareOp::LIKE, "%5"}}
     );
-    ensure(likeSuffix.size() == 1, "select like %field mismatch");
+    ensure(likeSuffix.empty(), "select like %field mismatch after delete");
 
     const auto likePrefix = loadedTable.select(
         {"A"},
         {storage::Table::WhereCondition{"A", storage::Table::CompareOp::LIKE, "v%"}}
     );
-    ensure(likePrefix.size() == 2, "select like field% mismatch");
+    ensure(likePrefix.size() == 1, "select like field% mismatch after update/delete");
     ensure(std::filesystem::exists(dbFile), ".db file not found");
     ensure(std::filesystem::exists(tdfFile), ".tdf file not found");
     ensure(std::filesystem::exists(trdFile), ".trd file not found");
@@ -151,7 +154,7 @@ int main()
         if (line == "constraint=PRIMARY_KEY(A)") foundPrimaryConstraint = true;
     }
     while (std::getline(trd, line)) {
-        if (line == "ROW|v1|v2|v3") {
+        if (line == "ROW|v1|v9|v8") {
             foundRow = true;
         }
     }

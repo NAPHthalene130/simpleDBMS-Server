@@ -103,6 +103,73 @@ void Table::insert(const std::vector<std::string>& values) {
     appendIndexEntry(primaryKey, offset);
 }
 
+bool Table::updateByPrimaryKey(const std::string& primaryKey,
+                               const std::vector<std::string>& newValues) {
+    if (primaryKey.empty() || newValues.empty()) {
+        return false;
+    }
+    ensure(newValues.size() == schema_.columns.size(),
+           "column count mismatch, expected " + std::to_string(schema_.columns.size()) +
+           ", got " + std::to_string(newValues.size()));
+
+    std::vector<Row> rows = readAllDataRows();
+    std::size_t hitIndex = rows.size();
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        if (!rows[i].values.empty() && rows[i].values.front() == primaryKey) {
+            hitIndex = i;
+            break;
+        }
+    }
+    if (hitIndex == rows.size()) {
+        return false;
+    }
+
+    const std::string newPrimaryKey = makePrimaryKey(newValues);
+    if (newPrimaryKey.empty()) {
+        return false;
+    }
+    if (newPrimaryKey != primaryKey) {
+        for (std::size_t i = 0; i < rows.size(); ++i) {
+            if (i == hitIndex || rows[i].values.empty()) {
+                continue;
+            }
+            if (rows[i].values.front() == newPrimaryKey) {
+                return false;
+            }
+        }
+    }
+
+    rows[hitIndex] = Row{newValues};
+    rewriteDataRows(rows);
+    rebuildIndexFromData();
+    return true;
+}
+
+bool Table::deleteByPrimaryKey(const std::string& primaryKey) {
+    if (primaryKey.empty()) {
+        return false;
+    }
+
+    std::vector<Row> rows = readAllDataRows();
+    std::vector<Row> keptRows;
+    keptRows.reserve(rows.size());
+    bool deleted = false;
+    for (const auto& row : rows) {
+        if (!deleted && !row.values.empty() && row.values.front() == primaryKey) {
+            deleted = true;
+            continue;
+        }
+        keptRows.push_back(row);
+    }
+    if (!deleted) {
+        return false;
+    }
+
+    rewriteDataRows(keptRows);
+    rebuildIndexFromData();
+    return true;
+}
+
 std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
                                const std::vector<WhereCondition>& whereConditions) const {
     std::vector<std::size_t> projectedIndexes;
@@ -324,6 +391,35 @@ bool Table::tryLoadPagedTid() {
         }
     }
     return true;
+}
+
+std::vector<Row> Table::readAllDataRows() const {
+    std::vector<Row> rows;
+    std::ifstream ifs(dataFilePath());
+    if (!ifs.good()) {
+        return rows;
+    }
+
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.rfind("ROW|", 0) != 0) {
+            continue;
+        }
+        Row row = deserializeRow(line.substr(4));
+        if (row.values.size() != schema_.columns.size()) {
+            continue;
+        }
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+
+void Table::rewriteDataRows(const std::vector<Row>& rows) const {
+    std::ofstream ofs(dataFilePath(), std::ios::trunc);
+    ensure(ofs.good(), "failed to rewrite table data file: " + dataFilePath().string());
+    for (const auto& row : rows) {
+        ofs << "ROW|" << serializeRow(row) << '\n';
+    }
 }
 
 std::size_t Table::columnIndex(const std::string& columnName) const {

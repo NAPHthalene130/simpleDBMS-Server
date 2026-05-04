@@ -79,6 +79,24 @@ public:
     void insert(const std::vector<std::string>& values);
 
     /**
+     * @brief 按主键更新整行记录
+     * @author Startale
+     * @param primaryKey 主键值
+     * @param newValues 新行数据
+     * @return 是否更新成功
+     */
+    bool updateByPrimaryKey(const std::string& primaryKey,
+                            const std::vector<std::string>& newValues);
+
+    /**
+     * @brief 按主键删除记录
+     * @author Startale
+     * @param primaryKey 主键值
+     * @return 是否删除成功
+     */
+    bool deleteByPrimaryKey(const std::string& primaryKey);
+
+    /**
      * @brief 按列投影并按条件过滤查询数据
      * @author Startale
      * @param targetColumns 目标列名列表，传空或 {"*"} 表示返回全部列
@@ -190,6 +208,20 @@ private:
      * @return 是否成功按页式格式加载
      */
     bool tryLoadPagedTid();
+
+    /**
+     * @brief 读取数据文件中的所有行记录
+     * @author Startale
+     * @return 行记录列表
+     */
+    std::vector<Row> readAllDataRows() const;
+
+    /**
+     * @brief 覆盖写回所有行记录到数据文件
+     * @author Startale
+     * @param rows 行记录列表
+     */
+    void rewriteDataRows(const std::vector<Row>& rows) const;
 
     /**
      * @brief 获取列名对应下标

@@ -37,6 +37,13 @@ public:
     bool insertRow(const std::string &dbName,
                    const std::string &tableName,
                    const std::vector<std::string> &values);
+    bool updateRowByPrimaryKey(const std::string &dbName,
+                               const std::string &tableName,
+                               const std::string &primaryKey,
+                               const std::vector<std::string> &newValues);
+    bool deleteRowByPrimaryKey(const std::string &dbName,
+                               const std::string &tableName,
+                               const std::string &primaryKey);
 
     /**
      * @brief 删除数据表

@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <ctime>
+#include <filesystem>
 #include <unordered_set>
 
 #include "log/LogWriter.h"
@@ -153,7 +154,7 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
         }
     }
 
-    const TableBlock tableBlock = buildTableBlock(createTableStmt);
+    const TableBlock tableBlock = buildTableBlock(createTableStmt, dbName);
     if (!databaseManager->createTable(tableBlock)) {
         LogWriter::error("executor",
                          "CreateTableExecutor",
@@ -169,23 +170,24 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
     return buildSuccessResult("Create table succeeded.", dbName, tableName);
 }
 
-TableBlock CreateTableExecutor::buildTableBlock(const CreateTableStmt *createTableStmt) const
+TableBlock CreateTableExecutor::buildTableBlock(const CreateTableStmt *createTableStmt, const std::string &dbName) const
 {
     TableBlock tableBlock;
-    if (createTableStmt == nullptr) {
+    if (createTableStmt == nullptr || dbName.empty()) {
         return tableBlock;
     }
 
     const std::string tableName = fixedArrayToString(createTableStmt->getTableName());
     const DateTime currentDateTime = buildCurrentDateTime();
+    const std::filesystem::path dbPath = std::filesystem::path("data") / dbName;
 
     tableBlock.setName(createTableStmt->getTableName());
     tableBlock.setRecordNum(0);
     tableBlock.setFieldNum(static_cast<std::int32_t>(buildFieldBlocks(createTableStmt).size()));
-    tableBlock.setTdf(toFileNameArray(tableName + ".tdf"));
-    tableBlock.setTic(toFileNameArray(tableName + ".tic"));
-    tableBlock.setTrd(toFileNameArray(tableName + ".trd"));
-    tableBlock.setTid(toFileNameArray(tableName + ".tid"));
+    tableBlock.setTdf(toFileNameArray((dbPath / (tableName + ".tdf")).string()));
+    tableBlock.setTic(toFileNameArray((dbPath / (tableName + ".tic")).string()));
+    tableBlock.setTrd(toFileNameArray((dbPath / (tableName + ".trd")).string()));
+    tableBlock.setTid(toFileNameArray((dbPath / (tableName + ".tid")).string()));
     tableBlock.setCreateTime(currentDateTime);
     tableBlock.setModifyTime(currentDateTime);
     return tableBlock;

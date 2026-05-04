@@ -57,9 +57,10 @@ private:
      * @brief 根据语句内容构建表元信息
      * @author NAPH130
      * @param createTableStmt 创建数据表语句对象
+     * @param dbName 当前数据库名称
      * @return 表元信息对象
      */
-    TableBlock buildTableBlock(const CreateTableStmt *createTableStmt) const;
+    TableBlock buildTableBlock(const CreateTableStmt *createTableStmt, const std::string &dbName) const;
 
     /**
      * @brief 提取并整理字段定义列表

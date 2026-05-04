@@ -187,4 +187,4 @@ src/storage/data/StartaleDB.db
 src/storage/data/StartaleDB/
 src/storage/DONTREADME.txt
 vcpkg_installed/
-build-msvc/
+/build-msvc/

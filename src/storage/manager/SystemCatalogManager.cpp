@@ -2,9 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -32,6 +35,8 @@ const std::filesystem::path &getDatabaseCatalogPath()
     return catalogPath;
 }
 
+constexpr const char *kCatalogBlockSeparator = "---DB_BLOCK---";
+
 template <std::size_t N>
 std::string arrayToString(const std::array<char, N> &value)
 {
@@ -48,47 +53,211 @@ std::array<char, N> stringToArray(const std::string &value)
     return result;
 }
 
-DatabaseBlock buildDatabaseBlock(const std::string &dbName)
+DateTime buildCurrentDateTime()
 {
-    DatabaseBlock block;
-    block.setName(stringToArray<128>(dbName));
-    block.setType(false);
-    block.setFileName(stringToArray<256>(getDatabaseCatalogPath().string()));
-    return block;
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
+    std::tm localTime {};
+    localtime_s(&localTime, &currentTime);
+    const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now.time_since_epoch())
+                              % 1000;
+
+    DateTime dateTime;
+    dateTime.setYear(static_cast<std::uint16_t>(localTime.tm_year + 1900));
+    dateTime.setMonth(static_cast<std::uint16_t>(localTime.tm_mon + 1));
+    dateTime.setDayOfWeek(static_cast<std::uint16_t>(localTime.tm_wday));
+    dateTime.setDay(static_cast<std::uint16_t>(localTime.tm_mday));
+    dateTime.setHour(static_cast<std::uint16_t>(localTime.tm_hour));
+    dateTime.setMinute(static_cast<std::uint16_t>(localTime.tm_min));
+    dateTime.setSecond(static_cast<std::uint16_t>(localTime.tm_sec));
+    dateTime.setMilliseconds(static_cast<std::uint16_t>(milliseconds.count()));
+    return dateTime;
 }
 
-std::vector<std::string> readDatabaseCatalog()
+std::string dateTimeToString(const DateTime &dateTime)
 {
-    std::vector<std::string> names;
+    std::ostringstream oss;
+    oss << dateTime.getYear() << ','
+        << dateTime.getMonth() << ','
+        << dateTime.getDayOfWeek() << ','
+        << dateTime.getDay() << ','
+        << dateTime.getHour() << ','
+        << dateTime.getMinute() << ','
+        << dateTime.getSecond() << ','
+        << dateTime.getMilliseconds();
+    return oss.str();
+}
+
+bool tryParseDateTime(const std::string &text, DateTime &dateTime)
+{
+    std::istringstream iss(text);
+    std::string token;
+    std::vector<int> values;
+    try {
+        while (std::getline(iss, token, ',')) {
+            if (token.empty()) {
+                return false;
+            }
+            values.push_back(std::stoi(token));
+        }
+    } catch (...) {
+        return false;
+    }
+    if (values.size() != 8) {
+        return false;
+    }
+    dateTime.setYear(static_cast<std::uint16_t>(values[0]));
+    dateTime.setMonth(static_cast<std::uint16_t>(values[1]));
+    dateTime.setDayOfWeek(static_cast<std::uint16_t>(values[2]));
+    dateTime.setDay(static_cast<std::uint16_t>(values[3]));
+    dateTime.setHour(static_cast<std::uint16_t>(values[4]));
+    dateTime.setMinute(static_cast<std::uint16_t>(values[5]));
+    dateTime.setSecond(static_cast<std::uint16_t>(values[6]));
+    dateTime.setMilliseconds(static_cast<std::uint16_t>(values[7]));
+    return true;
+}
+
+bool tryParseBool(const std::string &text, bool &value)
+{
+    if (text == "1" || text == "true" || text == "TRUE") {
+        value = true;
+        return true;
+    }
+    if (text == "0" || text == "false" || text == "FALSE") {
+        value = false;
+        return true;
+    }
+    return false;
+}
+
+std::string blockName(const DatabaseBlock &block)
+{
+    return arrayToString(block.getName());
+}
+
+DatabaseBlock normalizeBlock(const DatabaseBlock &source,
+                             const std::string &dbName,
+                             const std::filesystem::path &dbFolderPath)
+{
+    DatabaseBlock normalized = source;
+    normalized.setName(stringToArray<128>(dbName));
+    normalized.setFileName(stringToArray<256>(dbFolderPath.string()));
+    if (normalized.getCreateTime().getYear() == 0) {
+        normalized.setCreateTime(buildCurrentDateTime());
+    }
+    return normalized;
+}
+
+bool parseCatalogBlock(const std::vector<std::string> &lines, DatabaseBlock &out)
+{
+    if (lines.empty()) {
+        return false;
+    }
+    if (lines.size() == 1 && lines.front().find('=') == std::string::npos) {
+        const std::string dbName = lines.front();
+        if (dbName.empty()) {
+            return false;
+        }
+        DatabaseBlock block;
+        block.setName(stringToArray<128>(dbName));
+        block.setType(false);
+        block.setFileName(stringToArray<256>((getDataRootPath() / dbName).string()));
+        block.setCreateTime(buildCurrentDateTime());
+        out = block;
+        return true;
+    }
+
+    std::string name;
+    bool type = false;
+    bool hasType = false;
+    std::string fileName;
+    DateTime createTime;
+    bool hasCreateTime = false;
+
+    for (const auto &line : lines) {
+        const auto pos = line.find('=');
+        if (pos == std::string::npos || pos == 0) {
+            continue;
+        }
+        const std::string key = line.substr(0, pos);
+        const std::string value = line.substr(pos + 1);
+        if (key == "name") {
+            name = value;
+        } else if (key == "type") {
+            hasType = tryParseBool(value, type);
+        } else if (key == "filename") {
+            fileName = value;
+        } else if (key == "ctime") {
+            hasCreateTime = tryParseDateTime(value, createTime);
+        }
+    }
+
+    if (name.empty()) {
+        return false;
+    }
+    DatabaseBlock block;
+    block.setName(stringToArray<128>(name));
+    block.setType(hasType ? type : false);
+    block.setFileName(stringToArray<256>(fileName.empty() ? (getDataRootPath() / name).string() : fileName));
+    block.setCreateTime(hasCreateTime ? createTime : buildCurrentDateTime());
+    out = block;
+    return true;
+}
+
+std::vector<DatabaseBlock> readDatabaseCatalog()
+{
+    std::vector<DatabaseBlock> blocks;
     const auto &catalogPath = getDatabaseCatalogPath();
     if (!std::filesystem::exists(catalogPath)) {
-        return names;
+        return blocks;
     }
 
     std::ifstream ifs(catalogPath);
     if (!ifs.good()) {
-        return names;
+        return blocks;
     }
 
     std::string line;
+    std::vector<std::string> blockLines;
     while (std::getline(ifs, line)) {
+        if (line == kCatalogBlockSeparator) {
+            DatabaseBlock block;
+            if (parseCatalogBlock(blockLines, block)) {
+                blocks.push_back(block);
+            }
+            blockLines.clear();
+            continue;
+        }
         if (line.empty()) {
             continue;
         }
-        names.push_back(line);
+        blockLines.push_back(line);
     }
-    return names;
+    DatabaseBlock block;
+    if (parseCatalogBlock(blockLines, block)) {
+        blocks.push_back(block);
+    }
+    return blocks;
 }
 
-bool writeDatabaseCatalog(const std::vector<std::string> &names)
+bool writeDatabaseCatalog(const std::vector<DatabaseBlock> &blocks)
 {
     std::filesystem::create_directories(getDataRootPath());
     std::ofstream ofs(getDatabaseCatalogPath(), std::ios::trunc);
     if (!ofs.good()) {
         return false;
     }
-    for (const auto &name : names) {
-        ofs << name << '\n';
+    for (const auto &block : blocks) {
+        const std::string dbName = blockName(block);
+        if (dbName.empty()) {
+            continue;
+        }
+        ofs << "name=" << dbName << '\n';
+        ofs << "type=" << (block.getType() ? "1" : "0") << '\n';
+        ofs << "filename=" << arrayToString(block.getFileName()) << '\n';
+        ofs << "ctime=" << dateTimeToString(block.getCreateTime()) << '\n';
+        ofs << kCatalogBlockSeparator << '\n';
     }
     return true;
 }
@@ -113,10 +282,14 @@ bool SystemCatalogManager::createDatabase(DatabaseBlock dbInfo)
         const auto dbFolderPath = dbRootPath / dbName;
         const auto dbDescFilePath = dbFolderPath / (dbName + ".tb");
         const auto dbLogFilePath = dbFolderPath / (dbName + ".log");
-        auto databaseNames = readDatabaseCatalog();
+        auto databaseBlocks = readDatabaseCatalog();
+        const bool inCatalog = std::any_of(databaseBlocks.begin(),
+                                           databaseBlocks.end(),
+                                           [&dbName](const DatabaseBlock &block) {
+                                               return blockName(block) == dbName;
+                                           });
 
-        if (std::filesystem::exists(dbFolderPath)
-            || std::find(databaseNames.begin(), databaseNames.end(), dbName) != databaseNames.end()) {
+        if (std::filesystem::exists(dbFolderPath) || inCatalog) {
             LogWriter::warning("storage",
                                "SystemCatalogManager",
                                "createDatabase",
@@ -144,8 +317,8 @@ bool SystemCatalogManager::createDatabase(DatabaseBlock dbInfo)
             return false;
         }
 
-        databaseNames.push_back(dbName);
-        if (!writeDatabaseCatalog(databaseNames)) {
+        databaseBlocks.push_back(normalizeBlock(dbInfo, dbName, dbFolderPath));
+        if (!writeDatabaseCatalog(databaseBlocks)) {
             LogWriter::error("storage",
                              "SystemCatalogManager",
                              "createDatabase",
@@ -173,14 +346,18 @@ bool SystemCatalogManager::dropDatabase(std::string dbName)
     try {
         const auto &dbRootPath = getDataRootPath();
         const auto dbFolderPath = dbRootPath / dbName;
-        auto databaseNames = readDatabaseCatalog();
-        const auto newEnd = std::remove(databaseNames.begin(), databaseNames.end(), dbName);
-        const bool removedCatalog = newEnd != databaseNames.end();
-        databaseNames.erase(newEnd, databaseNames.end());
+        auto databaseBlocks = readDatabaseCatalog();
+        const auto newEnd = std::remove_if(databaseBlocks.begin(),
+                                           databaseBlocks.end(),
+                                           [&dbName](const DatabaseBlock &block) {
+                                               return blockName(block) == dbName;
+                                           });
+        const bool removedCatalog = newEnd != databaseBlocks.end();
+        databaseBlocks.erase(newEnd, databaseBlocks.end());
 
         const bool removedFolder = std::filesystem::exists(dbFolderPath)
                                    && std::filesystem::remove_all(dbFolderPath) > 0;
-        const bool catalogUpdated = removedCatalog ? writeDatabaseCatalog(databaseNames) : true;
+        const bool catalogUpdated = removedCatalog ? writeDatabaseCatalog(databaseBlocks) : true;
         if (!catalogUpdated) {
             LogWriter::error("storage",
                              "SystemCatalogManager",
@@ -209,12 +386,13 @@ std::vector<DatabaseBlock> SystemCatalogManager::getAllDatabases()
         return blocks;
     }
 
-    for (const auto &dbName : readDatabaseCatalog()) {
+    for (const auto &block : readDatabaseCatalog()) {
+        const std::string dbName = blockName(block);
         const auto dbFolderPath = dbRootPath / dbName;
         if (!std::filesystem::exists(dbFolderPath) || !std::filesystem::is_directory(dbFolderPath)) {
             continue;
         }
-        blocks.push_back(buildDatabaseBlock(dbName));
+        blocks.push_back(normalizeBlock(block, dbName, dbFolderPath));
     }
     LogWriter::debug("storage",
                      "SystemCatalogManager",
@@ -232,8 +410,12 @@ bool SystemCatalogManager::checkDbExists(std::string dbName)
 
     const auto &dbRootPath = getDataRootPath();
     const auto dbFolderPath = dbRootPath / dbName;
-    const auto databaseNames = readDatabaseCatalog();
-    const bool inCatalog = std::find(databaseNames.begin(), databaseNames.end(), dbName) != databaseNames.end();
+    const auto databaseBlocks = readDatabaseCatalog();
+    const bool inCatalog = std::any_of(databaseBlocks.begin(),
+                                       databaseBlocks.end(),
+                                       [&dbName](const DatabaseBlock &block) {
+                                           return blockName(block) == dbName;
+                                       });
     const bool exists = std::filesystem::exists(dbFolderPath) && std::filesystem::is_directory(dbFolderPath)
                         && inCatalog;
     LogWriter::debug("storage",

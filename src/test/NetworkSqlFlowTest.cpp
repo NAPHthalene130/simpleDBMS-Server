@@ -31,6 +31,7 @@ namespace {
 constexpr unsigned short TEST_PORT = 19086;
 constexpr int CONNECT_RETRY_COUNT = 40;
 constexpr auto CONNECT_RETRY_INTERVAL = std::chrono::milliseconds(100);
+constexpr const char *kCatalogBlockSeparator = "---DB_BLOCK---";
 
 struct TestStepResult
 {
@@ -108,16 +109,40 @@ void cleanupDatabaseArtifacts(const std::string &dbName)
     }
     if (std::filesystem::exists(catalogFile)) {
         std::ifstream ifs(catalogFile);
-        std::vector<std::string> names;
+        std::vector<std::vector<std::string>> blocks;
+        std::vector<std::string> current;
         std::string line;
         while (std::getline(ifs, line)) {
-            if (!line.empty() && line != dbName) {
-                names.push_back(line);
+            if (line == kCatalogBlockSeparator) {
+                if (!current.empty()) {
+                    blocks.push_back(current);
+                }
+                current.clear();
+                continue;
+            }
+            if (!line.empty()) {
+                current.push_back(line);
             }
         }
+        if (!current.empty()) {
+            blocks.push_back(current);
+        }
         std::ofstream ofs(catalogFile, std::ios::trunc);
-        for (const auto &name : names) {
-            ofs << name << '\n';
+        for (const auto &block : blocks) {
+            bool removeBlock = false;
+            for (const auto &item : block) {
+                if (item == "name=" + dbName || item == dbName) {
+                    removeBlock = true;
+                    break;
+                }
+            }
+            if (removeBlock) {
+                continue;
+            }
+            for (const auto &item : block) {
+                ofs << item << '\n';
+            }
+            ofs << kCatalogBlockSeparator << '\n';
         }
     }
 }
@@ -188,7 +213,7 @@ bool containsTableNameInTb(const std::filesystem::path &tbPath, const std::strin
     }
     std::string line;
     while (std::getline(ifs, line)) {
-        if (line == "table=" + tableName || line == tableName) {
+        if (line == "name=" + tableName || line == "table=" + tableName || line == tableName) {
             return true;
         }
     }

@@ -2,6 +2,8 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "DateTime.h"
 
@@ -43,6 +45,9 @@ public:
 
     const DateTime &getModifyTime() const;
     void setModifyTime(const DateTime &modifyTime);
+
+    std::vector<std::string> toDescriptorLines() const;
+    static bool fromDescriptorLines(const std::vector<std::string> &lines, TableBlock &outBlock);
 
 private:
     std::array<char, 128> name; ///< 表名称

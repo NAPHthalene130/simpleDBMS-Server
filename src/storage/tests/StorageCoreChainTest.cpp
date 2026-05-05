@@ -15,6 +15,8 @@
 
 namespace {
 
+constexpr const char *kCatalogBlockSeparator = "---DB_BLOCK---";
+
 template <std::size_t N>
 std::array<char, N> toArray(const std::string &text)
 {
@@ -28,6 +30,57 @@ void ensure(bool condition, const std::string &message)
 {
     if (!condition) {
         throw std::runtime_error(message);
+    }
+}
+
+void removeDatabaseFromCatalog(const std::filesystem::path &catalogFile, const std::string &dbName)
+{
+    if (!std::filesystem::exists(catalogFile)) {
+        return;
+    }
+    std::ifstream ifs(catalogFile);
+    if (!ifs.good()) {
+        return;
+    }
+
+    std::vector<std::vector<std::string>> blocks;
+    std::vector<std::string> current;
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line == kCatalogBlockSeparator) {
+            if (!current.empty()) {
+                blocks.push_back(current);
+            }
+            current.clear();
+            continue;
+        }
+        if (!line.empty()) {
+            current.push_back(line);
+        }
+    }
+    if (!current.empty()) {
+        blocks.push_back(current);
+    }
+
+    std::ofstream ofs(catalogFile, std::ios::trunc);
+    if (!ofs.good()) {
+        return;
+    }
+    for (const auto &block : blocks) {
+        bool removeBlock = false;
+        for (const auto &item : block) {
+            if (item == "name=" + dbName || item == dbName) {
+                removeBlock = true;
+                break;
+            }
+        }
+        if (removeBlock) {
+            continue;
+        }
+        for (const auto &item : block) {
+            ofs << item << '\n';
+        }
+        ofs << kCatalogBlockSeparator << '\n';
     }
 }
 
@@ -76,20 +129,7 @@ int main()
     if (std::filesystem::exists(dbDir)) {
         std::filesystem::remove_all(dbDir);
     }
-    if (std::filesystem::exists(catalogFile)) {
-        std::ifstream ifs(catalogFile);
-        std::vector<std::string> names;
-        std::string line;
-        while (std::getline(ifs, line)) {
-            if (!line.empty() && line != dbName) {
-                names.push_back(line);
-            }
-        }
-        std::ofstream ofs(catalogFile, std::ios::trunc);
-        for (const auto &name : names) {
-            ofs << name << '\n';
-        }
-    }
+    removeDatabaseFromCatalog(catalogFile, dbName);
 
     Core core;
 
@@ -108,7 +148,7 @@ int main()
         bool foundTableInTb = false;
         std::string line;
         while (std::getline(tb, line)) {
-            if (line == "table=" + tableName || line == tableName) {
+            if (line == "name=" + tableName || line == "table=" + tableName || line == tableName) {
                 foundTableInTb = true;
                 break;
             }

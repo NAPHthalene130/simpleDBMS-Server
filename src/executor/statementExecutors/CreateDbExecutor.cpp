@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <ctime>
+#include <filesystem>
 
 #include "log/LogWriter.h"
 
@@ -146,7 +147,7 @@ DatabaseBlock CreateDbExecutor::buildDatabaseBlock(const CreateDbStmt *createDbS
     const std::string &dbName = createDbStmt->getDbName();
     databaseBlock.setName(toNameArray(dbName));
     databaseBlock.setType(false);
-    databaseBlock.setFileName(toFileNameArray("database.db"));
+    databaseBlock.setFileName(toFileNameArray((std::filesystem::path("data") / dbName).string()));
     databaseBlock.setCreateTime(buildCurrentDateTime());
     return databaseBlock;
 }

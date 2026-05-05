@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 #include "log/LogWriter.h"
 
@@ -23,6 +24,12 @@ const std::filesystem::path &getDataRootPath()
     static const std::filesystem::path dataRoot =
         (std::filesystem::path(__FILE__).parent_path().parent_path() / "data").lexically_normal();
     return dataRoot;
+}
+
+const std::filesystem::path &getDatabaseCatalogPath()
+{
+    static const std::filesystem::path catalogPath = getDataRootPath() / "database.db";
+    return catalogPath;
 }
 
 template <std::size_t N>
@@ -46,8 +53,44 @@ DatabaseBlock buildDatabaseBlock(const std::string &dbName)
     DatabaseBlock block;
     block.setName(stringToArray<128>(dbName));
     block.setType(false);
-    block.setFileName(stringToArray<256>((getDataRootPath() / (dbName + ".db")).string()));
+    block.setFileName(stringToArray<256>(getDatabaseCatalogPath().string()));
     return block;
+}
+
+std::vector<std::string> readDatabaseCatalog()
+{
+    std::vector<std::string> names;
+    const auto &catalogPath = getDatabaseCatalogPath();
+    if (!std::filesystem::exists(catalogPath)) {
+        return names;
+    }
+
+    std::ifstream ifs(catalogPath);
+    if (!ifs.good()) {
+        return names;
+    }
+
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.empty()) {
+            continue;
+        }
+        names.push_back(line);
+    }
+    return names;
+}
+
+bool writeDatabaseCatalog(const std::vector<std::string> &names)
+{
+    std::filesystem::create_directories(getDataRootPath());
+    std::ofstream ofs(getDatabaseCatalogPath(), std::ios::trunc);
+    if (!ofs.good()) {
+        return false;
+    }
+    for (const auto &name : names) {
+        ofs << name << '\n';
+    }
+    return true;
 }
 
 } // namespace
@@ -68,11 +111,12 @@ bool SystemCatalogManager::createDatabase(DatabaseBlock dbInfo)
 
         const auto &dbRootPath = getDataRootPath();
         const auto dbFolderPath = dbRootPath / dbName;
-        const auto dbFilePath = dbRootPath / (dbName + ".db");
         const auto dbDescFilePath = dbFolderPath / (dbName + ".tb");
         const auto dbLogFilePath = dbFolderPath / (dbName + ".log");
+        auto databaseNames = readDatabaseCatalog();
 
-        if (std::filesystem::exists(dbFolderPath) || std::filesystem::exists(dbFilePath)) {
+        if (std::filesystem::exists(dbFolderPath)
+            || std::find(databaseNames.begin(), databaseNames.end(), dbName) != databaseNames.end()) {
             LogWriter::warning("storage",
                                "SystemCatalogManager",
                                "createDatabase",
@@ -81,15 +125,6 @@ bool SystemCatalogManager::createDatabase(DatabaseBlock dbInfo)
         }
 
         std::filesystem::create_directories(dbFolderPath);
-
-        std::ofstream dbFile(dbFilePath, std::ios::app);
-        if (!dbFile.good()) {
-            LogWriter::error("storage",
-                             "SystemCatalogManager",
-                             "createDatabase",
-                             std::string("Failed to create database file for ") + dbName);
-            return false;
-        }
 
         std::ofstream dbDescFile(dbDescFilePath, std::ios::app);
         if (!dbDescFile.good()) {
@@ -106,6 +141,15 @@ bool SystemCatalogManager::createDatabase(DatabaseBlock dbInfo)
                              "SystemCatalogManager",
                              "createDatabase",
                              std::string("Failed to create database log file for ") + dbName);
+            return false;
+        }
+
+        databaseNames.push_back(dbName);
+        if (!writeDatabaseCatalog(databaseNames)) {
+            LogWriter::error("storage",
+                             "SystemCatalogManager",
+                             "createDatabase",
+                             std::string("Failed to update database catalog for ") + dbName);
             return false;
         }
         LogWriter::info("storage",
@@ -129,18 +173,27 @@ bool SystemCatalogManager::dropDatabase(std::string dbName)
     try {
         const auto &dbRootPath = getDataRootPath();
         const auto dbFolderPath = dbRootPath / dbName;
-        const auto dbFilePath = dbRootPath / (dbName + ".db");
+        auto databaseNames = readDatabaseCatalog();
+        const auto newEnd = std::remove(databaseNames.begin(), databaseNames.end(), dbName);
+        const bool removedCatalog = newEnd != databaseNames.end();
+        databaseNames.erase(newEnd, databaseNames.end());
 
         const bool removedFolder = std::filesystem::exists(dbFolderPath)
                                    && std::filesystem::remove_all(dbFolderPath) > 0;
-        const bool removedDbFile = std::filesystem::exists(dbFilePath)
-                                   && std::filesystem::remove(dbFilePath);
+        const bool catalogUpdated = removedCatalog ? writeDatabaseCatalog(databaseNames) : true;
+        if (!catalogUpdated) {
+            LogWriter::error("storage",
+                             "SystemCatalogManager",
+                             "dropDatabase",
+                             std::string("Failed to update database catalog while dropping ") + dbName);
+            return false;
+        }
         LogWriter::info("storage",
                         "SystemCatalogManager",
                         "dropDatabase",
                         std::string("Drop database result for ") + dbName + ": "
-                            + ((removedFolder || removedDbFile) ? "success" : "not found"));
-        return removedFolder || removedDbFile;
+                            + ((removedFolder || removedCatalog) ? "success" : "not found"));
+        return removedFolder || removedCatalog;
     } catch (...) {
         LogWriter::error("storage", "SystemCatalogManager", "dropDatabase", "Unknown exception while dropping database.");
         return false;
@@ -156,14 +209,12 @@ std::vector<DatabaseBlock> SystemCatalogManager::getAllDatabases()
         return blocks;
     }
 
-    for (const auto &entry : std::filesystem::directory_iterator(dbRootPath)) {
-        if (!entry.is_regular_file()) {
+    for (const auto &dbName : readDatabaseCatalog()) {
+        const auto dbFolderPath = dbRootPath / dbName;
+        if (!std::filesystem::exists(dbFolderPath) || !std::filesystem::is_directory(dbFolderPath)) {
             continue;
         }
-        if (entry.path().extension() != ".db") {
-            continue;
-        }
-        blocks.push_back(buildDatabaseBlock(entry.path().stem().string()));
+        blocks.push_back(buildDatabaseBlock(dbName));
     }
     LogWriter::debug("storage",
                      "SystemCatalogManager",
@@ -181,9 +232,10 @@ bool SystemCatalogManager::checkDbExists(std::string dbName)
 
     const auto &dbRootPath = getDataRootPath();
     const auto dbFolderPath = dbRootPath / dbName;
-    const auto dbFilePath = dbRootPath / (dbName + ".db");
+    const auto databaseNames = readDatabaseCatalog();
+    const bool inCatalog = std::find(databaseNames.begin(), databaseNames.end(), dbName) != databaseNames.end();
     const bool exists = std::filesystem::exists(dbFolderPath) && std::filesystem::is_directory(dbFolderPath)
-                        && std::filesystem::exists(dbFilePath) && std::filesystem::is_regular_file(dbFilePath);
+                        && inCatalog;
     LogWriter::debug("storage",
                       "SystemCatalogManager",
                       "checkDbExists",

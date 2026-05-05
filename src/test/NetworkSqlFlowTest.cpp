@@ -101,13 +101,24 @@ void cleanupDatabaseArtifacts(const std::string &dbName)
 {
     const std::filesystem::path dbRoot("data");
     const std::filesystem::path dbDir = dbRoot / dbName;
-    const std::filesystem::path dbFile = dbRoot / (dbName + ".db");
+    const std::filesystem::path catalogFile = dbRoot / "database.db";
 
     if (std::filesystem::exists(dbDir)) {
         std::filesystem::remove_all(dbDir);
     }
-    if (std::filesystem::exists(dbFile)) {
-        std::filesystem::remove(dbFile);
+    if (std::filesystem::exists(catalogFile)) {
+        std::ifstream ifs(catalogFile);
+        std::vector<std::string> names;
+        std::string line;
+        while (std::getline(ifs, line)) {
+            if (!line.empty() && line != dbName) {
+                names.push_back(line);
+            }
+        }
+        std::ofstream ofs(catalogFile, std::ios::trunc);
+        for (const auto &name : names) {
+            ofs << name << '\n';
+        }
     }
 }
 
@@ -167,6 +178,21 @@ bool containsNameRow(const std::vector<std::vector<std::string>> &rows, const st
                        [&expectedName](const std::vector<std::string> &row) {
                            return !row.empty() && row[0] == expectedName;
                        });
+}
+
+bool containsTableNameInTb(const std::filesystem::path &tbPath, const std::string &tableName)
+{
+    std::ifstream ifs(tbPath);
+    if (!ifs.good()) {
+        return false;
+    }
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line == "table=" + tableName || line == tableName) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::string joinStrings(const std::vector<std::string> &values, const std::string &separator)
@@ -247,7 +273,7 @@ int main()
             && createDbResponse.getSuccess()
             && createDbResponse.getDbName() == dbName
             && std::filesystem::exists(std::filesystem::path("data") / dbName)
-            && std::filesystem::exists(std::filesystem::path("data") / (dbName + ".db"));
+            && std::filesystem::exists(std::filesystem::path("data") / "database.db");
         appendStepResult(&stepResults,
                          "CREATE DATABASE",
                          createDbPassed,
@@ -288,13 +314,15 @@ int main()
         createTableRequest.setSql("CREATE TABLE " + tableName + " (id INT, name CHAR(10));");
         const NetworkTransferData createTableResponse = sendRequestAndReceive(&clientSocket, createTableRequest);
         const std::filesystem::path tableDir = std::filesystem::path("data") / dbName;
+        const std::filesystem::path tbFile = tableDir / (dbName + ".tb");
         const bool createTablePassed =
             createTableResponse.getType() == NetworkTransferData::SQL_EXEC_RESPONSE
             && createTableResponse.getSuccess()
             && std::filesystem::exists(tableDir / (tableName + ".tdf"))
             && std::filesystem::exists(tableDir / (tableName + ".trd"))
             && std::filesystem::exists(tableDir / (tableName + ".tic"))
-            && std::filesystem::exists(tableDir / (tableName + ".tid"));
+            && std::filesystem::exists(tableDir / (tableName + ".tid"))
+            && containsTableNameInTb(tbFile, tableName);
         appendStepResult(&stepResults,
                          "CREATE TABLE",
                          createTablePassed,

@@ -66,7 +66,8 @@ int main()
     const std::string tableName = "StartaleTB";
     const std::filesystem::path dbRoot("data");
     const std::filesystem::path dbDir = dbRoot / dbName;
-    const std::filesystem::path dbFile = dbRoot / (dbName + ".db");
+    const std::filesystem::path tbFile = dbDir / (dbName + ".tb");
+    const std::filesystem::path catalogFile = dbRoot / "database.db";
     const std::filesystem::path tdfFile = dbDir / (tableName + ".tdf");
     const std::filesystem::path trdFile = dbDir / (tableName + ".trd");
     const std::filesystem::path ticFile = dbDir / (tableName + ".tic");
@@ -75,8 +76,19 @@ int main()
     if (std::filesystem::exists(dbDir)) {
         std::filesystem::remove_all(dbDir);
     }
-    if (std::filesystem::exists(dbFile)) {
-        std::filesystem::remove(dbFile);
+    if (std::filesystem::exists(catalogFile)) {
+        std::ifstream ifs(catalogFile);
+        std::vector<std::string> names;
+        std::string line;
+        while (std::getline(ifs, line)) {
+            if (!line.empty() && line != dbName) {
+                names.push_back(line);
+            }
+        }
+        std::ofstream ofs(catalogFile, std::ios::trunc);
+        for (const auto &name : names) {
+            ofs << name << '\n';
+        }
     }
 
     Core core;
@@ -91,6 +103,18 @@ int main()
     ensure(systemCatalogManager->createDatabase(dbInfo), "createDatabase failed");
 
     ensure(databaseManager->createTable(dbName, tableName, {"A", "B", "C"}), "createTable failed");
+    {
+        std::ifstream tb(tbFile);
+        bool foundTableInTb = false;
+        std::string line;
+        while (std::getline(tb, line)) {
+            if (line == "table=" + tableName || line == tableName) {
+                foundTableInTb = true;
+                break;
+            }
+        }
+        ensure(foundTableInTb, ".tb missing table name after createTable");
+    }
     ensure(databaseManager->insertRow(dbName, tableName, {"v1", "v2", "v3"}), "insertRow failed");
     ensure(databaseManager->insertRow(dbName, tableName, {"v5", "v2", "v3"}), "insertRow failed");
     ensure(databaseManager->updateRowByPrimaryKey(dbName, tableName, "v1", {"v1", "v9", "v8"}),
@@ -124,7 +148,7 @@ int main()
         {storage::Table::WhereCondition{"A", storage::Table::CompareOp::LIKE, "v%"}}
     );
     ensure(likePrefix.size() == 1, "select like field% mismatch after update/delete");
-    ensure(std::filesystem::exists(dbFile), ".db file not found");
+    ensure(std::filesystem::exists(catalogFile), "database.db file not found");
     ensure(std::filesystem::exists(tdfFile), ".tdf file not found");
     ensure(std::filesystem::exists(trdFile), ".trd file not found");
     ensure(std::filesystem::exists(ticFile), ".tic file not found");

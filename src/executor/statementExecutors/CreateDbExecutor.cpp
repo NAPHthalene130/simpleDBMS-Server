@@ -146,7 +146,7 @@ DatabaseBlock CreateDbExecutor::buildDatabaseBlock(const CreateDbStmt *createDbS
     const std::string &dbName = createDbStmt->getDbName();
     databaseBlock.setName(toNameArray(dbName));
     databaseBlock.setType(false);
-    databaseBlock.setFileName(toFileNameArray(dbName + ".db"));
+    databaseBlock.setFileName(toFileNameArray("database.db"));
     databaseBlock.setCreateTime(buildCurrentDateTime());
     return databaseBlock;
 }

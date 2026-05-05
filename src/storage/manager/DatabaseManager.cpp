@@ -4,6 +4,7 @@
 #include <array>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -86,6 +87,52 @@ TableBlock buildTableBlock(const std::filesystem::path &dbPath, const std::strin
     return block;
 }
 
+std::filesystem::path databaseDescriptorPath(const std::filesystem::path &dbPath)
+{
+    return dbPath / (dbPath.filename().string() + ".tb");
+}
+
+std::vector<std::string> readTablesFromDescriptor(const std::filesystem::path &dbPath)
+{
+    std::vector<std::string> tableNames;
+    const auto descPath = databaseDescriptorPath(dbPath);
+    if (!std::filesystem::exists(descPath)) {
+        return tableNames;
+    }
+
+    std::ifstream ifs(descPath);
+    if (!ifs.good()) {
+        return tableNames;
+    }
+
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.empty()) {
+            continue;
+        }
+        if (line.rfind("table=", 0) == 0) {
+            line = line.substr(6);
+        }
+        if (!line.empty()) {
+            tableNames.push_back(line);
+        }
+    }
+    return tableNames;
+}
+
+bool writeTablesToDescriptor(const std::filesystem::path &dbPath, const std::vector<std::string> &tableNames)
+{
+    const auto descPath = databaseDescriptorPath(dbPath);
+    std::ofstream ofs(descPath, std::ios::trunc);
+    if (!ofs.good()) {
+        return false;
+    }
+    for (const auto &tableName : tableNames) {
+        ofs << "table=" << tableName << '\n';
+    }
+    return true;
+}
+
 } // namespace
 
 DatabaseManager::DatabaseManager(Core *core)
@@ -139,6 +186,17 @@ bool DatabaseManager::createTable(const std::string &dbName,
             return false;
         }
         storage::Table::create(dbPath, tableName, columns);
+        auto tableNames = readTablesFromDescriptor(dbPath);
+        if (std::find(tableNames.begin(), tableNames.end(), tableName) == tableNames.end()) {
+            tableNames.push_back(tableName);
+        }
+        if (!writeTablesToDescriptor(dbPath, tableNames)) {
+            LogWriter::error("storage",
+                             "DatabaseManager",
+                             "createTable",
+                             std::string("Failed to update table descriptor file for ") + dbName + "." + tableName);
+            return false;
+        }
         LogWriter::info("storage",
                         "DatabaseManager",
                         "createTable",
@@ -207,7 +265,7 @@ bool DatabaseManager::updateRowByPrimaryKey(const std::string &dbName,
     }
 
     try {
-        const auto dbPath = std::filesystem::path(kDbRootPath) / dbName;
+        const auto dbPath = getDataRootPath() / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
             LogWriter::warning("storage",
                                "DatabaseManager",
@@ -246,7 +304,7 @@ bool DatabaseManager::deleteRowByPrimaryKey(const std::string &dbName,
     }
 
     try {
-        const auto dbPath = std::filesystem::path(kDbRootPath) / dbName;
+        const auto dbPath = getDataRootPath() / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
             LogWriter::warning("storage",
                                "DatabaseManager",
@@ -286,6 +344,7 @@ bool DatabaseManager::dropTable(std::string tableName)
     }
 
     bool removedAny = false;
+    bool descriptorUpdated = true;
     for (const auto &entry : std::filesystem::directory_iterator(dbRootPath)) {
         if (!entry.is_directory()) {
             continue;
@@ -302,6 +361,22 @@ bool DatabaseManager::dropTable(std::string tableName)
                 removedAny = std::filesystem::remove(candidate) || removedAny;
             }
         }
+        if (std::filesystem::exists(candidates.front())) {
+            continue;
+        }
+        auto tableNames = readTablesFromDescriptor(dbPath);
+        const auto newEnd = std::remove(tableNames.begin(), tableNames.end(), tableName);
+        if (newEnd != tableNames.end()) {
+            tableNames.erase(newEnd, tableNames.end());
+            descriptorUpdated = writeTablesToDescriptor(dbPath, tableNames) && descriptorUpdated;
+        }
+    }
+    if (!descriptorUpdated) {
+        LogWriter::error("storage",
+                         "DatabaseManager",
+                         "dropTable",
+                         std::string("Failed to update .tb descriptor while dropping ") + tableName);
+        return false;
     }
     LogWriter::info("storage",
                     "DatabaseManager",

@@ -11,7 +11,19 @@
 
 namespace {
 
-constexpr const char *kDbRootPath = "data";
+/**
+ * @brief 获取数据存储根目录的绝对路径
+ * @author NAPH130
+ * @return 数据根目录路径（基于源文件位置，不依赖进程工作目录）
+ * @details 本文件位于 src/storage/manager/，数据目录期望在 src/storage/data/。
+ *          通过 __FILE__ 向上两级获得 storage/ 再拼接 data/，确保无论从何处启动服务端都写入正确位置。
+ */
+const std::filesystem::path &getDataRootPath()
+{
+    static const std::filesystem::path dataRoot =
+        (std::filesystem::path(__FILE__).parent_path().parent_path() / "data").lexically_normal();
+    return dataRoot;
+}
 
 template <std::size_t N>
 std::string arrayToString(const std::array<char, N> &value)
@@ -34,7 +46,7 @@ DatabaseBlock buildDatabaseBlock(const std::string &dbName)
     DatabaseBlock block;
     block.setName(stringToArray<128>(dbName));
     block.setType(false);
-    block.setFileName(stringToArray<256>((std::filesystem::path(kDbRootPath) / (dbName + ".db")).string()));
+    block.setFileName(stringToArray<256>((getDataRootPath() / (dbName + ".db")).string()));
     return block;
 }
 
@@ -54,7 +66,7 @@ bool SystemCatalogManager::createDatabase(DatabaseBlock dbInfo)
             return false;
         }
 
-        const auto dbRootPath = std::filesystem::path(kDbRootPath);
+        const auto &dbRootPath = getDataRootPath();
         const auto dbFolderPath = dbRootPath / dbName;
         const auto dbFilePath = dbRootPath / (dbName + ".db");
         const auto dbDescFilePath = dbFolderPath / (dbName + ".tb");
@@ -115,7 +127,7 @@ bool SystemCatalogManager::dropDatabase(std::string dbName)
     }
 
     try {
-        const auto dbRootPath = std::filesystem::path(kDbRootPath);
+        const auto &dbRootPath = getDataRootPath();
         const auto dbFolderPath = dbRootPath / dbName;
         const auto dbFilePath = dbRootPath / (dbName + ".db");
 
@@ -138,7 +150,7 @@ bool SystemCatalogManager::dropDatabase(std::string dbName)
 std::vector<DatabaseBlock> SystemCatalogManager::getAllDatabases()
 {
     std::vector<DatabaseBlock> blocks;
-    const auto dbRootPath = std::filesystem::path(kDbRootPath);
+    const auto &dbRootPath = getDataRootPath();
 
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
         return blocks;
@@ -167,14 +179,14 @@ bool SystemCatalogManager::checkDbExists(std::string dbName)
         return false;
     }
 
-    const auto dbRootPath = std::filesystem::path(kDbRootPath);
+    const auto &dbRootPath = getDataRootPath();
     const auto dbFolderPath = dbRootPath / dbName;
     const auto dbFilePath = dbRootPath / (dbName + ".db");
     const bool exists = std::filesystem::exists(dbFolderPath) && std::filesystem::is_directory(dbFolderPath)
                         && std::filesystem::exists(dbFilePath) && std::filesystem::is_regular_file(dbFilePath);
     LogWriter::debug("storage",
-                     "SystemCatalogManager",
-                     "checkDbExists",
+                      "SystemCatalogManager",
+                      "checkDbExists",
                      std::string("Database existence check for ") + dbName + ": " + (exists ? "true" : "false"));
     return exists;
 }

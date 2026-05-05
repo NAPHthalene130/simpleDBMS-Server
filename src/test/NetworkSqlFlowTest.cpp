@@ -266,11 +266,11 @@ int main()
                          useDbPassed,
                          "type=" + useDbResponse.getType() + ", message=" + useDbResponse.getMessage());
 
-        NetworkTransferData showDatabaseRequest(NetworkTransferData::SQL_QUERY_REQUEST, testUserId);
+        NetworkTransferData showDatabaseRequest(NetworkTransferData::SQL_EXEC_REQUEST, testUserId);
         showDatabaseRequest.setSql("SHOW DATABASE " + dbName + ";");
         const NetworkTransferData showDatabaseResponse = sendRequestAndReceive(&clientSocket, showDatabaseRequest);
         const bool showDatabasePassed =
-            showDatabaseResponse.getType() == NetworkTransferData::SQL_QUERY_RESPONSE
+            showDatabaseResponse.getType() == NetworkTransferData::SQL_EXEC_RESPONSE
             && showDatabaseResponse.getSuccess()
             && showDatabaseResponse.getColumns() == std::vector<std::string> {"name"}
             && containsNameRow(showDatabaseResponse.getRows(), dbName);

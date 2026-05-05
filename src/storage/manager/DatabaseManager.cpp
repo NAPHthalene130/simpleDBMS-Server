@@ -12,7 +12,19 @@
 
 namespace {
 
-constexpr const char *kDbRootPath = "data";
+/**
+ * @brief 获取数据存储根目录的绝对路径
+ * @author NAPH130
+ * @return 数据根目录路径（基于源文件位置，不依赖进程工作目录）
+ * @details 本文件位于 src/storage/manager/，数据目录期望在 src/storage/data/。
+ *          通过 __FILE__ 向上两级获得 storage/ 再拼接 data/，确保无论从何处启动服务端都写入正确位置。
+ */
+const std::filesystem::path &getDataRootPath()
+{
+    static const std::filesystem::path dataRoot =
+        (std::filesystem::path(__FILE__).parent_path().parent_path() / "data").lexically_normal();
+    return dataRoot;
+}
 
 template <std::size_t N>
 std::string arrayToString(const std::array<char, N> &value)
@@ -117,7 +129,8 @@ bool DatabaseManager::createTable(const std::string &dbName,
     }
 
     try {
-        const auto dbPath = std::filesystem::path(kDbRootPath) / dbName;
+        const auto &dbRootPath = getDataRootPath();
+        const auto dbPath = dbRootPath / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
             LogWriter::warning("storage",
                                "DatabaseManager",
@@ -153,7 +166,8 @@ bool DatabaseManager::insertRow(const std::string &dbName,
     }
 
     try {
-        const auto dbPath = std::filesystem::path(kDbRootPath) / dbName;
+        const auto &dbRootPath = getDataRootPath();
+        const auto dbPath = dbRootPath / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
             LogWriter::warning("storage",
                                "DatabaseManager",
@@ -186,7 +200,7 @@ bool DatabaseManager::dropTable(std::string tableName)
         return false;
     }
 
-    const auto dbRootPath = std::filesystem::path(kDbRootPath);
+    const auto &dbRootPath = getDataRootPath();
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
         LogWriter::warning("storage", "DatabaseManager", "dropTable", "Database root directory not found.");
         return false;
@@ -231,7 +245,7 @@ TableBlock DatabaseManager::getTableInfo(std::string tableName)
         return {};
     }
 
-    const auto dbRootPath = std::filesystem::path(kDbRootPath);
+    const auto &dbRootPath = getDataRootPath();
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
         LogWriter::warning("storage", "DatabaseManager", "getTableInfo", "Database root directory not found.");
         return {};
@@ -257,7 +271,7 @@ TableBlock DatabaseManager::getTableInfo(std::string tableName)
 std::vector<TableBlock> DatabaseManager::getAllTables()
 {
     std::vector<TableBlock> blocks;
-    const auto dbRootPath = std::filesystem::path(kDbRootPath);
+    const auto &dbRootPath = getDataRootPath();
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
         LogWriter::warning("storage", "DatabaseManager", "getAllTables", "Database root directory not found.");
         return blocks;

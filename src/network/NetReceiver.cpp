@@ -30,10 +30,6 @@ bool isQueryStatementType(ExecutionStatementType statementType)
 
 std::string buildResponseType(const std::string &requestType)
 {
-    if (requestType == NetworkTransferData::SQL_QUERY_REQUEST) {
-        return NetworkTransferData::SQL_QUERY_RESPONSE;
-    }
-
     if (requestType == NetworkTransferData::SQL_EXEC_REQUEST) {
         return NetworkTransferData::SQL_EXEC_RESPONSE;
     }
@@ -175,7 +171,7 @@ void NetReceiver::stop()
 
 /**
  * @brief 处理客户端完整请求并返回响应
- * @details 网络层仅负责收发与分发，将 JSON 校验、SQL 编排和错误收敛交由 SqlPipeline 处理。
+ * @details 将所有 SQL 语句统一通过 SQL_EXEC_REQUEST 处理，服务端根据解析后的语句类型自动区分查询/非查询响应。
  * @author NAPH130
  * @param clientSocket 客户端套接字
  * @param networkTransferData 网络层接收到的完整传输对象
@@ -219,8 +215,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             return;
         }
 
-        if (networkTransferData.getType() == NetworkTransferData::SQL_EXEC_REQUEST
-            || networkTransferData.getType() == NetworkTransferData::SQL_QUERY_REQUEST) {
+        if (networkTransferData.getType() == NetworkTransferData::SQL_EXEC_REQUEST) {
             if (core == nullptr || core->getParserManager() == nullptr || core->getParserManager()->getParser() == nullptr
                 || core->getExecutorManager() == nullptr || core->getExecutorManager()->getExecutorEngine() == nullptr) {
                 LogWriter::fatal("network", "NetReceiver", "processMsg", "SQL pipeline is not initialized.");
@@ -250,17 +245,6 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             }
 
             const ExecutionStatementType statementType = parseResult.statement->getStmtType();
-            const bool isQueryRequest = networkTransferData.getType() == NetworkTransferData::SQL_QUERY_REQUEST;
-            const bool isQueryStatement = isQueryStatementType(statementType);
-            if (isQueryRequest && !isQueryStatement) {
-                sendFailureResponse("SQL_QUERY_REQUEST only supports query statements.");
-                return;
-            }
-
-            if (!isQueryRequest && isQueryStatement) {
-                sendFailureResponse("SQL_EXEC_REQUEST does not support query statements.");
-                return;
-            }
 
             ExecutionContext executionContext;
             NetworkExecutionContext *networkExecutionContext = nullptr;
@@ -296,7 +280,8 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             }
 
             NetworkTransferData responseData = buildExecutionResponse(executionResult, networkTransferData);
-            if (isQueryRequest) {
+            // 根据实际解析出的语句类型，自动区分查询/非查询响应格式
+            if (isQueryStatementType(statementType)) {
                 responseData.setColumns(buildQueryColumns(parseResult.statement.get()));
                 responseData.setRows(executionResult.getResultSet());
             }

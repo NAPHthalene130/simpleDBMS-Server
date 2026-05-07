@@ -271,15 +271,14 @@ std::shared_ptr<InsertStmt> Parser::parseInsertStatement(TokenStream &tokenStrea
         SqlTokenType::Identifier,
         "INSERT INTO statement requires a table identifier.");
 
-    tokenStream.expect(
-        SqlTokenType::Symbol,
-        "(",
-        "INSERT INTO statement requires '(' before column list.");
-    const std::vector<std::string> columnNames = parseIdentifierList(tokenStream);
-    tokenStream.expect(
-        SqlTokenType::Symbol,
-        ")",
-        "INSERT INTO statement requires ')' after column list.");
+    std::vector<std::string> columnNames;
+    if (tokenStream.match(SqlTokenType::Symbol, "(")) {
+        columnNames = parseIdentifierList(tokenStream);
+        tokenStream.expect(
+            SqlTokenType::Symbol,
+            ")",
+            "INSERT INTO statement requires ')' after column list.");
+    }
 
     tokenStream.expect(SqlTokenType::Keyword, "VALUES", "INSERT statement requires VALUES keyword.");
     tokenStream.expect(
@@ -292,7 +291,7 @@ std::shared_ptr<InsertStmt> Parser::parseInsertStatement(TokenStream &tokenStrea
         ")",
         "INSERT statement requires ')' after value list.");
 
-    if (columnNames.size() != values.size()) {
+    if (!columnNames.empty() && columnNames.size() != values.size()) {
         throw ParserException("INSERT column count does not match value count.", tokenStream.position());
     }
 
@@ -653,6 +652,7 @@ FieldBlock Parser::parseFieldDefinition(TokenStream &tokenStream, const std::int
     fieldBlock.setName(toFixedNameArray(fieldNameToken.getValue()));
     fieldBlock.setIntegrities(0);
     parseFieldType(tokenStream, fieldBlock);
+    parseFieldConstraints(tokenStream, fieldBlock);
     return fieldBlock;
 }
 
@@ -701,6 +701,60 @@ void Parser::parseFieldType(TokenStream &tokenStream, FieldBlock &fieldBlock) co
     }
 
     throw ParserException("Unsupported field type in CREATE TABLE statement.", tokenStream.position());
+}
+
+/**
+ * @brief 解析字段可选约束
+ * @author NAPH130
+ * @param tokenStream token 游标流
+ * @param fieldBlock 待填充字段块
+ * @details 在字段类型之后循环解析 NOT NULL、DEFAULT、PRIMARY KEY、UNIQUE 等可选约束，
+ *          每个约束按位掩码和默认值字段存储到 FieldBlock 中。
+ */
+void Parser::parseFieldConstraints(TokenStream &tokenStream, FieldBlock &fieldBlock) const
+{
+    while (true) {
+        if (tokenStream.match(SqlTokenType::Keyword, "NOT")) {
+            tokenStream.expect(SqlTokenType::Keyword,
+                               "NULL",
+                               "NOT constraint requires NULL keyword.");
+            fieldBlock.addIntegrityFlag(FieldBlock::INTEGRITY_NOT_NULL);
+            continue;
+        }
+
+        if (tokenStream.match(SqlTokenType::Keyword, "DEFAULT")) {
+            const Token &defaultToken = tokenStream.peek();
+            if (defaultToken.getType() != SqlTokenType::Number
+                && defaultToken.getType() != SqlTokenType::String
+                && defaultToken.getType() != SqlTokenType::Identifier
+                && defaultToken.getType() != SqlTokenType::Keyword) {
+                throw ParserException("DEFAULT constraint requires a literal value.", tokenStream.position());
+            }
+            tokenStream.advance();
+            fieldBlock.setDefaultValue(defaultToken.getValue());
+            continue;
+        }
+
+        if (tokenStream.match(SqlTokenType::Keyword, "PRIMARY")) {
+            tokenStream.expect(SqlTokenType::Keyword,
+                               "KEY",
+                               "PRIMARY constraint requires KEY keyword.");
+            fieldBlock.addIntegrityFlag(FieldBlock::INTEGRITY_PRIMARY_KEY);
+            continue;
+        }
+
+        if (tokenStream.match(SqlTokenType::Keyword, "UNIQUE")) {
+            fieldBlock.addIntegrityFlag(FieldBlock::INTEGRITY_UNIQUE);
+            continue;
+        }
+
+        if (tokenStream.match(SqlTokenType::Keyword, "NULL")) {
+            fieldBlock.addIntegrityFlag(0);
+            continue;
+        }
+
+        break;
+    }
 }
 
 /**

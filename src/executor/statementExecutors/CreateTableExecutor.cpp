@@ -154,8 +154,14 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
         }
     }
 
+    std::vector<std::string> columnNames;
+    columnNames.reserve(fieldBlocks.size());
+    for (const FieldBlock &fieldBlock : fieldBlocks) {
+        columnNames.push_back(fixedArrayToString(fieldBlock.getName()));
+    }
+
     const TableBlock tableBlock = buildTableBlock(createTableStmt, dbName);
-    if (!databaseManager->createTable(tableBlock)) {
+    if (!databaseManager->createTable(dbName, tableName, columnNames)) {
         LogWriter::error("executor",
                          "CreateTableExecutor",
                          "executeCreateTable",

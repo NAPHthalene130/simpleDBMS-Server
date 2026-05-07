@@ -195,6 +195,14 @@ private:
     void parseFieldType(TokenStream &tokenStream, FieldBlock &fieldBlock) const;
 
     /**
+     * @brief 解析字段可选约束（NOT NULL / DEFAULT / PRIMARY KEY / UNIQUE）
+     * @author NAPH130
+     * @param tokenStream token 游标流
+     * @param fieldBlock 待填充字段块，约束及默认值会直接写入
+     */
+    void parseFieldConstraints(TokenStream &tokenStream, FieldBlock &fieldBlock) const;
+
+    /**
      * @brief 解析标识符列表
      * @author YuzhSong
      * @param tokenStream token 游标流

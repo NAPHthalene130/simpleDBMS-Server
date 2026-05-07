@@ -29,11 +29,15 @@ Table::Table(std::filesystem::path dbPath, TableSchema schema)
 
 Table Table::create(const std::filesystem::path& dbPath,
                     const std::string& tableName,
-                    const std::vector<std::string>& columns) {
+                    const std::vector<std::string>& columns,
+                    const std::vector<ColumnMeta>& columnMetas) {
     ensure(!tableName.empty(), "table name cannot be empty");
     ensure(!columns.empty(), "table must contain at least one column");
 
-    Table table(dbPath, TableSchema{tableName, columns});
+    Table table(dbPath, TableSchema{tableName, columns, columnMetas});
+    if (table.schema_.columnMetas.empty()) {
+        table.schema_.columnMetas.resize(columns.size());
+    }
 
     ensure(!std::filesystem::exists(table.metaFilePath()), "table already exists: " + tableName);
     table.flushMeta();
@@ -64,12 +68,18 @@ Table Table::load(const std::filesystem::path& dbPath,
 
     std::string nameLine;
     std::string columnsLine;
+    std::string integritiesLine;
+    std::string defaultsLine;
     std::string line;
     while (std::getline(ifs, line)) {
         if (line.rfind("table=", 0) == 0) {
             nameLine = line;
         } else if (line.rfind("columns=", 0) == 0) {
             columnsLine = line;
+        } else if (line.rfind("integrities=", 0) == 0) {
+            integritiesLine = line;
+        } else if (line.rfind("defaults=", 0) == 0) {
+            defaultsLine = line;
         }
     }
 
@@ -82,7 +92,25 @@ Table Table::load(const std::filesystem::path& dbPath,
         parsedColumns.push_back(sepPos == std::string::npos ? colMeta : colMeta.substr(0, sepPos));
     }
 
-    Table table(dbPath, TableSchema{nameLine.substr(6), parsedColumns});
+    std::vector<ColumnMeta> columnMetas(parsedColumns.size());
+    if (!integritiesLine.empty()) {
+        const auto integList = split(integritiesLine.substr(13), '|');
+        for (std::size_t i = 0; i < integList.size() && i < columnMetas.size(); ++i) {
+            try {
+                columnMetas[i].integrities = std::stoi(integList[i]);
+            } catch (...) {
+                columnMetas[i].integrities = 0;
+            }
+        }
+    }
+    if (!defaultsLine.empty()) {
+        const auto defaultList = split(defaultsLine.substr(9), '|');
+        for (std::size_t i = 0; i < defaultList.size() && i < columnMetas.size(); ++i) {
+            columnMetas[i].defaultValue = defaultList[i];
+        }
+    }
+
+    Table table(dbPath, TableSchema{nameLine.substr(6), parsedColumns, columnMetas});
 
     table.loadIndexFromTid();
     return table;
@@ -249,6 +277,20 @@ void Table::flushMeta() const {
     ofs << "columns=" << join(columnMetas, "|") << '\n';
     ofs << "primary_key=" << schema_.columns.front() << '\n';
     ofs << "index_definitions=PRIMARY(" << schema_.columns.front() << "):BTREE:" << schema_.name << ".tid\n";
+
+    std::vector<std::string> integList;
+    integList.reserve(schema_.columnMetas.size());
+    for (const auto& meta : schema_.columnMetas) {
+        integList.push_back(std::to_string(meta.integrities));
+    }
+    ofs << "integrities=" << join(integList, "|") << '\n';
+
+    std::vector<std::string> defaultList;
+    defaultList.reserve(schema_.columnMetas.size());
+    for (const auto& meta : schema_.columnMetas) {
+        defaultList.push_back(meta.defaultValue);
+    }
+    ofs << "defaults=" << join(defaultList, "|") << '\n';
 }
 
 void Table::flushIntegrityMeta() const {

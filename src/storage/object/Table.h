@@ -59,7 +59,8 @@ public:
      */
     static Table create(const std::filesystem::path& dbPath,
                         const std::string& tableName,
-                        const std::vector<std::string>& columns);
+                        const std::vector<std::string>& columns,
+                        const std::vector<ColumnMeta>& columnMetas = {});
 
     /**
      * @brief 加载已有数据表

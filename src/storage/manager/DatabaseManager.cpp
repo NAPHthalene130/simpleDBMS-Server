@@ -343,7 +343,8 @@ bool DatabaseManager::createTable(TableBlock tbInfo)
 
 bool DatabaseManager::createTable(const std::string &dbName,
                                   const std::string &tableName,
-                                  const std::vector<std::string> &columns)
+                                  const std::vector<std::string> &columns,
+                                  const std::vector<storage::ColumnMeta> &columnMetas)
 {
     if (dbName.empty() || tableName.empty() || columns.empty()) {
         LogWriter::warning("storage",
@@ -363,7 +364,7 @@ bool DatabaseManager::createTable(const std::string &dbName,
                                std::string("Database directory not found: ") + dbName);
             return false;
         }
-        storage::Table::create(dbPath, tableName, columns);
+        storage::Table::create(dbPath, tableName, columns, columnMetas);
         TableBlock block = buildTableBlock(dbPath, tableName);
         block.setFieldNum(static_cast<std::int32_t>(columns.size()));
         block.setRecordNum(0);

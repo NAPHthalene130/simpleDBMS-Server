@@ -155,13 +155,19 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
     }
 
     std::vector<std::string> columnNames;
+    std::vector<storage::ColumnMeta> columnMetas;
     columnNames.reserve(fieldBlocks.size());
+    columnMetas.reserve(fieldBlocks.size());
     for (const FieldBlock &fieldBlock : fieldBlocks) {
         columnNames.push_back(fixedArrayToString(fieldBlock.getName()));
+        storage::ColumnMeta meta;
+        meta.integrities = fieldBlock.getIntegrities();
+        meta.defaultValue = fieldBlock.getDefaultValue();
+        columnMetas.push_back(meta);
     }
 
     const TableBlock tableBlock = buildTableBlock(createTableStmt, dbName);
-    if (!databaseManager->createTable(dbName, tableName, columnNames)) {
+    if (!databaseManager->createTable(dbName, tableName, columnNames, columnMetas)) {
         LogWriter::error("executor",
                          "CreateTableExecutor",
                          "executeCreateTable",

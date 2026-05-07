@@ -6,6 +6,7 @@
 class Core;
 
 #include "models/storage/TableBlock.h"
+#include "storage/object/StorageCommon.h"
 
 /**
  * @class DatabaseManager
@@ -33,7 +34,8 @@ public:
     bool createTable(TableBlock tbInfo);
     bool createTable(const std::string &dbName,
                      const std::string &tableName,
-                     const std::vector<std::string> &columns);
+                     const std::vector<std::string> &columns,
+                     const std::vector<storage::ColumnMeta> &columnMetas = {});
     bool insertRow(const std::string &dbName,
                    const std::string &tableName,
                    const std::vector<std::string> &values);

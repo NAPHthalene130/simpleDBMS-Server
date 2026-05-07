@@ -1,18 +1,25 @@
 #include "DropExecutor.h"
 
-namespace
-{
-/**
- * @brief 构建失败执行结果
- * @author YuzhSong
- * @param message 英文失败消息
- * @return 失败执行结果
- */
-ExecutionResult buildFailureResult(const std::string &message)
+#include "log/LogWriter.h"
+
+namespace {
+ExecutionResult buildFailureResult(const std::string &message,
+                                   const std::string &dbName = "")
 {
     ExecutionResult executionResult;
     executionResult.setStatus(ExecutionStatus::Failure);
     executionResult.setMessage(message);
+    executionResult.setDbName(dbName);
+    return executionResult;
+}
+
+ExecutionResult buildSuccessResult(const std::string &message,
+                                   const std::string &dbName)
+{
+    ExecutionResult executionResult;
+    executionResult.setStatus(ExecutionStatus::Success);
+    executionResult.setMessage(message);
+    executionResult.setDbName(dbName);
     return executionResult;
 }
 } // namespace
@@ -29,25 +36,63 @@ ExecutionStatementType DropExecutor::getSupportedType() const
 
 ExecutionResult DropExecutor::execute(const SQLStatement *statement, ExecutionContext *executionContext)
 {
-    (void)executionContext;
-    (void)systemCatalogManager;
-    (void)databaseManager;
-    if (statement == nullptr) {
-        return buildFailureResult("DropExecutor received null statement pointer.");
+    if (statement == nullptr || executionContext == nullptr) {
+        LogWriter::error("executor", "DropExecutor", "execute", "Drop input pointer is invalid.");
+        return buildFailureResult("DropExecutor received null input pointer.");
     }
 
     if (statement->getStmtType() != getSupportedType()) {
+        LogWriter::error("executor", "DropExecutor", "execute", "Received mismatched statement type.");
         return buildFailureResult("DropExecutor received mismatched statement type.");
     }
 
     const auto *dropStmt = static_cast<const DropStmt *>(statement);
-    if (dropStmt->getTargetName().empty()) {
+    const std::string targetName = dropStmt->getTargetName();
+    const std::string dbName = executionContext->getCurrentDbName();
+
+    if (targetName.empty()) {
+        LogWriter::warning("executor", "DropExecutor", "execute", "DROP target name is empty.");
         return buildFailureResult("DROP statement requires a non-empty target name.");
     }
 
-    ExecutionResult executionResult;
-    executionResult.setStatus(ExecutionStatus::Success);
-    executionResult.setMessage("DROP statement accepted in stub mode.");
-    executionResult.setAffectedRows(0);
-    return executionResult;
+    switch (dropStmt->getTargetType()) {
+    case DropTargetType::Database: {
+        if (systemCatalogManager == nullptr) {
+            return buildFailureResult("System catalog manager is not initialized.");
+        }
+        if (!systemCatalogManager->checkDbExists(targetName)) {
+            LogWriter::warning("executor", "DropExecutor", "execute",
+                               "Database does not exist: " + targetName + ".");
+            return buildFailureResult("Database does not exist.", targetName);
+        }
+        if (!systemCatalogManager->dropDatabase(targetName)) {
+            LogWriter::error("executor", "DropExecutor", "execute",
+                             "Failed to drop database: " + targetName + ".");
+            return buildFailureResult("Failed to drop database.", targetName);
+        }
+        LogWriter::info("executor", "DropExecutor", "execute",
+                        "Database dropped successfully: " + targetName + ".");
+        return buildSuccessResult("Drop database succeeded.", "");
+    }
+
+    case DropTargetType::Table: {
+        if (dbName.empty()) {
+            return buildFailureResult("No database selected.", dbName);
+        }
+        if (databaseManager == nullptr) {
+            return buildFailureResult("Database manager is not initialized.", dbName);
+        }
+        if (!databaseManager->dropTable(targetName)) {
+            LogWriter::error("executor", "DropExecutor", "execute",
+                             "Failed to drop table " + targetName + " in " + dbName + ".");
+            return buildFailureResult("Failed to drop table.", dbName);
+        }
+        LogWriter::info("executor", "DropExecutor", "execute",
+                        "Table dropped successfully: " + dbName + "." + targetName + ".");
+        return buildSuccessResult("Drop table succeeded.", dbName);
+    }
+
+    default:
+        return buildFailureResult("DROP target type is invalid.");
+    }
 }

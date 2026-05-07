@@ -12,25 +12,12 @@
 #include <vector>
 
 #include "log/LogWriter.h"
+#include "storage/manager/SystemCatalogManager.h"
 #include "storage/object/Table.h"
 
 namespace {
 
 constexpr const char *kTableBlockSeparator = "---TABLE_BLOCK---";
-
-/**
- * @brief 获取数据存储根目录的绝对路径
- * @author NAPH130
- * @return 数据根目录路径（基于源文件位置，不依赖进程工作目录）
- * @details 本文件位于 src/storage/manager/，数据目录期望在 src/storage/data/。
- *          通过 __FILE__ 向上两级获得 storage/ 再拼接 data/，确保无论从何处启动服务端都写入正确位置。
- */
-const std::filesystem::path &getDataRootPath()
-{
-    static const std::filesystem::path dataRoot =
-        (std::filesystem::path(__FILE__).parent_path().parent_path() / "data").lexically_normal();
-    return dataRoot;
-}
 
 template <std::size_t N>
 std::string arrayToString(const std::array<char, N> &value)
@@ -330,7 +317,7 @@ bool DatabaseManager::createTable(TableBlock tbInfo)
         if (!createTable(dbName, tableName, buildColumns(tbInfo))) {
             return false;
         }
-        const auto dbPath = getDataRootPath() / dbName;
+        const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
         TableBlock normalized = normalizeTableBlock(dbPath, tableName, tbInfo);
         normalized.setRecordNum(0);
         normalized.setModifyTime(buildCurrentDateTime());
@@ -355,7 +342,7 @@ bool DatabaseManager::createTable(const std::string &dbName,
     }
 
     try {
-        const auto &dbRootPath = getDataRootPath();
+        const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
         const auto dbPath = dbRootPath / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
             LogWriter::warning("storage",
@@ -403,7 +390,7 @@ bool DatabaseManager::insertRow(const std::string &dbName,
     }
 
     try {
-        const auto &dbRootPath = getDataRootPath();
+        const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
         const auto dbPath = dbRootPath / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
             LogWriter::warning("storage",
@@ -455,7 +442,7 @@ bool DatabaseManager::updateRowByPrimaryKey(const std::string &dbName,
     }
 
     try {
-        const auto dbPath = getDataRootPath() / dbName;
+        const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
             LogWriter::warning("storage",
                                "DatabaseManager",
@@ -506,7 +493,7 @@ bool DatabaseManager::deleteRowByPrimaryKey(const std::string &dbName,
     }
 
     try {
-        const auto dbPath = getDataRootPath() / dbName;
+        const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
             LogWriter::warning("storage",
                                "DatabaseManager",
@@ -552,7 +539,7 @@ bool DatabaseManager::dropTable(std::string tableName)
         return false;
     }
 
-    const auto &dbRootPath = getDataRootPath();
+    const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
         LogWriter::warning("storage", "DatabaseManager", "dropTable", "Database root directory not found.");
         return false;
@@ -600,7 +587,7 @@ bool DatabaseManager::modifyTable(std::string tableName, TableBlock newTbInfo)
     if (tableName.empty()) {
         return false;
     }
-    const auto &dbRootPath = getDataRootPath();
+    const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
         return false;
     }
@@ -640,7 +627,7 @@ TableBlock DatabaseManager::getTableInfo(std::string tableName)
         return {};
     }
 
-    const auto &dbRootPath = getDataRootPath();
+    const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
         LogWriter::warning("storage", "DatabaseManager", "getTableInfo", "Database root directory not found.");
         return {};
@@ -670,7 +657,7 @@ TableBlock DatabaseManager::getTableInfo(std::string tableName)
 std::vector<TableBlock> DatabaseManager::getAllTables()
 {
     std::vector<TableBlock> blocks;
-    const auto &dbRootPath = getDataRootPath();
+    const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
         LogWriter::warning("storage", "DatabaseManager", "getAllTables", "Database root directory not found.");
         return blocks;

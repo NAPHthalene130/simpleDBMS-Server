@@ -8,6 +8,7 @@
 #include <unordered_set>
 
 #include "log/LogWriter.h"
+#include "storage/manager/SystemCatalogManager.h"
 
 namespace {
 ExecutionResult buildFailureResult(const std::string &message,
@@ -191,7 +192,7 @@ TableBlock CreateTableExecutor::buildTableBlock(const CreateTableStmt *createTab
 
     const std::string tableName = fixedArrayToString(createTableStmt->getTableName());
     const DateTime currentDateTime = buildCurrentDateTime();
-    const std::filesystem::path dbPath = std::filesystem::path("data") / dbName;
+    const std::filesystem::path dbPath = SystemCatalogManager::getDataRootPath() / dbName;
 
     tableBlock.setName(createTableStmt->getTableName());
     tableBlock.setRecordNum(0);

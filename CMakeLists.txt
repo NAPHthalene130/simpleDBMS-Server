@@ -48,6 +48,7 @@ if(WIN32)
     target_compile_definitions(simpleDBMS-Server
         PRIVATE
             _WIN32_WINNT=0x0601
+            SERVER_PROJECT_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
     )
 endif()
 

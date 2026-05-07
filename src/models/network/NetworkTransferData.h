@@ -72,6 +72,7 @@ public:
     inline static const std::string USE_DATABASE_RESPONSE = "USE_DATABASE_RESPONSE";
     inline static const std::string SQL_EXEC_REQUEST = "SQL_EXEC_REQUEST";
     inline static const std::string SQL_EXEC_RESPONSE = "SQL_EXEC_RESPONSE";
+    inline static const std::string SQL_QUERY_RESPONSE = "SQL_QUERY_RESPONSE";
     inline static const std::string DIRECTORY_REQUEST = "DIRECTORY_REQUEST";
     inline static const std::string DIRECTORY_RESPONSE = "DIRECTORY_RESPONSE";
     inline static const std::string ERROR_RESPONSE = "ERROR_RESPONSE";

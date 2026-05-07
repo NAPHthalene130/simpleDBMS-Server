@@ -28,9 +28,12 @@ bool isQueryStatementType(ExecutionStatementType statementType)
     return statementType == ExecutionStatementType::Select || statementType == ExecutionStatementType::Show;
 }
 
-std::string buildResponseType(const std::string &requestType)
+std::string buildResponseType(const std::string &requestType, ExecutionStatementType stmtType = ExecutionStatementType::Unknown)
 {
     if (requestType == NetworkTransferData::SQL_EXEC_REQUEST) {
+        if (isQueryStatementType(stmtType)) {
+            return NetworkTransferData::SQL_QUERY_RESPONSE;
+        }
         return NetworkTransferData::SQL_EXEC_RESPONSE;
     }
 
@@ -68,9 +71,10 @@ NetworkTransferData buildFailureResponse(const std::string &message,
 }
 
 NetworkTransferData buildExecutionResponse(const ExecutionResult &executionResult,
-                                           const NetworkTransferData &requestData)
+                                           const NetworkTransferData &requestData,
+                                           ExecutionStatementType statementType)
 {
-    NetworkTransferData responseData(buildResponseType(requestData.getType()), requestData.getId());
+    NetworkTransferData responseData(buildResponseType(requestData.getType(), statementType), requestData.getId());
     responseData.setSuccess(executionResult.getStatus() == ExecutionStatus::Success);
     responseData.setMessage(executionResult.getMessage());
     responseData.setAffectedRows(executionResult.getAffectedRows());
@@ -279,8 +283,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 executionResult.setDbName(executionContext.getCurrentDbName());
             }
 
-            NetworkTransferData responseData = buildExecutionResponse(executionResult, networkTransferData);
-            // 根据实际解析出的语句类型，自动区分查询/非查询响应格式
+            NetworkTransferData responseData = buildExecutionResponse(executionResult, networkTransferData, statementType);
             if (isQueryStatementType(statementType)) {
                 responseData.setColumns(buildQueryColumns(parseResult.statement.get()));
                 responseData.setRows(executionResult.getResultSet());

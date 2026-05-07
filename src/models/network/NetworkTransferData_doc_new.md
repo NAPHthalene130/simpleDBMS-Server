@@ -96,6 +96,7 @@ USE_DATABASE_REQUEST
 USE_DATABASE_RESPONSE
 SQL_EXEC_REQUEST
 SQL_EXEC_RESPONSE
+SQL_QUERY_RESPONSE
 DIRECTORY_REQUEST
 DIRECTORY_RESPONSE
 ERROR_RESPONSE
@@ -289,19 +290,14 @@ ERROR_RESPONSE
 
 ### 5.8 SQL_EXEC_RESPONSE
 
-服务端返回 SQL 执行结果。根据实际执行的语句类型，响应中会包含不同的字段：
-
-- 对于查询语句（如 SELECT、SHOW）：返回 `columns` 和 `rows`
-- 对于非查询语句（如 INSERT、UPDATE、DELETE、CREATE、DROP）：返回 `affectedRows`
+服务端返回非查询 SQL（INSERT、UPDATE、DELETE、CREATE、DROP 等）的执行结果。
 
 | 字段 | 说明 |
 |---|---|
 | `type` | 固定为 `SQL_EXEC_RESPONSE` |
 | `success` | SQL 是否执行成功 |
 | `message` | 执行结果提示或错误信息 |
-| `affectedRows` | 影响行数（非查询语句） |
-| `columns` | 查询结果列名（查询语句） |
-| `rows` | 查询结果数据（查询语句） |
+| `affectedRows` | 影响行数 |
 
 非查询成功示例：
 
@@ -314,11 +310,35 @@ ERROR_RESPONSE
 }
 ```
 
-查询成功示例：
+非查询失败示例：
 
 ```json
 {
   "type": "SQL_EXEC_RESPONSE",
+  "success": false,
+  "message": "Database already exists."
+}
+```
+
+---
+
+### 5.9 SQL_QUERY_RESPONSE
+
+服务端返回查询 SQL（SELECT、SHOW 等）的执行结果。
+
+| 字段 | 说明 |
+|---|---|
+| `type` | 固定为 `SQL_QUERY_RESPONSE` |
+| `success` | 查询是否执行成功 |
+| `message` | 执行结果提示或错误信息 |
+| `columns` | 查询结果列名列表 |
+| `rows` | 查询结果二维数据，每一行为一个 `std::vector<std::string>` |
+
+查询成功示例：
+
+```json
+{
+  "type": "SQL_QUERY_RESPONSE",
   "success": true,
   "message": "Query success.",
   "columns": ["id", "name", "age"],
@@ -329,9 +349,19 @@ ERROR_RESPONSE
 }
 ```
 
+查询失败示例：
+
+```json
+{
+  "type": "SQL_QUERY_RESPONSE",
+  "success": false,
+  "message": "Table does not exist."
+}
+```
+
 ---
 
-### 5.9 DIRECTORY_REQUEST
+### 5.10 DIRECTORY_REQUEST
 
 客户端请求数据库目录。
 
@@ -352,7 +382,7 @@ ERROR_RESPONSE
 
 ---
 
-### 5.10 DIRECTORY_RESPONSE
+### 5.11 DIRECTORY_RESPONSE
 
 服务端返回数据库目录。
 
@@ -412,7 +442,7 @@ school
 
 ---
 
-### 5.11 ERROR_RESPONSE
+### 5.12 ERROR_RESPONSE
 
 服务端返回通用错误信息。
 

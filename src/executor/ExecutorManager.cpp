@@ -26,7 +26,7 @@ ExecutorManager::ExecutorManager(Core *core)
                                         getDatabaseManager(),
                                         getTableDefManager())),
       useDbExecutor(new UseDbExecutor(core, getSystemCatalogManager())),
-      useExecutor(new UseExecutor(core)),
+      useExecutor(new UseExecutor(core, getSystemCatalogManager())),
       showExecutor(new ShowExecutor(core)),
       dropExecutor(new DropExecutor(core, getSystemCatalogManager(), getDatabaseManager())),
       deleteExecutor(new DeleteExecutor(core, getDatabaseManager())),

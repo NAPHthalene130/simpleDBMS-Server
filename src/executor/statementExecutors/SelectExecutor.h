@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <vector>
 
 #include "models/parser/ConditionNode.h"
@@ -7,12 +8,13 @@
 #include "storage/manager/DatabaseManager.h"
 #include "storage/manager/SystemCatalogManager.h"
 #include "storage/manager/TableDefManager.h"
+#include "storage/object/Table.h"
 #include "../StatementExecutor.h"
 
 /**
  * @class SelectExecutor
  * @brief 查询语句执行器
- * @details 负责处理 SELECT 语句的字段投影、条件过滤与结果集封装流程。
+ * @details 负责处理 SELECT 语句的字段投影、条件过滤、元数据查询与结果集封装流程。
  * @author NAPH130
  */
 class SelectExecutor : public StatementExecutor
@@ -58,6 +60,24 @@ private:
     ExecutionResult executeSelect(const SelectStmt *selectStmt, ExecutionContext *executionContext);
 
     /**
+     * @brief 执行对数据库/表元数据的查询
+     * @author NAPH130
+     * @param selectStmt 查询语句对象
+     * @param executionContext 当前执行上下文
+     * @return 执行结果对象
+     */
+    ExecutionResult handleMetadataSelect(const SelectStmt *selectStmt, ExecutionContext *executionContext);
+
+    /**
+     * @brief 执行对普通数据表的查询
+     * @author NAPH130
+     * @param selectStmt 查询语句对象
+     * @param executionContext 当前执行上下文
+     * @return 执行结果对象
+     */
+    ExecutionResult executeTableSelect(const SelectStmt *selectStmt, ExecutionContext *executionContext);
+
+    /**
      * @brief 校验目标字段是否满足查询要求
      * @author NAPH130
      * @param selectStmt 查询语句对象
@@ -66,20 +86,57 @@ private:
     bool validateTargetFields(const SelectStmt *selectStmt) const;
 
     /**
-     * @brief 评估条件树是否满足过滤要求
+     * @brief 递归评估条件树节点对一行数据是否成立
      * @author NAPH130
      * @param conditionNode 条件树节点
+     * @param row 行数据值列表
+     * @param columns 表列名列表
      * @return 是否满足条件
      */
-    bool evaluateCondition(const ConditionNode *conditionNode) const;
+    bool evaluateConditionTree(const ConditionNode *conditionNode,
+                               const std::vector<std::string> &row,
+                               const std::vector<std::string> &columns) const;
 
     /**
-     * @brief 构建查询结果集
+     * @brief 评估叶子比较节点对一行数据是否成立
+     * @author NAPH130
+     * @param conditionNode 叶子条件节点
+     * @param row 行数据值列表
+     * @param columns 表列名列表
+     * @return 是否满足条件
+     */
+    bool evaluateLeafCondition(const ConditionNode *conditionNode,
+                               const std::vector<std::string> &row,
+                               const std::vector<std::string> &columns) const;
+
+    /**
+     * @brief 比较两个值是否满足指定比较操作
+     * @author NAPH130
+     * @param leftValue 左值
+     * @param op 比较操作符
+     * @param rightValue 右值
+     * @return 比较结果
+     */
+    static bool compareValues(const std::string &leftValue,
+                              storage::Table::CompareOp op,
+                              const std::string &rightValue);
+
+    /**
+     * @brief LIKE 模式匹配
+     * @author NAPH130
+     * @param text 待匹配文本
+     * @param pattern LIKE 模式
+     * @return 是否匹配
+     */
+    static bool likeMatch(const std::string &text, const std::string &pattern);
+
+    /**
+     * @brief 构建元数据查询结果集
      * @author NAPH130
      * @param selectStmt 查询语句对象
      * @return 结果集二维数组
      */
-    std::vector<std::vector<std::string>> buildResultSet(const SelectStmt *selectStmt) const;
+    std::vector<std::vector<std::string>> buildMetadataResultSet(const SelectStmt *selectStmt) const;
 
     /**
      * @brief 判断是否为数据库列表查询

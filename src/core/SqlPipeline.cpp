@@ -200,6 +200,9 @@ NetData SqlPipeline::buildExecutionResponse(const ExecutionResult &executionResu
     responseObject["message"] = executionResult.getMessage();
     responseObject["affectedRows"] = executionResult.getAffectedRows();
     responseObject["resultSet"] = executionResult.getResultSet();
+    responseObject["columns"] = executionResult.getColumns();
+    responseObject["dbName"] = executionResult.getDbName();
+    responseObject["tableName"] = executionResult.getTableName();
 
     return NetData(success ? "sql_result" : "sql_error", responseObject.dump());
 }

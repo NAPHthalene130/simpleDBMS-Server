@@ -28,6 +28,7 @@ std::string ExecutionResult::toJson() const
     jsonObject["resultSet"] = resultSet;
     jsonObject["dbName"] = dbName;
     jsonObject["tableName"] = tableName;
+    jsonObject["columns"] = columns;
     return jsonObject.dump();
 }
 
@@ -42,6 +43,7 @@ ExecutionResult ExecutionResult::fromJson(const std::string &jsonStr)
     executionResult.setResultSet(jsonObject.value("resultSet", std::vector<std::vector<std::string>>{}));
     executionResult.setDbName(jsonObject.value("dbName", ""));
     executionResult.setTableName(jsonObject.value("tableName", ""));
+    executionResult.setColumns(jsonObject.value("columns", std::vector<std::string>{}));
     return executionResult;
 }
 
@@ -103,4 +105,14 @@ const std::string &ExecutionResult::getTableName() const
 void ExecutionResult::setTableName(const std::string &tableName)
 {
     this->tableName = tableName;
+}
+
+const std::vector<std::string> &ExecutionResult::getColumns() const
+{
+    return columns;
+}
+
+void ExecutionResult::setColumns(const std::vector<std::string> &columns)
+{
+    this->columns = columns;
 }

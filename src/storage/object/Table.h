@@ -7,7 +7,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace storage {
@@ -174,6 +176,8 @@ private:
     std::filesystem::path dbPath_;
     TableSchema schema_;
     BTree<std::string, Row> index_{2};
+    std::unordered_map<std::string, std::uint64_t> primaryKeyOffsets_;
+    std::map<std::string, std::uint64_t> primaryKeyOffsetsOrdered_;
     std::uint32_t rootPageId_ = 1;
     std::uint32_t nextPageId_ = 2;
 
@@ -204,6 +208,7 @@ private:
      * @return 索引文件路径
      */
     std::filesystem::path indexFilePath() const;
+    std::filesystem::path nonPrimaryIndexFilePath(const std::string& column) const;
 
     /**
      * @brief 持久化表结构到元数据文件
@@ -264,6 +269,7 @@ private:
      * @return 行记录列表
      */
     std::vector<Row> readAllDataRows() const;
+    bool readRowByOffset(std::uint64_t offset, Row& row) const;
 
     /**
      * @brief 覆盖写回所有行记录到数据文件
@@ -289,6 +295,32 @@ private:
      */
     bool matchWhere(const Row& row, const std::vector<WhereCondition>& whereConditions) const;
     bool matchConditionTree(const Row& row, const std::shared_ptr<ConditionNode>& node) const;
+    struct IndexCandidateResult {
+        bool constrained = false;
+        std::vector<std::uint64_t> offsets;
+    };
+    bool hasIndexForColumn(const std::string& column) const;
+    bool canUseIndexForCondition(const WhereCondition& condition) const;
+    struct IndexedLookupRequest {
+        std::string column;
+        CompareOp op = CompareOp::EQ;
+        std::string value;
+        std::string secondValue;
+        std::vector<std::string> values;
+    };
+    bool lookupOffsetsByIndexedRequest(const IndexedLookupRequest& request,
+                                       std::vector<std::uint64_t>& offsets) const;
+    bool lookupOffsetsByPrimaryIndex(const IndexedLookupRequest& request,
+                                     std::vector<std::uint64_t>& offsets) const;
+    bool lookupOffsetsBySecondaryIndex(const IndexedLookupRequest& request,
+                                       std::vector<std::uint64_t>& offsets) const;
+    bool lookupOffsetsByIndexedCondition(const WhereCondition& condition,
+                                         std::vector<std::uint64_t>& offsets) const;
+    IndexCandidateResult collectIndexCandidates(const std::shared_ptr<ConditionNode>& node) const;
+    static std::vector<std::uint64_t> mergeOffsetUnion(const std::vector<std::uint64_t>& left,
+                                                       const std::vector<std::uint64_t>& right);
+    static std::vector<std::uint64_t> mergeOffsetIntersection(const std::vector<std::uint64_t>& left,
+                                                              const std::vector<std::uint64_t>& right);
 
     /**
      * @brief 比较两个字段值

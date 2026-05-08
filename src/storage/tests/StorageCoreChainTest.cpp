@@ -111,6 +111,7 @@ private:
 
 int main()
 {
+    try {
     const std::filesystem::path storageDir = std::filesystem::current_path() / "src" / "storage";
     ensure(std::filesystem::exists(storageDir) && std::filesystem::is_directory(storageDir),
            "storage directory not found: " + storageDir.string());
@@ -127,6 +128,8 @@ int main()
     const std::filesystem::path trdFile = dbDir / (tableName + ".trd");
     const std::filesystem::path ticFile = dbDir / (tableName + ".tic");
     const std::filesystem::path tidFile = dbDir / (tableName + ".tid");
+    const std::filesystem::path nidxBFile = dbDir / (tableName + ".B.nidx");
+    const std::filesystem::path nidxCFile = dbDir / (tableName + ".C.nidx");
 
     if (std::filesystem::exists(dbDir)) {
         std::filesystem::remove_all(dbDir);
@@ -199,6 +202,24 @@ int main()
         {storage::Table::WhereCondition{"A", storage::Table::CompareOp::LIKE, "v%"}}
     );
     ensure(likePrefix.size() == 3, "select like field% mismatch after update/delete");
+
+    const auto neRows = loadedTable.select(
+        {"A"},
+        {storage::Table::WhereCondition{"A", storage::Table::CompareOp::NE, "v2"}}
+    );
+    ensure(neRows.size() == 2, "select NE mismatch");
+
+    const auto gtRows = loadedTable.select(
+        {"A"},
+        {storage::Table::WhereCondition{"A", storage::Table::CompareOp::GT, "v1"}}
+    );
+    ensure(gtRows.size() == 2, "select GT mismatch");
+
+    const auto leRows = loadedTable.select(
+        {"A"},
+        {storage::Table::WhereCondition{"A", storage::Table::CompareOp::LE, "v2"}}
+    );
+    ensure(leRows.size() == 2, "select LE mismatch");
 
     auto betweenCond = storage::Table::WhereCondition {"A", storage::Table::CompareOp::BETWEEN, "v1"};
     betweenCond.secondValue = "v2";
@@ -274,6 +295,8 @@ int main()
     ensure(std::filesystem::exists(trdFile), ".trd file not found");
     ensure(std::filesystem::exists(ticFile), ".tic file not found");
     ensure(std::filesystem::exists(tidFile), ".tid file not found");
+    ensure(std::filesystem::exists(nidxBFile), ".nidx B reserve file not found");
+    ensure(std::filesystem::exists(nidxCFile), ".nidx C reserve file not found");
 
     std::ifstream tdf(tdfFile);
     std::ifstream trd(trdFile);
@@ -283,7 +306,11 @@ int main()
     bool foundTable = false;
     bool foundColumns = false;
     bool foundPrimaryIndexDef = false;
+    bool foundReservedIndexDefB = false;
+    bool foundReservedIndexDefC = false;
     bool foundPrimaryConstraint = false;
+    bool foundReservedTicB = false;
+    bool foundReservedTicC = false;
     bool foundRow = false;
     bool foundTidHeader = false;
     bool foundTidRootPage = false;
@@ -294,9 +321,13 @@ int main()
         if (line == "table=" + tableName) foundTable = true;
         if (line == "columns=A:TEXT|B:TEXT|C:TEXT") foundColumns = true;
         if (line == "index_definitions=PRIMARY(A):BTREE:" + tableName + ".tid") foundPrimaryIndexDef = true;
+        if (line == "index_reserved=B:BTREE:" + tableName + ".B.nidx") foundReservedIndexDefB = true;
+        if (line == "index_reserved=C:BTREE:" + tableName + ".C.nidx") foundReservedIndexDefC = true;
     }
     while (std::getline(tic, line)) {
         if (line == "constraint=PRIMARY_KEY(A)") foundPrimaryConstraint = true;
+        if (line == "index_reserved=B:" + tableName + ".B.nidx") foundReservedTicB = true;
+        if (line == "index_reserved=C:" + tableName + ".C.nidx") foundReservedTicC = true;
     }
     while (std::getline(trd, line)) {
         if (line == "ROW|v1|v9|v8") {
@@ -313,7 +344,11 @@ int main()
     ensure(foundTable, "tdf table line mismatch");
     ensure(foundColumns, "tdf columns line mismatch");
     ensure(foundPrimaryIndexDef, "tdf index definition missing");
+    ensure(foundReservedIndexDefB, "tdf reserved index B missing");
+    ensure(foundReservedIndexDefC, "tdf reserved index C missing");
     ensure(foundPrimaryConstraint, "tic primary key missing");
+    ensure(foundReservedTicB, "tic reserved index B missing");
+    ensure(foundReservedTicC, "tic reserved index C missing");
     ensure(foundRow, "trd row line mismatch");
     ensure(foundTidHeader, "tid header missing");
     ensure(foundTidRootPage, "tid root page missing");
@@ -321,4 +356,11 @@ int main()
 
     std::cout << "StorageCoreChainTest passed." << std::endl;
     return 0;
+    } catch (const std::exception &e) {
+        std::cerr << "StorageCoreChainTest failed: " << e.what() << std::endl;
+        return 1;
+    } catch (...) {
+        std::cerr << "StorageCoreChainTest failed: unknown exception" << std::endl;
+        return 1;
+    }
 }

@@ -5,8 +5,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <sstream>
+#include <unordered_set>
 
 namespace storage {
 
@@ -61,6 +63,13 @@ Table Table::create(const std::filesystem::path& dbPath,
     std::ofstream indexOfs(table.indexFilePath(), std::ios::app);
     ensure(indexOfs.good(), "failed to create table index file: " + table.indexFilePath().string());
     indexOfs.close();
+
+    for (std::size_t i = 1; i < columns.size(); ++i) {
+        std::ofstream secondaryOfs(table.nonPrimaryIndexFilePath(columns[i]), std::ios::app);
+        ensure(secondaryOfs.good(),
+               "failed to create non-primary index reserve file: "
+               + table.nonPrimaryIndexFilePath(columns[i]).string());
+    }
 
     table.flushIntegrityMeta();
     table.initializeTidFile();
@@ -226,24 +235,40 @@ std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
         }
     }
 
-    std::ifstream ifs(dataFilePath());
-    ensure(ifs.good(), "failed to open table data file: " + dataFilePath().string());
-
     std::vector<Row> matchedRows;
-    std::string line;
-    while (std::getline(ifs, line)) {
-        if (line.rfind("ROW|", 0) != 0) {
-            continue;
+    const IndexCandidateResult indexCandidates = collectIndexCandidates(whereTree);
+    if (indexCandidates.constrained) {
+        for (const auto offset : indexCandidates.offsets) {
+            Row row;
+            if (!readRowByOffset(offset, row)) {
+                continue;
+            }
+            if (row.values.size() != schema_.columns.size()) {
+                continue;
+            }
+            if (!matchConditionTree(row, whereTree)) {
+                continue;
+            }
+            matchedRows.push_back(std::move(row));
         }
+    } else {
+        std::ifstream ifs(dataFilePath());
+        ensure(ifs.good(), "failed to open table data file: " + dataFilePath().string());
+        std::string line;
+        while (std::getline(ifs, line)) {
+            if (line.rfind("ROW|", 0) != 0) {
+                continue;
+            }
 
-        Row row = deserializeRow(line.substr(4));
-        if (row.values.size() != schema_.columns.size()) {
-            continue;
+            Row row = deserializeRow(line.substr(4));
+            if (row.values.size() != schema_.columns.size()) {
+                continue;
+            }
+            if (!matchConditionTree(row, whereTree)) {
+                continue;
+            }
+            matchedRows.push_back(std::move(row));
         }
-        if (!matchConditionTree(row, whereTree)) {
-            continue;
-        }
-        matchedRows.push_back(std::move(row));
     }
 
     if (!options.orderByColumn.empty()) {
@@ -415,6 +440,10 @@ std::filesystem::path Table::indexFilePath() const {
     return dbPath_ / (schema_.name + ".tid");
 }
 
+std::filesystem::path Table::nonPrimaryIndexFilePath(const std::string& column) const {
+    return dbPath_ / (schema_.name + "." + column + ".nidx");
+}
+
 void Table::flushMeta() const {
     std::ofstream ofs(metaFilePath(), std::ios::trunc);
     ensure(ofs.good(), "failed to write table meta file: " + metaFilePath().string());
@@ -429,6 +458,10 @@ void Table::flushMeta() const {
     ofs << "columns=" << join(columnMetas, "|") << '\n';
     ofs << "primary_key=" << schema_.columns.front() << '\n';
     ofs << "index_definitions=PRIMARY(" << schema_.columns.front() << "):BTREE:" << schema_.name << ".tid\n";
+    for (std::size_t i = 1; i < schema_.columns.size(); ++i) {
+        ofs << "index_reserved=" << schema_.columns[i] << ":BTREE:" << schema_.name << "."
+            << schema_.columns[i] << ".nidx\n";
+    }
 }
 
 void Table::flushIntegrityMeta() const {
@@ -439,12 +472,18 @@ void Table::flushIntegrityMeta() const {
     ofs << "constraint=PRIMARY_KEY(" << schema_.columns.front() << ")\n";
     ofs << "constraint=NOT_NULL(" << schema_.columns.front() << ")\n";
     ofs << "index=PRIMARY:" << schema_.name << ".tid\n";
+    for (std::size_t i = 1; i < schema_.columns.size(); ++i) {
+        ofs << "index_reserved=" << schema_.columns[i] << ":" << schema_.name << "."
+            << schema_.columns[i] << ".nidx\n";
+    }
 }
 
 std::uint64_t Table::appendDataRow(const std::vector<std::string>& values) const {
-    std::ofstream ofs(dataFilePath(), std::ios::app);
+    const std::uint64_t offset = std::filesystem::exists(dataFilePath())
+                                     ? static_cast<std::uint64_t>(std::filesystem::file_size(dataFilePath()))
+                                     : 0;
+    std::ofstream ofs(dataFilePath(), std::ios::app | std::ios::binary);
     ensure(ofs.good(), "failed to open table data file: " + dataFilePath().string());
-    const std::uint64_t offset = static_cast<std::uint64_t>(ofs.tellp());
     ofs << "ROW|" << join(values, "|") << '\n';
     return offset;
 }
@@ -456,10 +495,14 @@ void Table::appendIndexEntry(const std::string& key, std::uint64_t offset) {
     ofs << "PAGE|" << pageId << "|leaf=1|parent=" << rootPageId_ << "|entry_count=1\n";
     ofs << "ENTRY|" << key << "|" << offset << '\n';
     ofs << "ENDPAGE\n";
+    primaryKeyOffsets_[key] = offset;
+    primaryKeyOffsetsOrdered_[key] = offset;
 }
 
 void Table::loadIndexFromTid() {
     index_.clear();
+    primaryKeyOffsets_.clear();
+    primaryKeyOffsetsOrdered_.clear();
     if (tryLoadPagedTid()) {
         return;
     }
@@ -478,6 +521,11 @@ void Table::loadIndexFromTid() {
             }
             const std::string key = line.substr(0, sepPos);
             index_.insert(key, Row{{key}});
+            try {
+                primaryKeyOffsets_[key] = static_cast<std::uint64_t>(std::stoull(line.substr(sepPos + 1)));
+                primaryKeyOffsetsOrdered_[key] = primaryKeyOffsets_[key];
+            } catch (...) {
+            }
         }
     }
     rebuildIndexFromData();
@@ -485,8 +533,10 @@ void Table::loadIndexFromTid() {
 
 void Table::rebuildIndexFromData() {
     index_.clear();
+    primaryKeyOffsets_.clear();
+    primaryKeyOffsetsOrdered_.clear();
 
-    std::ifstream ifs(dataFilePath());
+    std::ifstream ifs(dataFilePath(), std::ios::binary);
     if (!ifs.good()) {
         return;
     }
@@ -495,10 +545,15 @@ void Table::rebuildIndexFromData() {
     ensure(tidOfs.good(), "failed to rebuild table index file: " + indexFilePath().string());
 
     std::string line;
-    std::uint64_t offset = 0;
-    while (std::getline(ifs, line)) {
-        const std::uint64_t lineStartOffset = offset;
-        offset += static_cast<std::uint64_t>(line.size()) + 1;
+    while (true) {
+        const std::streampos linePos = ifs.tellg();
+        if (!std::getline(ifs, line)) {
+            break;
+        }
+        if (linePos == std::streampos(-1)) {
+            continue;
+        }
+        const std::uint64_t lineStartOffset = static_cast<std::uint64_t>(linePos);
 
         if (line.empty()) {
             continue;
@@ -512,6 +567,8 @@ void Table::rebuildIndexFromData() {
         }
         const std::string key = row.values.front();
         index_.insert(key, Row{{key}});
+        primaryKeyOffsets_[key] = lineStartOffset;
+        primaryKeyOffsetsOrdered_[key] = lineStartOffset;
         const std::uint32_t pageId = nextPageId_++;
         tidOfs << "PAGE|" << pageId << "|leaf=1|parent=" << rootPageId_ << "|entry_count=1\n";
         tidOfs << "ENTRY|" << key << "|" << lineStartOffset << '\n';
@@ -524,6 +581,8 @@ void Table::initializeTidFile() {
     ensure(ofs.good(), "failed to initialize table index file: " + indexFilePath().string());
     rootPageId_ = 1;
     nextPageId_ = 2;
+    primaryKeyOffsets_.clear();
+    primaryKeyOffsetsOrdered_.clear();
 
     ofs << "TID_PAGED_V1\n";
     ofs << "page_size=4096\n";
@@ -568,6 +627,11 @@ bool Table::tryLoadPagedTid() {
                 continue;
             }
             index_.insert(parts[1], Row{{parts[1]}});
+            try {
+                primaryKeyOffsets_[parts[1]] = static_cast<std::uint64_t>(std::stoull(parts[2]));
+                primaryKeyOffsetsOrdered_[parts[1]] = primaryKeyOffsets_[parts[1]];
+            } catch (...) {
+            }
         }
     }
     return true;
@@ -594,8 +658,28 @@ std::vector<Row> Table::readAllDataRows() const {
     return rows;
 }
 
+bool Table::readRowByOffset(std::uint64_t offset, Row& row) const {
+    std::ifstream ifs(dataFilePath(), std::ios::binary);
+    if (!ifs.good()) {
+        return false;
+    }
+    ifs.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
+    if (!ifs.good()) {
+        return false;
+    }
+    std::string line;
+    if (!std::getline(ifs, line)) {
+        return false;
+    }
+    if (line.rfind("ROW|", 0) != 0) {
+        return false;
+    }
+    row = deserializeRow(line.substr(4));
+    return true;
+}
+
 void Table::rewriteDataRows(const std::vector<Row>& rows) const {
-    std::ofstream ofs(dataFilePath(), std::ios::trunc);
+    std::ofstream ofs(dataFilePath(), std::ios::trunc | std::ios::binary);
     ensure(ofs.good(), "failed to rewrite table data file: " + dataFilePath().string());
     for (const auto& row : rows) {
         ofs << "ROW|" << serializeRow(row) << '\n';
@@ -635,6 +719,185 @@ bool Table::matchConditionTree(const Row& row, const std::shared_ptr<ConditionNo
     const bool leftMatch = matchConditionTree(row, node->left);
     const bool rightMatch = matchConditionTree(row, node->right);
     return node->logicalOp == LogicalOp::OR ? (leftMatch || rightMatch) : (leftMatch && rightMatch);
+}
+
+bool Table::hasIndexForColumn(const std::string& column) const {
+    return !schema_.columns.empty() && column == schema_.columns.front();
+}
+
+bool Table::canUseIndexForCondition(const WhereCondition& condition) const {
+    if (!hasIndexForColumn(condition.column)) {
+        return false;
+    }
+    return condition.op != CompareOp::LIKE;
+}
+
+bool Table::lookupOffsetsByIndexedRequest(const IndexedLookupRequest& request,
+                                          std::vector<std::uint64_t>& offsets) const {
+    if (lookupOffsetsByPrimaryIndex(request, offsets)) {
+        return true;
+    }
+    return lookupOffsetsBySecondaryIndex(request, offsets);
+}
+
+bool Table::lookupOffsetsByPrimaryIndex(const IndexedLookupRequest& request,
+                                        std::vector<std::uint64_t>& offsets) const {
+    if (!hasIndexForColumn(request.column)) {
+        return false;
+    }
+    offsets.clear();
+    switch (request.op) {
+        case CompareOp::EQ: {
+            const auto it = primaryKeyOffsets_.find(request.value);
+            if (it != primaryKeyOffsets_.end()) {
+                offsets.push_back(it->second);
+            }
+            break;
+        }
+        case CompareOp::IN: {
+            for (const auto& key : request.values) {
+                const auto it = primaryKeyOffsets_.find(key);
+                if (it != primaryKeyOffsets_.end()) {
+                    offsets.push_back(it->second);
+                }
+            }
+            break;
+        }
+        case CompareOp::GT: {
+            for (auto it = primaryKeyOffsetsOrdered_.upper_bound(request.value);
+                 it != primaryKeyOffsetsOrdered_.end();
+                 ++it) {
+                offsets.push_back(it->second);
+            }
+            break;
+        }
+        case CompareOp::GE: {
+            for (auto it = primaryKeyOffsetsOrdered_.lower_bound(request.value);
+                 it != primaryKeyOffsetsOrdered_.end();
+                 ++it) {
+                offsets.push_back(it->second);
+            }
+            break;
+        }
+        case CompareOp::LT: {
+            for (auto it = primaryKeyOffsetsOrdered_.begin();
+                 it != primaryKeyOffsetsOrdered_.lower_bound(request.value);
+                 ++it) {
+                offsets.push_back(it->second);
+            }
+            break;
+        }
+        case CompareOp::LE: {
+            for (auto it = primaryKeyOffsetsOrdered_.begin();
+                 it != primaryKeyOffsetsOrdered_.upper_bound(request.value);
+                 ++it) {
+                offsets.push_back(it->second);
+            }
+            break;
+        }
+        case CompareOp::BETWEEN: {
+            auto beginIt = primaryKeyOffsetsOrdered_.lower_bound(request.value);
+            auto endIt = primaryKeyOffsetsOrdered_.upper_bound(request.secondValue);
+            for (auto it = beginIt; it != endIt; ++it) {
+                offsets.push_back(it->second);
+            }
+            break;
+        }
+        case CompareOp::NE: {
+            for (const auto& entry : primaryKeyOffsetsOrdered_) {
+                if (entry.first != request.value) {
+                    offsets.push_back(entry.second);
+                }
+            }
+            break;
+        }
+        default:
+            return false;
+    }
+    std::sort(offsets.begin(), offsets.end());
+    offsets.erase(std::unique(offsets.begin(), offsets.end()), offsets.end());
+    return true;
+}
+
+bool Table::lookupOffsetsBySecondaryIndex(const IndexedLookupRequest& request,
+                                          std::vector<std::uint64_t>& offsets) const {
+    (void)request;
+    offsets.clear();
+    // Reserved extension point: future non-primary index providers can be plugged in here.
+    return false;
+}
+
+bool Table::lookupOffsetsByIndexedCondition(const WhereCondition& condition,
+                                            std::vector<std::uint64_t>& offsets) const {
+    if (!canUseIndexForCondition(condition)) {
+        return false;
+    }
+    IndexedLookupRequest request;
+    request.column = condition.column;
+    request.op = condition.op;
+    request.value = condition.value;
+    request.secondValue = condition.secondValue;
+    request.values = condition.values;
+    return lookupOffsetsByIndexedRequest(request, offsets);
+}
+
+Table::IndexCandidateResult Table::collectIndexCandidates(const std::shared_ptr<ConditionNode>& node) const {
+    if (!node) {
+        return {};
+    }
+    if (node->isLeaf) {
+        IndexCandidateResult result;
+        result.constrained = lookupOffsetsByIndexedCondition(node->condition, result.offsets);
+        return result;
+    }
+
+    const IndexCandidateResult left = collectIndexCandidates(node->left);
+    const IndexCandidateResult right = collectIndexCandidates(node->right);
+    IndexCandidateResult merged;
+    if (node->logicalOp == LogicalOp::AND) {
+        if (left.constrained && right.constrained) {
+            merged.constrained = true;
+            merged.offsets = mergeOffsetIntersection(left.offsets, right.offsets);
+            return merged;
+        }
+        return left.constrained ? left : right;
+    }
+
+    if (left.constrained && right.constrained) {
+        merged.constrained = true;
+        merged.offsets = mergeOffsetUnion(left.offsets, right.offsets);
+    }
+    return merged;
+}
+
+std::vector<std::uint64_t> Table::mergeOffsetUnion(const std::vector<std::uint64_t>& left,
+                                                   const std::vector<std::uint64_t>& right) {
+    std::vector<std::uint64_t> merged;
+    merged.reserve(left.size() + right.size());
+    merged.insert(merged.end(), left.begin(), left.end());
+    merged.insert(merged.end(), right.begin(), right.end());
+    std::sort(merged.begin(), merged.end());
+    merged.erase(std::unique(merged.begin(), merged.end()), merged.end());
+    return merged;
+}
+
+std::vector<std::uint64_t> Table::mergeOffsetIntersection(const std::vector<std::uint64_t>& left,
+                                                          const std::vector<std::uint64_t>& right) {
+    std::vector<std::uint64_t> result;
+    if (left.empty() || right.empty()) {
+        return result;
+    }
+    std::vector<std::uint64_t> leftSorted = left;
+    std::vector<std::uint64_t> rightSorted = right;
+    std::sort(leftSorted.begin(), leftSorted.end());
+    std::sort(rightSorted.begin(), rightSorted.end());
+    std::set_intersection(leftSorted.begin(),
+                          leftSorted.end(),
+                          rightSorted.begin(),
+                          rightSorted.end(),
+                          std::back_inserter(result));
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
 }
 
 bool Table::compareValue(const std::string& left, CompareOp op, const std::string& right) {

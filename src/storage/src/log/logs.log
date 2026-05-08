@@ -18,3 +18,30 @@
 [INFO][storage-DatabaseManager-deleteRowByPrimaryKey][2026-05-05 03:55:02]:Delete row result for StartaleDB.StartaleTB, key=v5, deleted=true
 [INFO][storage-StorageManager-~StorageManager][2026-05-05 03:55:02]:Storage manager is being released.
 [INFO][storage-StorageManager-~StorageManager][2026-05-05 03:55:02]:Storage sub-managers released.
+[DEBUG][storage-FileManager-FileManager][2026-05-08 03:07:45]:File manager initialized.
+[DEBUG][storage-TableDefManager-TableDefManager][2026-05-08 03:07:45]:Table definition manager initialized.
+[INFO][storage-StorageManager-StorageManager][2026-05-08 03:07:45]:Storage manager initialized.
+[INFO][storage-SystemCatalogManager-createDatabase][2026-05-08 03:07:45]:Database created successfully: StartaleDB
+[INFO][storage-DatabaseManager-createTable][2026-05-08 03:07:45]:Table created successfully: StartaleDB.StartaleTB
+[INFO][storage-StorageManager-~StorageManager][2026-05-08 03:07:46]:Storage manager is being released.
+[INFO][storage-StorageManager-~StorageManager][2026-05-08 03:07:46]:Storage sub-managers released.
+[DEBUG][storage-FileManager-FileManager][2026-05-08 03:11:35]:File manager initialized.
+[DEBUG][storage-TableDefManager-TableDefManager][2026-05-08 03:11:35]:Table definition manager initialized.
+[INFO][storage-StorageManager-StorageManager][2026-05-08 03:11:35]:Storage manager initialized.
+[WARNING][storage-SystemCatalogManager-createDatabase][2026-05-08 03:11:35]:Database already exists: StartaleDB
+[DEBUG][storage-FileManager-FileManager][2026-05-08 03:11:59]:File manager initialized.
+[DEBUG][storage-TableDefManager-TableDefManager][2026-05-08 03:11:59]:Table definition manager initialized.
+[INFO][storage-StorageManager-StorageManager][2026-05-08 03:11:59]:Storage manager initialized.
+[WARNING][storage-SystemCatalogManager-createDatabase][2026-05-08 03:11:59]:Database already exists: StartaleDB
+[INFO][storage-StorageManager-~StorageManager][2026-05-08 03:12:00]:Storage manager is being released.
+[INFO][storage-StorageManager-~StorageManager][2026-05-08 03:12:00]:Storage sub-managers released.
+[DEBUG][storage-FileManager-FileManager][2026-05-08 03:12:08]:File manager initialized.
+[DEBUG][storage-TableDefManager-TableDefManager][2026-05-08 03:12:08]:Table definition manager initialized.
+[INFO][storage-StorageManager-StorageManager][2026-05-08 03:12:08]:Storage manager initialized.
+[WARNING][storage-SystemCatalogManager-createDatabase][2026-05-08 03:12:08]:Database already exists: StartaleDB
+[DEBUG][storage-FileManager-FileManager][2026-05-08 03:15:38]:File manager initialized.
+[DEBUG][storage-TableDefManager-TableDefManager][2026-05-08 03:15:38]:Table definition manager initialized.
+[INFO][storage-StorageManager-StorageManager][2026-05-08 03:15:38]:Storage manager initialized.
+[WARNING][storage-SystemCatalogManager-createDatabase][2026-05-08 03:15:38]:Database already exists: StartaleDB
+[INFO][storage-StorageManager-~StorageManager][2026-05-08 03:15:38]:Storage manager is being released.
+[INFO][storage-StorageManager-~StorageManager][2026-05-08 03:15:38]:Storage sub-managers released.

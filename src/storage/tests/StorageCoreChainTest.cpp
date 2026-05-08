@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -134,7 +135,7 @@ int main()
     Core core;
 
     auto *systemCatalogManager = core.getStorageManager()->getSystemCatalogManager();
-    auto *databaseManager = core.getStorageManager()  ->getDatabaseManager();
+    auto *databaseManager = core.getStorageManager()->getDatabaseManager();
     ensure(systemCatalogManager != nullptr, "systemCatalogManager is null");
     ensure(databaseManager != nullptr, "databaseManager is null");
 
@@ -155,11 +156,14 @@ int main()
         }
         ensure(foundTableInTb, ".tb missing table name after createTable");
     }
+
     ensure(databaseManager->insertRow(dbName, tableName, {"v1", "v2", "v3"}), "insertRow failed");
     ensure(databaseManager->insertRow(dbName, tableName, {"v5", "v2", "v3"}), "insertRow failed");
     ensure(databaseManager->updateRowByPrimaryKey(dbName, tableName, "v1", {"v1", "v9", "v8"}),
            "updateRowByPrimaryKey failed");
     ensure(databaseManager->deleteRowByPrimaryKey(dbName, tableName, "v5"), "deleteRowByPrimaryKey failed");
+    ensure(databaseManager->insertRow(dbName, tableName, {"v2", "v3", "v4"}), "insertRow failed");
+    ensure(databaseManager->insertRow(dbName, tableName, {"v3", "v1", "v5"}), "insertRow failed");
 
     auto loadedTable = storage::Table::load(dbDir, tableName);
     const auto selectedRows = loadedTable.select(
@@ -187,7 +191,52 @@ int main()
         {"A"},
         {storage::Table::WhereCondition{"A", storage::Table::CompareOp::LIKE, "v%"}}
     );
-    ensure(likePrefix.size() == 1, "select like field% mismatch after update/delete");
+    ensure(likePrefix.size() == 3, "select like field% mismatch after update/delete");
+
+    auto betweenCond = storage::Table::WhereCondition {"A", storage::Table::CompareOp::BETWEEN, "v1"};
+    betweenCond.secondValue = "v2";
+    const auto betweenRows = loadedTable.select({"A"}, {betweenCond});
+    ensure(betweenRows.size() == 2, "select BETWEEN mismatch");
+
+    auto inCond = storage::Table::WhereCondition {"A", storage::Table::CompareOp::IN, ""};
+    inCond.values = {"v1", "v3"};
+    const auto inRows = loadedTable.select({"A"}, {inCond});
+    ensure(inRows.size() == 2, "select IN mismatch");
+
+    auto andLeft = std::make_shared<storage::Table::ConditionNode>();
+    andLeft->isLeaf = true;
+    andLeft->condition = storage::Table::WhereCondition {"B", storage::Table::CompareOp::EQ, "v9"};
+    auto andRight = std::make_shared<storage::Table::ConditionNode>();
+    andRight->isLeaf = true;
+    andRight->condition = storage::Table::WhereCondition {"C", storage::Table::CompareOp::EQ, "v8"};
+    auto andTree = std::make_shared<storage::Table::ConditionNode>();
+    andTree->isLeaf = false;
+    andTree->logicalOp = storage::Table::LogicalOp::AND;
+    andTree->left = andLeft;
+    andTree->right = andRight;
+    const auto andRows = loadedTable.select({"A"}, andTree);
+    ensure(andRows.size() == 1 && andRows.front().values.front() == "v1", "select AND tree mismatch");
+
+    auto orLeft = std::make_shared<storage::Table::ConditionNode>();
+    orLeft->isLeaf = true;
+    orLeft->condition = storage::Table::WhereCondition {"A", storage::Table::CompareOp::EQ, "v3"};
+    auto orRight = std::make_shared<storage::Table::ConditionNode>();
+    orRight->isLeaf = true;
+    orRight->condition = storage::Table::WhereCondition {"A", storage::Table::CompareOp::EQ, "v2"};
+    auto orTree = std::make_shared<storage::Table::ConditionNode>();
+    orTree->isLeaf = false;
+    orTree->logicalOp = storage::Table::LogicalOp::OR;
+    orTree->left = orLeft;
+    orTree->right = orRight;
+    storage::Table::SelectOptions options;
+    options.orderByColumn = "A";
+    options.orderByDesc = true;
+    options.hasLimit = true;
+    options.limit = 1;
+    const auto orderLimitRows = loadedTable.select({"A"}, orTree, options);
+    ensure(orderLimitRows.size() == 1 && orderLimitRows.front().values.front() == "v3",
+           "select ORDER BY/LIMIT mismatch");
+
     ensure(std::filesystem::exists(catalogFile), "database.db file not found");
     ensure(std::filesystem::exists(tdfFile), ".tdf file not found");
     ensure(std::filesystem::exists(trdFile), ".trd file not found");

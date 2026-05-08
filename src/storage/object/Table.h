@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -26,13 +27,37 @@ public:
         GE,
         LT,
         LE,
-        LIKE
+        LIKE,
+        IN,
+        BETWEEN
+    };
+
+    enum class LogicalOp {
+        AND,
+        OR
     };
 
     struct WhereCondition {
         std::string column;
         CompareOp op = CompareOp::EQ;
         std::string value;
+        std::string secondValue;
+        std::vector<std::string> values;
+    };
+
+    struct ConditionNode {
+        bool isLeaf = true;
+        WhereCondition condition;
+        LogicalOp logicalOp = LogicalOp::AND;
+        std::shared_ptr<ConditionNode> left;
+        std::shared_ptr<ConditionNode> right;
+    };
+
+    struct SelectOptions {
+        std::string orderByColumn;
+        bool orderByDesc = false;
+        bool hasLimit = false;
+        std::size_t limit = 0;
     };
 
     /**
@@ -104,7 +129,12 @@ public:
      * @return 结果行集合
      */
     std::vector<Row> select(const std::vector<std::string>& targetColumns,
-                            const std::vector<WhereCondition>& whereConditions = {}) const;
+                            const std::vector<WhereCondition>& whereConditions = {},
+                            const SelectOptions& options = SelectOptions()) const;
+
+    std::vector<Row> select(const std::vector<std::string>& targetColumns,
+                            const std::shared_ptr<ConditionNode>& whereTree,
+                            const SelectOptions& options = SelectOptions()) const;
 
     /**
      * @brief 获取表结构
@@ -239,6 +269,7 @@ private:
      * @return 是否满足
      */
     bool matchWhere(const Row& row, const std::vector<WhereCondition>& whereConditions) const;
+    bool matchConditionTree(const Row& row, const std::shared_ptr<ConditionNode>& node) const;
 
     /**
      * @brief 比较两个字段值
@@ -249,6 +280,8 @@ private:
      * @return 比较结果
      */
     static bool compareValue(const std::string& left, CompareOp op, const std::string& right);
+    static bool compareValue(const std::string& left,
+                             const WhereCondition& condition);
 
     /**
      * @brief LIKE 模式匹配

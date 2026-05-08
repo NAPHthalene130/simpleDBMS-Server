@@ -171,7 +171,32 @@ bool Table::deleteByPrimaryKey(const std::string& primaryKey) {
 }
 
 std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
-                               const std::vector<WhereCondition>& whereConditions) const {
+                               const std::vector<WhereCondition>& whereConditions,
+                               const SelectOptions& options) const {
+    std::shared_ptr<ConditionNode> whereTree;
+    if (!whereConditions.empty()) {
+        whereTree = std::make_shared<ConditionNode>();
+        whereTree->isLeaf = true;
+        whereTree->condition = whereConditions.front();
+        for (std::size_t i = 1; i < whereConditions.size(); ++i) {
+            auto rightLeaf = std::make_shared<ConditionNode>();
+            rightLeaf->isLeaf = true;
+            rightLeaf->condition = whereConditions[i];
+
+            auto parent = std::make_shared<ConditionNode>();
+            parent->isLeaf = false;
+            parent->logicalOp = LogicalOp::AND;
+            parent->left = whereTree;
+            parent->right = rightLeaf;
+            whereTree = parent;
+        }
+    }
+    return select(targetColumns, whereTree, options);
+}
+
+std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
+                               const std::shared_ptr<ConditionNode>& whereTree,
+                               const SelectOptions& options) const {
     std::vector<std::size_t> projectedIndexes;
     const bool selectAll = targetColumns.empty()
                            || (targetColumns.size() == 1 && targetColumns.front() == "*");
@@ -190,7 +215,7 @@ std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
     std::ifstream ifs(dataFilePath());
     ensure(ifs.good(), "failed to open table data file: " + dataFilePath().string());
 
-    std::vector<Row> result;
+    std::vector<Row> matchedRows;
     std::string line;
     while (std::getline(ifs, line)) {
         if (line.rfind("ROW|", 0) != 0) {
@@ -201,10 +226,38 @@ std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
         if (row.values.size() != schema_.columns.size()) {
             continue;
         }
-        if (!matchWhere(row, whereConditions)) {
+        if (!matchConditionTree(row, whereTree)) {
             continue;
         }
+        matchedRows.push_back(std::move(row));
+    }
 
+    if (!options.orderByColumn.empty()) {
+        const std::size_t orderIndex = columnIndex(options.orderByColumn);
+        const bool desc = options.orderByDesc;
+        std::stable_sort(matchedRows.begin(),
+                         matchedRows.end(),
+                         [orderIndex, desc](const Row& lhs, const Row& rhs) {
+                             const std::string& left = lhs.values[orderIndex];
+                             const std::string& right = rhs.values[orderIndex];
+                             double leftNum = 0.0;
+                             double rightNum = 0.0;
+                             const bool leftIsNum = tryParseNumber(left, leftNum);
+                             const bool rightIsNum = tryParseNumber(right, rightNum);
+                             if (leftIsNum && rightIsNum) {
+                                 return desc ? (leftNum > rightNum) : (leftNum < rightNum);
+                             }
+                             return desc ? (left > right) : (left < right);
+                         });
+    }
+
+    if (options.hasLimit && options.limit < matchedRows.size()) {
+        matchedRows.resize(options.limit);
+    }
+
+    std::vector<Row> result;
+    result.reserve(matchedRows.size());
+    for (const auto& row : matchedRows) {
         Row projected;
         projected.values.reserve(projectedIndexes.size());
         for (const auto index : projectedIndexes) {
@@ -434,14 +487,33 @@ bool Table::matchWhere(const Row& row, const std::vector<WhereCondition>& whereC
         if (idx >= row.values.size()) {
             return false;
         }
-        if (!compareValue(row.values[idx], condition.op, condition.value)) {
+        if (!compareValue(row.values[idx], condition)) {
             return false;
         }
     }
     return true;
 }
 
+bool Table::matchConditionTree(const Row& row, const std::shared_ptr<ConditionNode>& node) const {
+    if (!node) {
+        return true;
+    }
+    if (node->isLeaf) {
+        const std::size_t idx = columnIndex(node->condition.column);
+        if (idx >= row.values.size()) {
+            return false;
+        }
+        return compareValue(row.values[idx], node->condition);
+    }
+    const bool leftMatch = matchConditionTree(row, node->left);
+    const bool rightMatch = matchConditionTree(row, node->right);
+    return node->logicalOp == LogicalOp::OR ? (leftMatch || rightMatch) : (leftMatch && rightMatch);
+}
+
 bool Table::compareValue(const std::string& left, CompareOp op, const std::string& right) {
+    if (op == CompareOp::IN || op == CompareOp::BETWEEN) {
+        return false;
+    }
     if (op == CompareOp::LIKE) {
         return likeMatch(left, right);
     }
@@ -487,6 +559,20 @@ bool Table::compareValue(const std::string& left, CompareOp op, const std::strin
             return likeMatch(left, right);
     }
     return false;
+}
+
+bool Table::compareValue(const std::string& left, const WhereCondition& condition) {
+    if (condition.op == CompareOp::IN) {
+        return std::find(condition.values.begin(), condition.values.end(), left) != condition.values.end();
+    }
+    if (condition.op == CompareOp::BETWEEN) {
+        if (condition.secondValue.empty()) {
+            return false;
+        }
+        return compareValue(left, CompareOp::GE, condition.value)
+               && compareValue(left, CompareOp::LE, condition.secondValue);
+    }
+    return compareValue(left, condition.op, condition.value);
 }
 
 bool Table::likeMatch(const std::string& text, const std::string& pattern) {

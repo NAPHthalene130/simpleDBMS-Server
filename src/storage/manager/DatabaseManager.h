@@ -79,9 +79,25 @@ public:
      * @brief 获取当前数据库内所有数据表信息
      * @author NAPH130
      * @return 数据表元信息列表
-     * @note 当前仅预留接口，暂未实现
      */
     std::vector<TableBlock> getAllTables();
+
+    /**
+     * @brief 获取指定数据库内所有数据表信息
+     * @author NAPH130
+     * @param dbName 数据库名称
+     * @return 数据表元信息列表
+     */
+    std::vector<TableBlock> getAllTablesForDb(const std::string &dbName);
+
+    /**
+     * @brief 获取指定数据表的所有列名
+     * @author NAPH130
+     * @param dbName 数据库名称
+     * @param tableName 表名称
+     * @return 列名列表
+     */
+    std::vector<std::string> getTableColumns(const std::string &dbName, const std::string &tableName);
 
 private:
     Core *core;

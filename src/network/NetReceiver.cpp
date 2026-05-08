@@ -18,14 +18,26 @@
 #include "models/parser/SelectStmt.h"
 #include "models/parser/ShowStmt.h"
 #include "models/network/SqlData.h"
+#include "models/storage/DatabaseBlock.h"
+#include "models/storage/TableBlock.h"
 #include "parser/Parser.h"
 #include "parser/ParserManager.h"
+#include "storage/manager/StorageManager.h"
+#include "storage/manager/SystemCatalogManager.h"
+#include "storage/manager/DatabaseManager.h"
 #include "tokenizer/Tokenizer.h"
 
 namespace {
 bool isQueryStatementType(ExecutionStatementType statementType)
 {
     return statementType == ExecutionStatementType::Select || statementType == ExecutionStatementType::Show;
+}
+
+template <std::size_t N>
+std::string fixedArrayToStr(const std::array<char, N> &value)
+{
+    const auto endIt = std::find(value.begin(), value.end(), '\0');
+    return std::string(value.begin(), endIt);
 }
 
 std::string buildResponseType(const std::string &requestType, ExecutionStatementType stmtType = ExecutionStatementType::Unknown)
@@ -293,8 +305,52 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
         }
 
         if (networkTransferData.getType() == NetworkTransferData::DIRECTORY_REQUEST) {
-            // TODO: 处理数据库目录请求
-            sendFailureResponse("DIRECTORY_REQUEST is not implemented yet.");
+            if (core == nullptr || core->getStorageManager() == nullptr) {
+                sendFailureResponse("Storage manager is not initialized.");
+                return;
+            }
+
+            auto *systemCatalogManager = core->getStorageManager()->getSystemCatalogManager();
+            auto *databaseManager = core->getStorageManager()->getDatabaseManager();
+
+            if (systemCatalogManager == nullptr || databaseManager == nullptr) {
+                sendFailureResponse("Storage components are not initialized.");
+                return;
+            }
+
+            const auto databaseBlocks = systemCatalogManager->getAllDatabases();
+
+            NetworkTransferData responseData(NetworkTransferData::DIRECTORY_RESPONSE,
+                                             networkTransferData.getId());
+            responseData.setSuccess(true);
+            responseData.setMessage("Directory enumeration succeeded.");
+
+            std::vector<DatabaseNode> databaseNodes;
+            databaseNodes.reserve(databaseBlocks.size());
+
+            for (const auto &db : databaseBlocks) {
+                const std::string dbName = fixedArrayToStr(db.getName());
+
+                const auto tableBlocks = databaseManager->getAllTablesForDb(dbName);
+                std::vector<TableNode> tableNodes;
+                tableNodes.reserve(tableBlocks.size());
+
+                for (const auto &tb : tableBlocks) {
+                    const std::string tableName = fixedArrayToStr(tb.getName());
+                    const auto columns = databaseManager->getTableColumns(dbName, tableName);
+                    tableNodes.emplace_back(tableName, columns);
+                }
+
+                databaseNodes.emplace_back(dbName, tableNodes);
+            }
+
+            responseData.setDatabases(databaseNodes);
+            LogWriter::info("network",
+                            "NetReceiver",
+                            "processMsg",
+                            std::string("DIRECTORY_REQUEST returned ")
+                                + std::to_string(databaseNodes.size()) + " databases.");
+            sendResponse(responseData);
             return;
         }
 

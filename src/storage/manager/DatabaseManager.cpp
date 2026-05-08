@@ -681,7 +681,75 @@ std::vector<TableBlock> DatabaseManager::getAllTables()
     }
     LogWriter::debug("storage",
                      "DatabaseManager",
-                     "getAllTables",
-                     std::string("Enumerated table count=") + std::to_string(blocks.size()));
+                      "getAllTables",
+                      std::string("Enumerated table count=") + std::to_string(blocks.size()));
     return blocks;
+}
+
+std::vector<TableBlock> DatabaseManager::getAllTablesForDb(const std::string &dbName)
+{
+    std::vector<TableBlock> blocks;
+    if (dbName.empty()) {
+        return blocks;
+    }
+
+    const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
+    const auto dbPath = dbRootPath / dbName;
+    if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
+        return blocks;
+    }
+
+    const auto descriptorBlocks = readTableBlocksFromDescriptor(dbPath);
+    if (!descriptorBlocks.empty()) {
+        return descriptorBlocks;
+    }
+
+    for (const auto &dbFile : std::filesystem::directory_iterator(dbPath)) {
+        if (dbFile.is_regular_file() && dbFile.path().extension() == ".tdf") {
+            blocks.push_back(buildTableBlock(dbPath, dbFile.path().stem().string()));
+        }
+    }
+
+    LogWriter::debug("storage",
+                     "DatabaseManager",
+                     "getAllTablesForDb",
+                     std::string("Enumerated table count=") + std::to_string(blocks.size())
+                         + " for database " + dbName);
+    return blocks;
+}
+
+std::vector<std::string> DatabaseManager::getTableColumns(const std::string &dbName,
+                                                           const std::string &tableName)
+{
+    if (dbName.empty() || tableName.empty()) {
+        return {};
+    }
+
+    const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
+    const auto tdfPath = dbRootPath / dbName / (tableName + ".tdf");
+    if (!std::filesystem::exists(tdfPath)) {
+        return {};
+    }
+
+    std::ifstream ifs(tdfPath);
+    if (!ifs.good()) {
+        return {};
+    }
+
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.rfind("columns=", 0) == 0) {
+            const std::string columnsStr = line.substr(8);
+            std::vector<std::string> columns;
+            std::stringstream ss(columnsStr);
+            std::string item;
+            while (std::getline(ss, item, '|')) {
+                const auto colonPos = item.find(':');
+                columns.push_back(colonPos == std::string::npos ? item : item.substr(0, colonPos));
+            }
+            return columns;
+        }
+    }
+
+    return {};
 }

@@ -37,12 +37,25 @@ public:
         OR
     };
 
+    enum class AggregateOp {
+        COUNT,
+        SUM,
+        AVG,
+        MIN,
+        MAX
+    };
+
     struct WhereCondition {
         std::string column;
         CompareOp op = CompareOp::EQ;
         std::string value;
         std::string secondValue;
         std::vector<std::string> values;
+    };
+
+    struct AggregateExpr {
+        AggregateOp op = AggregateOp::COUNT;
+        std::string column = "*";
     };
 
     struct ConditionNode {
@@ -135,6 +148,12 @@ public:
     std::vector<Row> select(const std::vector<std::string>& targetColumns,
                             const std::shared_ptr<ConditionNode>& whereTree,
                             const SelectOptions& options = SelectOptions()) const;
+
+    std::vector<std::string> aggregate(const std::vector<AggregateExpr>& expressions,
+                                       const std::vector<WhereCondition>& whereConditions = {}) const;
+
+    std::vector<std::string> aggregate(const std::vector<AggregateExpr>& expressions,
+                                       const std::shared_ptr<ConditionNode>& whereTree) const;
 
     /**
      * @brief 获取表结构

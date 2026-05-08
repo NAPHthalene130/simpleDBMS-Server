@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 
 namespace storage {
@@ -20,6 +21,19 @@ bool tryParseNumber(const std::string& text, double& value) {
     }
     value = parsed;
     return true;
+}
+
+std::string formatDouble(double value) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(6) << value;
+    std::string out = oss.str();
+    while (!out.empty() && out.back() == '0') {
+        out.pop_back();
+    }
+    if (!out.empty() && out.back() == '.') {
+        out.pop_back();
+    }
+    return out.empty() ? "0" : out;
 }
 
 } // namespace
@@ -266,6 +280,119 @@ std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
         result.push_back(std::move(projected));
     }
     return result;
+}
+
+std::vector<std::string> Table::aggregate(const std::vector<AggregateExpr>& expressions,
+                                          const std::vector<WhereCondition>& whereConditions) const {
+    std::shared_ptr<ConditionNode> whereTree;
+    if (!whereConditions.empty()) {
+        whereTree = std::make_shared<ConditionNode>();
+        whereTree->isLeaf = true;
+        whereTree->condition = whereConditions.front();
+        for (std::size_t i = 1; i < whereConditions.size(); ++i) {
+            auto rightLeaf = std::make_shared<ConditionNode>();
+            rightLeaf->isLeaf = true;
+            rightLeaf->condition = whereConditions[i];
+
+            auto parent = std::make_shared<ConditionNode>();
+            parent->isLeaf = false;
+            parent->logicalOp = LogicalOp::AND;
+            parent->left = whereTree;
+            parent->right = rightLeaf;
+            whereTree = parent;
+        }
+    }
+    return aggregate(expressions, whereTree);
+}
+
+std::vector<std::string> Table::aggregate(const std::vector<AggregateExpr>& expressions,
+                                          const std::shared_ptr<ConditionNode>& whereTree) const {
+    ensure(!expressions.empty(), "aggregate expressions cannot be empty");
+    std::vector<Row> rows;
+    std::ifstream ifs(dataFilePath());
+    ensure(ifs.good(), "failed to open table data file: " + dataFilePath().string());
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.rfind("ROW|", 0) != 0) {
+            continue;
+        }
+        Row row = deserializeRow(line.substr(4));
+        if (row.values.size() != schema_.columns.size()) {
+            continue;
+        }
+        if (!matchConditionTree(row, whereTree)) {
+            continue;
+        }
+        rows.push_back(std::move(row));
+    }
+
+    std::vector<std::string> out;
+    out.reserve(expressions.size());
+    for (const auto& expr : expressions) {
+        if (expr.op == AggregateOp::COUNT) {
+            if (expr.column.empty() || expr.column == "*") {
+                out.push_back(std::to_string(rows.size()));
+            } else {
+                const std::size_t idx = columnIndex(expr.column);
+                std::size_t count = 0;
+                for (const auto& row : rows) {
+                    if (idx < row.values.size() && !row.values[idx].empty()) {
+                        ++count;
+                    }
+                }
+                out.push_back(std::to_string(count));
+            }
+            continue;
+        }
+
+        const std::size_t idx = columnIndex(expr.column);
+        if (expr.op == AggregateOp::SUM || expr.op == AggregateOp::AVG) {
+            double sum = 0.0;
+            std::size_t numericCount = 0;
+            for (const auto& row : rows) {
+                if (idx >= row.values.size()) {
+                    continue;
+                }
+                double num = 0.0;
+                if (!tryParseNumber(row.values[idx], num)) {
+                    continue;
+                }
+                sum += num;
+                ++numericCount;
+            }
+            if (expr.op == AggregateOp::SUM) {
+                out.push_back(formatDouble(sum));
+            } else {
+                out.push_back(numericCount == 0 ? "0" : formatDouble(sum / static_cast<double>(numericCount)));
+            }
+            continue;
+        }
+
+        bool hasValue = false;
+        std::string best;
+        for (const auto& row : rows) {
+            if (idx >= row.values.size()) {
+                continue;
+            }
+            const std::string& value = row.values[idx];
+            if (!hasValue) {
+                best = value;
+                hasValue = true;
+                continue;
+            }
+            if (expr.op == AggregateOp::MIN) {
+                if (compareValue(value, CompareOp::LT, best)) {
+                    best = value;
+                }
+            } else if (expr.op == AggregateOp::MAX) {
+                if (compareValue(value, CompareOp::GT, best)) {
+                    best = value;
+                }
+            }
+        }
+        out.push_back(hasValue ? best : "");
+    }
+    return out;
 }
 
 bool Table::containsPrimaryKey(const std::string& key) const {

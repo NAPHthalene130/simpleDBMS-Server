@@ -118,6 +118,7 @@ int main()
 
     const std::string dbName = "StartaleDB";
     const std::string tableName = "StartaleTB";
+    const std::string aggTableName = "AggTB";
     const std::filesystem::path dbRoot("data");
     const std::filesystem::path dbDir = dbRoot / dbName;
     const std::filesystem::path tbFile = dbDir / (dbName + ".tb");
@@ -164,6 +165,12 @@ int main()
     ensure(databaseManager->deleteRowByPrimaryKey(dbName, tableName, "v5"), "deleteRowByPrimaryKey failed");
     ensure(databaseManager->insertRow(dbName, tableName, {"v2", "v3", "v4"}), "insertRow failed");
     ensure(databaseManager->insertRow(dbName, tableName, {"v3", "v1", "v5"}), "insertRow failed");
+
+    ensure(databaseManager->createTable(dbName, aggTableName, {"ID", "Score", "Qty"}),
+           "createTable agg failed");
+    ensure(databaseManager->insertRow(dbName, aggTableName, {"k1", "10", "2"}), "insertRow agg failed");
+    ensure(databaseManager->insertRow(dbName, aggTableName, {"k2", "20", "3"}), "insertRow agg failed");
+    ensure(databaseManager->insertRow(dbName, aggTableName, {"k3", "30", "4"}), "insertRow agg failed");
 
     auto loadedTable = storage::Table::load(dbDir, tableName);
     const auto selectedRows = loadedTable.select(
@@ -236,6 +243,31 @@ int main()
     const auto orderLimitRows = loadedTable.select({"A"}, orTree, options);
     ensure(orderLimitRows.size() == 1 && orderLimitRows.front().values.front() == "v3",
            "select ORDER BY/LIMIT mismatch");
+
+    auto aggTable = storage::Table::load(dbDir, aggTableName);
+    const auto aggValues = aggTable.aggregate({
+        {storage::Table::AggregateOp::COUNT, "*"},
+        {storage::Table::AggregateOp::SUM, "Score"},
+        {storage::Table::AggregateOp::AVG, "Score"},
+        {storage::Table::AggregateOp::MIN, "Score"},
+        {storage::Table::AggregateOp::MAX, "Score"},
+    });
+    ensure(aggValues.size() == 5, "aggregate result size mismatch");
+    ensure(aggValues[0] == "3", "aggregate COUNT mismatch");
+    ensure(aggValues[1] == "60", "aggregate SUM mismatch");
+    ensure(aggValues[2] == "20", "aggregate AVG mismatch");
+    ensure(aggValues[3] == "10", "aggregate MIN mismatch");
+    ensure(aggValues[4] == "30", "aggregate MAX mismatch");
+
+    auto aggWhere = storage::Table::WhereCondition {"Score", storage::Table::CompareOp::BETWEEN, "15"};
+    aggWhere.secondValue = "30";
+    const auto filteredAgg = aggTable.aggregate({
+        {storage::Table::AggregateOp::COUNT, "*"},
+        {storage::Table::AggregateOp::SUM, "Qty"},
+    }, {aggWhere});
+    ensure(filteredAgg.size() == 2, "aggregate with where result size mismatch");
+    ensure(filteredAgg[0] == "2", "aggregate with where COUNT mismatch");
+    ensure(filteredAgg[1] == "7", "aggregate with where SUM mismatch");
 
     ensure(std::filesystem::exists(catalogFile), "database.db file not found");
     ensure(std::filesystem::exists(tdfFile), ".tdf file not found");

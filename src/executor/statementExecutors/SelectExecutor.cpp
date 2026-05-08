@@ -286,8 +286,9 @@ ExecutionResult SelectExecutor::executeTableSelect(const SelectStmt *selectStmt,
 
         const auto allRows = table.select({}, {});
         const auto *whereCondition = selectStmt->getWhereCondition().get();
+        const auto *havingCondition = selectStmt->getHavingCondition().get();
 
-        std::vector<std::vector<std::string>> resultSet;
+        std::vector<std::vector<std::string>> filteredRows;
         for (const auto &row : allRows) {
             if (row.values.size() != schema.columns.size()) {
                 continue;
@@ -298,15 +299,11 @@ ExecutionResult SelectExecutor::executeTableSelect(const SelectStmt *selectStmt,
                 continue;
             }
 
-            std::vector<std::string> projectedRow;
-            projectedRow.reserve(projectedIndexes.size());
-            for (const auto idx : projectedIndexes) {
-                projectedRow.push_back(row.values[idx]);
-            }
-            resultSet.push_back(std::move(projectedRow));
+            filteredRows.push_back(row.values);
         }
 
         const std::vector<std::string> &groupByColumns = selectStmt->getGroupByColumns();
+        std::vector<std::vector<std::string>> groupedRows;
         if (!groupByColumns.empty()) {
             std::vector<std::size_t> groupByIndexes;
             groupByIndexes.reserve(groupByColumns.size());
@@ -326,7 +323,7 @@ ExecutionResult SelectExecutor::executeTableSelect(const SelectStmt *selectStmt,
             }
 
             std::map<std::string, std::vector<std::string>> groupMap;
-            for (const auto &row : resultSet) {
+            for (const auto &row : filteredRows) {
                 std::string groupKey;
                 for (const auto idx : groupByIndexes) {
                     if (!groupKey.empty()) {
@@ -339,12 +336,31 @@ ExecutionResult SelectExecutor::executeTableSelect(const SelectStmt *selectStmt,
                 }
             }
 
-            std::vector<std::vector<std::string>> groupedResultSet;
-            groupedResultSet.reserve(groupMap.size());
             for (auto &entry : groupMap) {
-                groupedResultSet.push_back(std::move(entry.second));
+                groupedRows.push_back(std::move(entry.second));
             }
-            resultSet = std::move(groupedResultSet);
+        } else {
+            groupedRows = std::move(filteredRows);
+        }
+
+        if (havingCondition != nullptr) {
+            std::vector<std::vector<std::string>> havingFilteredRows;
+            for (const auto &row : groupedRows) {
+                if (evaluateConditionTree(havingCondition, row, schema.columns)) {
+                    havingFilteredRows.push_back(row);
+                }
+            }
+            groupedRows = std::move(havingFilteredRows);
+        }
+
+        std::vector<std::vector<std::string>> resultSet;
+        for (const auto &row : groupedRows) {
+            std::vector<std::string> projectedRow;
+            projectedRow.reserve(projectedIndexes.size());
+            for (const auto idx : projectedIndexes) {
+                projectedRow.push_back(row[idx]);
+            }
+            resultSet.push_back(std::move(projectedRow));
         }
 
         LogWriter::info("executor",

@@ -344,12 +344,24 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement(TokenStream &tokenStrea
         groupByColumns = parseIdentifierList(tokenStream);
     }
 
+    std::shared_ptr<ConditionNode> havingCondition = nullptr;
+    if (tokenStream.match(SqlTokenType::Keyword, "HAVING")) {
+        const Token &currentToken = tokenStream.peek();
+        if (currentToken.getType() == SqlTokenType::EndOfFile ||
+            (currentToken.getType() == SqlTokenType::Symbol && currentToken.getValue() == ";")) {
+            throw ParserException("HAVING clause requires a condition expression.", tokenStream.position());
+        }
+
+        havingCondition = parseConditionOr(tokenStream);
+    }
+
     const std::shared_ptr<SelectStmt> statement = std::make_shared<SelectStmt>();
     statement->setTableName(tableNameToken.getValue());
     statement->setSelectAllFields(selectAllFields);
     statement->setTargetFields(targetFields);
     statement->setWhereCondition(whereCondition);
     statement->setGroupByColumns(groupByColumns);
+    statement->setHavingCondition(havingCondition);
     return statement;
 }
 

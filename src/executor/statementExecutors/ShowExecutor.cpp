@@ -25,13 +25,15 @@ ExecutionResult buildFailureResult(const std::string &message,
 
 ExecutionResult buildSuccessResult(const std::string &message,
                                    const std::string &dbName,
-                                   const std::vector<std::vector<std::string>> &resultSet)
+                                   const std::vector<std::vector<std::string>> &resultSet,
+                                   const std::vector<std::string> &columns = {})
 {
     ExecutionResult executionResult;
     executionResult.setStatus(ExecutionStatus::Success);
     executionResult.setMessage(message);
     executionResult.setDbName(dbName);
     executionResult.setResultSet(resultSet);
+    executionResult.setColumns(columns);
     return executionResult;
 }
 } // namespace
@@ -83,7 +85,7 @@ ExecutionResult ShowExecutor::execute(const SQLStatement *statement, ExecutionCo
         }
         LogWriter::info("executor", "ShowExecutor", "execute",
                         std::string("SHOW DATABASES returned ") + std::to_string(resultSet.size()) + " rows.");
-        return buildSuccessResult("SHOW DATABASES succeeded.", "", resultSet);
+        return buildSuccessResult("SHOW DATABASES succeeded.", "", resultSet, {"DatabaseName"});
     }
 
     case ShowTargetType::Tables: {
@@ -101,7 +103,7 @@ ExecutionResult ShowExecutor::execute(const SQLStatement *statement, ExecutionCo
         }
         LogWriter::info("executor", "ShowExecutor", "execute",
                         std::string("SHOW TABLES returned ") + std::to_string(resultSet.size()) + " rows.");
-        return buildSuccessResult("SHOW TABLES succeeded.", dbName, resultSet);
+        return buildSuccessResult("SHOW TABLES succeeded.", dbName, resultSet, {"TableName"});
     }
 
     case ShowTargetType::Database: {
@@ -117,7 +119,7 @@ ExecutionResult ShowExecutor::execute(const SQLStatement *statement, ExecutionCo
         LogWriter::info("executor", "ShowExecutor", "execute",
                         std::string("SHOW DATABASE ") + targetName + " returned "
                             + std::to_string(resultSet.size()) + " rows.");
-        return buildSuccessResult("SHOW DATABASE succeeded.", targetName, resultSet);
+        return buildSuccessResult("SHOW DATABASE succeeded.", targetName, resultSet, {"DatabaseName"});
     }
 
     case ShowTargetType::Table: {
@@ -137,7 +139,7 @@ ExecutionResult ShowExecutor::execute(const SQLStatement *statement, ExecutionCo
         LogWriter::info("executor", "ShowExecutor", "execute",
                         std::string("SHOW TABLE ") + targetName + " returned "
                             + std::to_string(resultSet.size()) + " rows.");
-        return buildSuccessResult("SHOW TABLE succeeded.", dbName, resultSet);
+        return buildSuccessResult("SHOW TABLE succeeded.", dbName, resultSet, {"TableName"});
     }
 
     default:

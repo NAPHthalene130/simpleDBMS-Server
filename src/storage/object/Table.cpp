@@ -38,6 +38,35 @@ std::string formatDouble(double value) {
     return out.empty() ? "0" : out;
 }
 
+std::string encodeConstraintValue(const std::string& value) {
+    std::string out;
+    out.reserve(value.size());
+    for (char ch : value) {
+        if (ch == '|') {
+            out += "%7C";
+        } else if (ch == '\n' || ch == '\r') {
+            out += ' ';
+        } else {
+            out += ch;
+        }
+    }
+    return out;
+}
+
+std::string decodeConstraintValue(const std::string& value) {
+    std::string out;
+    out.reserve(value.size());
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        if (i + 2 < value.size() && value[i] == '%' && value[i + 1] == '7' && value[i + 2] == 'C') {
+            out += '|';
+            i += 2;
+        } else {
+            out += value[i];
+        }
+    }
+    return out;
+}
+
 } // namespace
 
 Table::Table(std::filesystem::path dbPath, TableSchema schema)
@@ -46,10 +75,36 @@ Table::Table(std::filesystem::path dbPath, TableSchema schema)
 Table Table::create(const std::filesystem::path& dbPath,
                     const std::string& tableName,
                     const std::vector<std::string>& columns) {
+    std::vector<ColumnDefinition> defs;
+    defs.reserve(columns.size());
+    for (const auto& c : columns) {
+        defs.push_back(ColumnDefinition{c, ColumnConstraintSpec{c}});
+    }
+    return create(dbPath, tableName, defs);
+}
+
+Table Table::create(const std::filesystem::path& dbPath,
+                    const std::string& tableName,
+                    const std::vector<ColumnDefinition>& columns) {
     ensure(!tableName.empty(), "table name cannot be empty");
     ensure(!columns.empty(), "table must contain at least one column");
+    std::vector<std::string> columnNames;
+    columnNames.reserve(columns.size());
+    for (const auto& col : columns) {
+        ensure(!col.name.empty(), "column name cannot be empty");
+        columnNames.push_back(col.name);
+    }
 
-    Table table(dbPath, TableSchema{tableName, columns});
+    Table table(dbPath, TableSchema{tableName, columnNames});
+    for (const auto& col : columns) {
+        ColumnConstraintSpec spec = col.constraints;
+        spec.column = col.name;
+        table.constraintsByColumn_[col.name] = spec;
+    }
+    if (!columnNames.empty()) {
+        table.constraintsByColumn_[columnNames.front()].notNull = true;
+        table.constraintsByColumn_[columnNames.front()].unique = true;
+    }
 
     ensure(!std::filesystem::exists(table.metaFilePath()), "table already exists: " + tableName);
     table.flushMeta();
@@ -65,10 +120,10 @@ Table Table::create(const std::filesystem::path& dbPath,
     indexOfs.close();
 
     for (std::size_t i = 1; i < columns.size(); ++i) {
-        std::ofstream secondaryOfs(table.nonPrimaryIndexFilePath(columns[i]), std::ios::app);
+        std::ofstream secondaryOfs(table.nonPrimaryIndexFilePath(columns[i].name), std::ios::app);
         ensure(secondaryOfs.good(),
                "failed to create non-primary index reserve file: "
-               + table.nonPrimaryIndexFilePath(columns[i]).string());
+               + table.nonPrimaryIndexFilePath(columns[i].name).string());
     }
 
     table.flushIntegrityMeta();
@@ -106,23 +161,30 @@ Table Table::load(const std::filesystem::path& dbPath,
     }
 
     Table table(dbPath, TableSchema{nameLine.substr(6), parsedColumns});
+    for (const auto& col : parsedColumns) {
+        table.constraintsByColumn_[col].column = col;
+    }
+    if (!parsedColumns.empty()) {
+        table.constraintsByColumn_[parsedColumns.front()].notNull = true;
+        table.constraintsByColumn_[parsedColumns.front()].unique = true;
+    }
 
     table.loadIndexFromTid();
+    table.loadConstraintsFromIntegrityMeta();
     return table;
 }
 
 void Table::insert(const std::vector<std::string>& values) {
-    ensure(values.size() == schema_.columns.size(),
-           "column count mismatch, expected " + std::to_string(schema_.columns.size()) +
-           ", got " + std::to_string(values.size()));
+    const std::vector<std::string> normalized = normalizeInputValues(values);
 
-    const std::string primaryKey = makePrimaryKey(values);
+    const std::string primaryKey = makePrimaryKey(normalized);
     ensure(!primaryKey.empty(), "primary key (first column) cannot be empty");
     ensure(!containsPrimaryKey(primaryKey), "duplicate primary key: " + primaryKey);
+    enforceRowConstraints(normalized, nullptr);
 
-    Row row{values};
+    Row row{normalized};
     index_.insert(primaryKey, row);
-    const std::uint64_t offset = appendDataRow(values);
+    const std::uint64_t offset = appendDataRow(normalized);
     appendIndexEntry(primaryKey, offset);
 }
 
@@ -131,9 +193,7 @@ bool Table::updateByPrimaryKey(const std::string& primaryKey,
     if (primaryKey.empty() || newValues.empty()) {
         return false;
     }
-    ensure(newValues.size() == schema_.columns.size(),
-           "column count mismatch, expected " + std::to_string(schema_.columns.size()) +
-           ", got " + std::to_string(newValues.size()));
+    const std::vector<std::string> normalized = normalizeInputValues(newValues);
 
     std::vector<Row> rows = readAllDataRows();
     std::size_t hitIndex = rows.size();
@@ -147,7 +207,7 @@ bool Table::updateByPrimaryKey(const std::string& primaryKey,
         return false;
     }
 
-    const std::string newPrimaryKey = makePrimaryKey(newValues);
+    const std::string newPrimaryKey = makePrimaryKey(normalized);
     if (newPrimaryKey.empty()) {
         return false;
     }
@@ -162,7 +222,8 @@ bool Table::updateByPrimaryKey(const std::string& primaryKey,
         }
     }
 
-    rows[hitIndex] = Row{newValues};
+    enforceRowConstraints(normalized, &primaryKey);
+    rows[hitIndex] = Row{normalized};
     rewriteDataRows(rows);
     rebuildIndexFromData();
     return true;
@@ -196,6 +257,13 @@ bool Table::deleteByPrimaryKey(const std::string& primaryKey) {
 std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
                                const std::vector<WhereCondition>& whereConditions,
                                const SelectOptions& options) const {
+    return select(targetColumns, whereConditions, {}, options);
+}
+
+std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
+                               const std::vector<WhereCondition>& whereConditions,
+                               const std::vector<QueryConstraint>& queryConstraints,
+                               const SelectOptions& options) const {
     std::shared_ptr<ConditionNode> whereTree;
     if (!whereConditions.empty()) {
         whereTree = std::make_shared<ConditionNode>();
@@ -214,11 +282,18 @@ std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
             whereTree = parent;
         }
     }
-    return select(targetColumns, whereTree, options);
+    return select(targetColumns, whereTree, queryConstraints, options);
 }
 
 std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
                                const std::shared_ptr<ConditionNode>& whereTree,
+                               const SelectOptions& options) const {
+    return select(targetColumns, whereTree, {}, options);
+}
+
+std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
+                               const std::shared_ptr<ConditionNode>& whereTree,
+                               const std::vector<QueryConstraint>& queryConstraints,
                                const SelectOptions& options) const {
     std::vector<std::size_t> projectedIndexes;
     const bool selectAll = targetColumns.empty()
@@ -269,6 +344,18 @@ std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
             }
             matchedRows.push_back(std::move(row));
         }
+    }
+
+    if (!queryConstraints.empty()) {
+        const auto uniqueCounters = buildUniqueCountersForQuery(queryConstraints);
+        std::vector<Row> constrainedRows;
+        constrainedRows.reserve(matchedRows.size());
+        for (const auto& row : matchedRows) {
+            if (matchQueryConstraints(row, queryConstraints, uniqueCounters)) {
+                constrainedRows.push_back(row);
+            }
+        }
+        matchedRows = std::move(constrainedRows);
     }
 
     if (!options.orderByColumn.empty()) {
@@ -420,6 +507,49 @@ std::vector<std::string> Table::aggregate(const std::vector<AggregateExpr>& expr
     return out;
 }
 
+bool Table::addColumnConstraint(const ColumnConstraintSpec& spec) {
+    ensure(!spec.column.empty(), "constraint column cannot be empty");
+    (void)columnIndex(spec.column);
+    ColumnConstraintSpec merged = constraintsByColumn_[spec.column];
+    merged.column = spec.column;
+    merged.notNull = merged.notNull || spec.notNull;
+    merged.unique = merged.unique || spec.unique;
+    if (spec.hasDefault) {
+        merged.hasDefault = true;
+        merged.defaultValue = spec.defaultValue;
+    }
+    ensure(validateConstraintForExistingRows(merged), "constraint conflicts with existing rows");
+    constraintsByColumn_[spec.column] = merged;
+    flushIntegrityMeta();
+    return true;
+}
+
+bool Table::addColumnConstraints(const std::vector<ColumnConstraintSpec>& specs) {
+    auto backup = constraintsByColumn_;
+    try {
+        for (const auto& spec : specs) {
+            addColumnConstraint(spec);
+        }
+        return true;
+    } catch (...) {
+        constraintsByColumn_ = std::move(backup);
+        flushIntegrityMeta();
+        return false;
+    }
+}
+
+std::vector<Table::ColumnConstraintSpec> Table::getColumnConstraints() const {
+    std::vector<ColumnConstraintSpec> out;
+    out.reserve(constraintsByColumn_.size());
+    for (const auto& col : schema_.columns) {
+        auto it = constraintsByColumn_.find(col);
+        if (it != constraintsByColumn_.end()) {
+            out.push_back(it->second);
+        }
+    }
+    return out;
+}
+
 bool Table::containsPrimaryKey(const std::string& key) const {
     return index_.contains(key);
 }
@@ -470,11 +600,64 @@ void Table::flushIntegrityMeta() const {
 
     ofs << "constraints_version=1\n";
     ofs << "constraint=PRIMARY_KEY(" << schema_.columns.front() << ")\n";
-    ofs << "constraint=NOT_NULL(" << schema_.columns.front() << ")\n";
     ofs << "index=PRIMARY:" << schema_.name << ".tid\n";
     for (std::size_t i = 1; i < schema_.columns.size(); ++i) {
         ofs << "index_reserved=" << schema_.columns[i] << ":" << schema_.name << "."
             << schema_.columns[i] << ".nidx\n";
+    }
+    for (const auto& col : schema_.columns) {
+        const auto it = constraintsByColumn_.find(col);
+        if (it == constraintsByColumn_.end()) {
+            continue;
+        }
+        const auto& spec = it->second;
+        if (spec.notNull) {
+            ofs << "constraint=NOT_NULL(" << col << ")\n";
+        }
+        if (spec.unique) {
+            ofs << "constraint=UNIQUE(" << col << ")\n";
+        }
+        if (spec.hasDefault) {
+            ofs << "constraint=DEFAULT(" << col << "|" << encodeConstraintValue(spec.defaultValue) << ")\n";
+        }
+    }
+}
+
+void Table::loadConstraintsFromIntegrityMeta() {
+    std::ifstream ifs(integrityFilePath());
+    if (!ifs.good()) {
+        return;
+    }
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.rfind("constraint=NOT_NULL(", 0) == 0 && !line.empty() && line.back() == ')') {
+            const std::string col = line.substr(20, line.size() - 21);
+            constraintsByColumn_[col].column = col;
+            constraintsByColumn_[col].notNull = true;
+            continue;
+        }
+        if (line.rfind("constraint=UNIQUE(", 0) == 0 && !line.empty() && line.back() == ')') {
+            const std::string col = line.substr(18, line.size() - 19);
+            constraintsByColumn_[col].column = col;
+            constraintsByColumn_[col].unique = true;
+            continue;
+        }
+        if (line.rfind("constraint=DEFAULT(", 0) == 0 && !line.empty() && line.back() == ')') {
+            const std::string body = line.substr(19, line.size() - 20);
+            const auto sep = body.find('|');
+            if (sep == std::string::npos || sep == 0) {
+                continue;
+            }
+            const std::string col = body.substr(0, sep);
+            constraintsByColumn_[col].column = col;
+            constraintsByColumn_[col].hasDefault = true;
+            constraintsByColumn_[col].defaultValue = decodeConstraintValue(body.substr(sep + 1));
+        }
+    }
+    if (!schema_.columns.empty()) {
+        constraintsByColumn_[schema_.columns.front()].column = schema_.columns.front();
+        constraintsByColumn_[schema_.columns.front()].notNull = true;
+        constraintsByColumn_[schema_.columns.front()].unique = true;
     }
 }
 
@@ -684,6 +867,139 @@ void Table::rewriteDataRows(const std::vector<Row>& rows) const {
     for (const auto& row : rows) {
         ofs << "ROW|" << serializeRow(row) << '\n';
     }
+}
+
+std::vector<std::string> Table::normalizeInputValues(const std::vector<std::string>& values) const {
+    ensure(values.size() <= schema_.columns.size(),
+           "column count mismatch, expected <= " + std::to_string(schema_.columns.size()) +
+               ", got " + std::to_string(values.size()));
+    std::vector<std::string> normalized(schema_.columns.size(), "");
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        normalized[i] = values[i];
+    }
+    for (std::size_t i = values.size(); i < schema_.columns.size(); ++i) {
+        const auto it = constraintsByColumn_.find(schema_.columns[i]);
+        if (it != constraintsByColumn_.end() && it->second.hasDefault) {
+            normalized[i] = it->second.defaultValue;
+        }
+    }
+    return normalized;
+}
+
+bool Table::validateConstraintForExistingRows(const ColumnConstraintSpec& spec) const {
+    const std::size_t idx = columnIndex(spec.column);
+    const auto rows = readAllDataRows();
+    if (spec.notNull) {
+        for (const auto& row : rows) {
+            if (idx >= row.values.size() || row.values[idx].empty()) {
+                return false;
+            }
+        }
+    }
+    if (spec.unique) {
+        std::unordered_set<std::string> seen;
+        for (const auto& row : rows) {
+            if (idx >= row.values.size()) {
+                continue;
+            }
+            if (!seen.insert(row.values[idx]).second) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+void Table::enforceRowConstraints(const std::vector<std::string>& values,
+                                  const std::string* skipPrimaryKey) const {
+    for (std::size_t i = 0; i < schema_.columns.size(); ++i) {
+        const std::string& col = schema_.columns[i];
+        const auto it = constraintsByColumn_.find(col);
+        if (it == constraintsByColumn_.end()) {
+            continue;
+        }
+        const auto& spec = it->second;
+        const std::string& value = values[i];
+        if (spec.notNull) {
+            ensure(!value.empty(), "NOT NULL constraint violation on column: " + col);
+        }
+        if (spec.unique) {
+            const auto rows = readAllDataRows();
+            for (const auto& row : rows) {
+                if (i >= row.values.size()) {
+                    continue;
+                }
+                if (skipPrimaryKey != nullptr && !row.values.empty() && row.values.front() == *skipPrimaryKey) {
+                    continue;
+                }
+                ensure(row.values[i] != value, "UNIQUE constraint violation on column: " + col);
+            }
+        }
+    }
+}
+
+std::unordered_map<std::string, std::unordered_map<std::string, std::size_t>>
+Table::buildUniqueCountersForQuery(const std::vector<QueryConstraint>& queryConstraints) const {
+    std::unordered_map<std::string, std::unordered_map<std::string, std::size_t>> counters;
+    std::unordered_set<std::string> targets;
+    for (const auto& qc : queryConstraints) {
+        if (qc.type == ConstraintType::UNIQUE) {
+            targets.insert(qc.column);
+        }
+    }
+    if (targets.empty()) {
+        return counters;
+    }
+    const auto rows = readAllDataRows();
+    for (const auto& col : targets) {
+        const std::size_t idx = columnIndex(col);
+        auto& counter = counters[col];
+        for (const auto& row : rows) {
+            if (idx < row.values.size()) {
+                ++counter[row.values[idx]];
+            }
+        }
+    }
+    return counters;
+}
+
+bool Table::matchQueryConstraints(
+    const Row& row,
+    const std::vector<QueryConstraint>& queryConstraints,
+    const std::unordered_map<std::string, std::unordered_map<std::string, std::size_t>>& uniqueCounters) const {
+    for (const auto& qc : queryConstraints) {
+        const std::size_t idx = columnIndex(qc.column);
+        if (idx >= row.values.size()) {
+            return false;
+        }
+        const auto specIt = constraintsByColumn_.find(qc.column);
+        const bool hasSpec = specIt != constraintsByColumn_.end();
+        if (qc.type == ConstraintType::NOT_NULL) {
+            const bool ok = hasSpec && specIt->second.notNull && !row.values[idx].empty();
+            if ((qc.satisfy && !ok) || (!qc.satisfy && ok)) {
+                return false;
+            }
+        } else if (qc.type == ConstraintType::DEFAULT_VALUE) {
+            const bool ok = hasSpec && specIt->second.hasDefault && row.values[idx] == specIt->second.defaultValue;
+            if ((qc.satisfy && !ok) || (!qc.satisfy && ok)) {
+                return false;
+            }
+        } else if (qc.type == ConstraintType::UNIQUE) {
+            auto tableIt = uniqueCounters.find(qc.column);
+            std::size_t freq = 0;
+            if (tableIt != uniqueCounters.end()) {
+                auto vIt = tableIt->second.find(row.values[idx]);
+                if (vIt != tableIt->second.end()) {
+                    freq = vIt->second;
+                }
+            }
+            const bool ok = hasSpec && specIt->second.unique && freq == 1;
+            if ((qc.satisfy && !ok) || (!qc.satisfy && ok)) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 std::size_t Table::columnIndex(const std::string& columnName) const {

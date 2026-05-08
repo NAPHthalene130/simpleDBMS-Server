@@ -389,6 +389,29 @@ bool DatabaseManager::createTable(const std::string &dbName,
     }
 }
 
+bool DatabaseManager::createTable(const std::string &dbName,
+                                  const std::string &tableName,
+                                  const std::vector<storage::Table::ColumnDefinition> &columns)
+{
+    if (dbName.empty() || tableName.empty() || columns.empty()) {
+        return false;
+    }
+    try {
+        const auto dbPath = getDataRootPath() / dbName;
+        if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
+            return false;
+        }
+        storage::Table::create(dbPath, tableName, columns);
+        TableBlock block = buildTableBlock(dbPath, tableName);
+        block.setFieldNum(static_cast<std::int32_t>(columns.size()));
+        block.setRecordNum(0);
+        block.setModifyTime(buildCurrentDateTime());
+        return upsertTableBlock(dbPath, tableName, block);
+    } catch (...) {
+        return false;
+    }
+}
+
 bool DatabaseManager::insertRow(const std::string &dbName,
                                 const std::string &tableName,
                                 const std::vector<std::string> &values)
@@ -541,6 +564,48 @@ bool DatabaseManager::deleteRowByPrimaryKey(const std::string &dbName,
                          "deleteRowByPrimaryKey",
                          std::string("Unknown exception while deleting row in ") + dbName + "." + tableName);
         return false;
+    }
+}
+
+bool DatabaseManager::addColumnConstraint(const std::string &dbName,
+                                          const std::string &tableName,
+                                          const storage::Table::ColumnConstraintSpec &constraint)
+{
+    if (dbName.empty() || tableName.empty() || constraint.column.empty()) {
+        return false;
+    }
+    try {
+        const auto dbPath = getDataRootPath() / dbName;
+        if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
+            return false;
+        }
+        auto table = storage::Table::load(dbPath, tableName);
+        return table.addColumnConstraint(constraint);
+    } catch (...) {
+        return false;
+    }
+}
+
+std::vector<storage::Row> DatabaseManager::selectRows(
+    const std::string &dbName,
+    const std::string &tableName,
+    const std::vector<std::string> &targetColumns,
+    const std::vector<storage::Table::WhereCondition> &whereConditions,
+    const std::vector<storage::Table::QueryConstraint> &queryConstraints,
+    const storage::Table::SelectOptions &options)
+{
+    if (dbName.empty() || tableName.empty()) {
+        return {};
+    }
+    try {
+        const auto dbPath = getDataRootPath() / dbName;
+        if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
+            return {};
+        }
+        auto table = storage::Table::load(dbPath, tableName);
+        return table.select(targetColumns, whereConditions, queryConstraints, options);
+    } catch (...) {
+        return {};
     }
 }
 

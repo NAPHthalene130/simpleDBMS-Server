@@ -9,6 +9,7 @@
 #include <memory>
 #include <map>
 #include <string>
+#include <unordered_set>
 #include <unordered_map>
 #include <vector>
 
@@ -75,6 +76,31 @@ public:
         std::size_t limit = 0;
     };
 
+    enum class ConstraintType {
+        NOT_NULL,
+        UNIQUE,
+        DEFAULT_VALUE
+    };
+
+    struct ColumnConstraintSpec {
+        std::string column;
+        bool notNull = false;
+        bool unique = false;
+        bool hasDefault = false;
+        std::string defaultValue;
+    };
+
+    struct ColumnDefinition {
+        std::string name;
+        ColumnConstraintSpec constraints;
+    };
+
+    struct QueryConstraint {
+        std::string column;
+        ConstraintType type = ConstraintType::NOT_NULL;
+        bool satisfy = true;
+    };
+
     /**
      * @brief 默认构造函数
      * @author Startale
@@ -100,6 +126,10 @@ public:
     static Table create(const std::filesystem::path& dbPath,
                         const std::string& tableName,
                         const std::vector<std::string>& columns);
+
+    static Table create(const std::filesystem::path& dbPath,
+                        const std::string& tableName,
+                        const std::vector<ColumnDefinition>& columns);
 
     /**
      * @brief 加载已有数据表
@@ -151,11 +181,25 @@ public:
                             const std::shared_ptr<ConditionNode>& whereTree,
                             const SelectOptions& options = SelectOptions()) const;
 
+    std::vector<Row> select(const std::vector<std::string>& targetColumns,
+                            const std::vector<WhereCondition>& whereConditions,
+                            const std::vector<QueryConstraint>& queryConstraints,
+                            const SelectOptions& options = SelectOptions()) const;
+
+    std::vector<Row> select(const std::vector<std::string>& targetColumns,
+                            const std::shared_ptr<ConditionNode>& whereTree,
+                            const std::vector<QueryConstraint>& queryConstraints,
+                            const SelectOptions& options = SelectOptions()) const;
+
     std::vector<std::string> aggregate(const std::vector<AggregateExpr>& expressions,
                                        const std::vector<WhereCondition>& whereConditions = {}) const;
 
     std::vector<std::string> aggregate(const std::vector<AggregateExpr>& expressions,
                                        const std::shared_ptr<ConditionNode>& whereTree) const;
+
+    bool addColumnConstraint(const ColumnConstraintSpec& spec);
+    bool addColumnConstraints(const std::vector<ColumnConstraintSpec>& specs);
+    std::vector<ColumnConstraintSpec> getColumnConstraints() const;
 
     /**
      * @brief 获取表结构
@@ -178,6 +222,7 @@ private:
     BTree<std::string, Row> index_{2};
     std::unordered_map<std::string, std::uint64_t> primaryKeyOffsets_;
     std::map<std::string, std::uint64_t> primaryKeyOffsetsOrdered_;
+    std::unordered_map<std::string, ColumnConstraintSpec> constraintsByColumn_;
     std::uint32_t rootPageId_ = 1;
     std::uint32_t nextPageId_ = 2;
 
@@ -221,6 +266,7 @@ private:
      * @author Startale
      */
     void flushIntegrityMeta() const;
+    void loadConstraintsFromIntegrityMeta();
 
     /**
      * @brief 追加一行数据记录到 .trd 文件
@@ -277,6 +323,16 @@ private:
      * @param rows 行记录列表
      */
     void rewriteDataRows(const std::vector<Row>& rows) const;
+    std::vector<std::string> normalizeInputValues(const std::vector<std::string>& values) const;
+    bool validateConstraintForExistingRows(const ColumnConstraintSpec& spec) const;
+    void enforceRowConstraints(const std::vector<std::string>& values,
+                               const std::string* skipPrimaryKey = nullptr) const;
+    bool matchQueryConstraints(const Row& row,
+                               const std::vector<QueryConstraint>& queryConstraints,
+                               const std::unordered_map<std::string, std::unordered_map<std::string, std::size_t>>&
+                                   uniqueCounters) const;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::size_t>>
+    buildUniqueCountersForQuery(const std::vector<QueryConstraint>& queryConstraints) const;
 
     /**
      * @brief 获取列名对应下标

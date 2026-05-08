@@ -6,6 +6,7 @@
 class Core;
 
 #include "models/storage/TableBlock.h"
+#include "storage/object/Table.h"
 
 /**
  * @class DatabaseManager
@@ -34,6 +35,9 @@ public:
     bool createTable(const std::string &dbName,
                      const std::string &tableName,
                      const std::vector<std::string> &columns);
+    bool createTable(const std::string &dbName,
+                     const std::string &tableName,
+                     const std::vector<storage::Table::ColumnDefinition> &columns);
     bool insertRow(const std::string &dbName,
                    const std::string &tableName,
                    const std::vector<std::string> &values);
@@ -44,6 +48,15 @@ public:
     bool deleteRowByPrimaryKey(const std::string &dbName,
                                const std::string &tableName,
                                const std::string &primaryKey);
+    bool addColumnConstraint(const std::string &dbName,
+                             const std::string &tableName,
+                             const storage::Table::ColumnConstraintSpec &constraint);
+    std::vector<storage::Row> selectRows(const std::string &dbName,
+                                         const std::string &tableName,
+                                         const std::vector<std::string> &targetColumns,
+                                         const std::vector<storage::Table::WhereCondition> &whereConditions = {},
+                                         const std::vector<storage::Table::QueryConstraint> &queryConstraints = {},
+                                         const storage::Table::SelectOptions &options = storage::Table::SelectOptions());
 
     /**
      * @brief 删除数据表

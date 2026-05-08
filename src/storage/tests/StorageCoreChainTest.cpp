@@ -120,6 +120,7 @@ int main()
     const std::string dbName = "StartaleDB";
     const std::string tableName = "StartaleTB";
     const std::string aggTableName = "AggTB";
+    const std::string constraintTableName = "ConstraintTB";
     const std::filesystem::path dbRoot("data");
     const std::filesystem::path dbDir = dbRoot / dbName;
     const std::filesystem::path tbFile = dbDir / (dbName + ".tb");
@@ -289,6 +290,46 @@ int main()
     ensure(filteredAgg.size() == 2, "aggregate with where result size mismatch");
     ensure(filteredAgg[0] == "2", "aggregate with where COUNT mismatch");
     ensure(filteredAgg[1] == "7", "aggregate with where SUM mismatch");
+
+    const std::vector<storage::Table::ColumnDefinition> constraintDefs = {
+        {"ID", storage::Table::ColumnConstraintSpec{"ID", true, true, false, ""}},
+        {"Name", storage::Table::ColumnConstraintSpec{"Name", true, true, false, ""}},
+        {"Tag", storage::Table::ColumnConstraintSpec{"Tag", false, false, true, "N/A"}},
+    };
+    ensure(databaseManager->createTable(dbName, constraintTableName, constraintDefs),
+           "createTable with constraints failed");
+    ensure(databaseManager->insertRow(dbName, constraintTableName, {"u1", "alice"}),
+           "insert default row failed");
+    ensure(databaseManager->insertRow(dbName, constraintTableName, {"u2", "bob", "X"}),
+           "insert explicit tag row failed");
+    ensure(!databaseManager->insertRow(dbName, constraintTableName, {"u3", "alice", "Y"}),
+           "UNIQUE constraint should reject duplicate Name");
+    ensure(!databaseManager->insertRow(dbName, constraintTableName, {"u4", "", "Z"}),
+           "NOT NULL constraint should reject empty Name");
+
+    ensure(databaseManager->addColumnConstraint(
+               dbName, constraintTableName, storage::Table::ColumnConstraintSpec{"Tag", true, false, false, ""}),
+           "add NOT NULL constraint to Tag failed");
+    ensure(!databaseManager->insertRow(dbName, constraintTableName, {"u5", "eve", ""}),
+           "NOT NULL(Tag) should reject empty value");
+
+    const auto defaultRows = databaseManager->selectRows(
+        dbName,
+        constraintTableName,
+        {"ID", "Tag"},
+        {},
+        {storage::Table::QueryConstraint{"Tag", storage::Table::ConstraintType::DEFAULT_VALUE, true}});
+    ensure(defaultRows.size() == 1, "query constraint DEFAULT filter mismatch");
+    ensure(defaultRows.front().values.size() == 2 && defaultRows.front().values[1] == "N/A",
+           "query constraint DEFAULT value mismatch");
+
+    const auto uniqueRows = databaseManager->selectRows(
+        dbName,
+        constraintTableName,
+        {"ID", "Name"},
+        {},
+        {storage::Table::QueryConstraint{"Name", storage::Table::ConstraintType::UNIQUE, true}});
+    ensure(uniqueRows.size() == 2, "query constraint UNIQUE filter mismatch");
 
     ensure(std::filesystem::exists(catalogFile), "database.db file not found");
     ensure(std::filesystem::exists(tdfFile), ".tdf file not found");

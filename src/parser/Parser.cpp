@@ -336,11 +336,20 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement(TokenStream &tokenStrea
         whereCondition = parseConditionOr(tokenStream);
     }
 
+    std::vector<std::string> groupByColumns;
+    if (tokenStream.match(SqlTokenType::Keyword, "GROUP")) {
+        tokenStream.expect(SqlTokenType::Keyword,
+                           "BY",
+                           "GROUP must be followed by BY keyword.");
+        groupByColumns = parseIdentifierList(tokenStream);
+    }
+
     const std::shared_ptr<SelectStmt> statement = std::make_shared<SelectStmt>();
     statement->setTableName(tableNameToken.getValue());
     statement->setSelectAllFields(selectAllFields);
     statement->setTargetFields(targetFields);
     statement->setWhereCondition(whereCondition);
+    statement->setGroupByColumns(groupByColumns);
     return statement;
 }
 

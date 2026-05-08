@@ -44,3 +44,23 @@ void SelectStmt::setWhereCondition(const std::shared_ptr<ConditionNode> &whereCo
 {
     this->whereCondition = whereCondition;
 }
+
+const std::vector<std::string> &SelectStmt::getGroupByColumns() const
+{
+    return groupByColumns;
+}
+
+void SelectStmt::setGroupByColumns(const std::vector<std::string> &groupByColumns)
+{
+    this->groupByColumns = groupByColumns;
+}
+
+const std::shared_ptr<ConditionNode> &SelectStmt::getHavingCondition() const
+{
+    return havingCondition;
+}
+
+void SelectStmt::setHavingCondition(const std::shared_ptr<ConditionNode> &havingCondition)
+{
+    this->havingCondition = havingCondition;
+}

@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #include <stdexcept>
 
 #include "log/LogWriter.h"
@@ -303,6 +304,47 @@ ExecutionResult SelectExecutor::executeTableSelect(const SelectStmt *selectStmt,
                 projectedRow.push_back(row.values[idx]);
             }
             resultSet.push_back(std::move(projectedRow));
+        }
+
+        const std::vector<std::string> &groupByColumns = selectStmt->getGroupByColumns();
+        if (!groupByColumns.empty()) {
+            std::vector<std::size_t> groupByIndexes;
+            groupByIndexes.reserve(groupByColumns.size());
+            for (const auto &groupCol : groupByColumns) {
+                auto it = std::find(schema.columns.begin(), schema.columns.end(), groupCol);
+                if (it == schema.columns.end()) {
+                    LogWriter::warning("executor",
+                                       "SelectExecutor",
+                                       "executeTableSelect",
+                                       "Unknown column in GROUP BY: " + groupCol);
+                    return buildFailureResult("Unknown column in GROUP BY: " + groupCol,
+                                              dbName,
+                                              tableName);
+                }
+                groupByIndexes.push_back(
+                    static_cast<std::size_t>(std::distance(schema.columns.begin(), it)));
+            }
+
+            std::map<std::string, std::vector<std::string>> groupMap;
+            for (const auto &row : resultSet) {
+                std::string groupKey;
+                for (const auto idx : groupByIndexes) {
+                    if (!groupKey.empty()) {
+                        groupKey += "\x1F";
+                    }
+                    groupKey += row[idx];
+                }
+                if (groupMap.find(groupKey) == groupMap.end()) {
+                    groupMap[groupKey] = row;
+                }
+            }
+
+            std::vector<std::vector<std::string>> groupedResultSet;
+            groupedResultSet.reserve(groupMap.size());
+            for (auto &entry : groupMap) {
+                groupedResultSet.push_back(std::move(entry.second));
+            }
+            resultSet = std::move(groupedResultSet);
         }
 
         LogWriter::info("executor",

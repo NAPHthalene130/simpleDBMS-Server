@@ -12,25 +12,12 @@
 #include <vector>
 
 #include "log/LogWriter.h"
+#include "storage/manager/SystemCatalogManager.h"
 #include "storage/object/Table.h"
 
 namespace {
 
 constexpr const char *kTableBlockSeparator = "---TABLE_BLOCK---";
-
-/**
- * @brief 获取数据存储根目录的绝对路径
- * @author NAPH130
- * @return 数据根目录路径（基于源文件位置，不依赖进程工作目录）
- * @details 本文件位于 src/storage/manager/，数据目录期望在 src/storage/data/。
- *          通过 __FILE__ 向上两级获得 storage/ 再拼接 data/，确保无论从何处启动服务端都写入正确位置。
- */
-const std::filesystem::path &getDataRootPath()
-{
-    static const std::filesystem::path dataRoot =
-        (std::filesystem::path(__FILE__).parent_path().parent_path() / "data").lexically_normal();
-    return dataRoot;
-}
 
 template <std::size_t N>
 std::string arrayToString(const std::array<char, N> &value)
@@ -330,7 +317,7 @@ bool DatabaseManager::createTable(TableBlock tbInfo)
         if (!createTable(dbName, tableName, buildColumns(tbInfo))) {
             return false;
         }
-        const auto dbPath = getDataRootPath() / dbName;
+        const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
         TableBlock normalized = normalizeTableBlock(dbPath, tableName, tbInfo);
         normalized.setRecordNum(0);
         normalized.setModifyTime(buildCurrentDateTime());
@@ -343,7 +330,8 @@ bool DatabaseManager::createTable(TableBlock tbInfo)
 
 bool DatabaseManager::createTable(const std::string &dbName,
                                   const std::string &tableName,
-                                  const std::vector<std::string> &columns)
+                                  const std::vector<std::string> &columns,
+                                  const std::vector<storage::ColumnMeta> &columnMetas)
 {
     if (dbName.empty() || tableName.empty() || columns.empty()) {
         LogWriter::warning("storage",
@@ -354,7 +342,7 @@ bool DatabaseManager::createTable(const std::string &dbName,
     }
 
     try {
-        const auto &dbRootPath = getDataRootPath();
+        const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
         const auto dbPath = dbRootPath / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
             LogWriter::warning("storage",
@@ -363,7 +351,7 @@ bool DatabaseManager::createTable(const std::string &dbName,
                                std::string("Database directory not found: ") + dbName);
             return false;
         }
-        storage::Table::create(dbPath, tableName, columns);
+        storage::Table::create(dbPath, tableName, columns, columnMetas);
         TableBlock block = buildTableBlock(dbPath, tableName);
         block.setFieldNum(static_cast<std::int32_t>(columns.size()));
         block.setRecordNum(0);
@@ -397,16 +385,25 @@ bool DatabaseManager::createTable(const std::string &dbName,
         return false;
     }
     try {
-        const auto dbPath = getDataRootPath() / dbName;
-        if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
-            return false;
+        std::vector<std::string> names;
+        std::vector<storage::ColumnMeta> columnMetas;
+        names.reserve(columns.size());
+        columnMetas.reserve(columns.size());
+        for (const auto &column : columns) {
+            names.push_back(column.name);
+            storage::ColumnMeta meta;
+            if (column.constraints.notNull) {
+                meta.integrities |= 1;
+            }
+            if (column.constraints.unique) {
+                meta.integrities |= 4;
+            }
+            if (column.constraints.hasDefault) {
+                meta.defaultValue = column.constraints.defaultValue;
+            }
+            columnMetas.push_back(std::move(meta));
         }
-        storage::Table::create(dbPath, tableName, columns);
-        TableBlock block = buildTableBlock(dbPath, tableName);
-        block.setFieldNum(static_cast<std::int32_t>(columns.size()));
-        block.setRecordNum(0);
-        block.setModifyTime(buildCurrentDateTime());
-        return upsertTableBlock(dbPath, tableName, block);
+        return createTable(dbName, tableName, names, columnMetas);
     } catch (...) {
         return false;
     }
@@ -425,7 +422,7 @@ bool DatabaseManager::insertRow(const std::string &dbName,
     }
 
     try {
-        const auto &dbRootPath = getDataRootPath();
+        const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
         const auto dbPath = dbRootPath / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
             LogWriter::warning("storage",
@@ -477,7 +474,7 @@ bool DatabaseManager::updateRowByPrimaryKey(const std::string &dbName,
     }
 
     try {
-        const auto dbPath = getDataRootPath() / dbName;
+        const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
             LogWriter::warning("storage",
                                "DatabaseManager",
@@ -528,7 +525,7 @@ bool DatabaseManager::deleteRowByPrimaryKey(const std::string &dbName,
     }
 
     try {
-        const auto dbPath = getDataRootPath() / dbName;
+        const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
             LogWriter::warning("storage",
                                "DatabaseManager",
@@ -575,7 +572,7 @@ bool DatabaseManager::addColumnConstraint(const std::string &dbName,
         return false;
     }
     try {
-        const auto dbPath = getDataRootPath() / dbName;
+        const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
             return false;
         }
@@ -598,7 +595,7 @@ std::vector<storage::Row> DatabaseManager::selectRows(
         return {};
     }
     try {
-        const auto dbPath = getDataRootPath() / dbName;
+        const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
         if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
             return {};
         }
@@ -616,7 +613,7 @@ bool DatabaseManager::dropTable(std::string tableName)
         return false;
     }
 
-    const auto &dbRootPath = getDataRootPath();
+    const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
         LogWriter::warning("storage", "DatabaseManager", "dropTable", "Database root directory not found.");
         return false;
@@ -664,7 +661,7 @@ bool DatabaseManager::modifyTable(std::string tableName, TableBlock newTbInfo)
     if (tableName.empty()) {
         return false;
     }
-    const auto &dbRootPath = getDataRootPath();
+    const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
         return false;
     }
@@ -704,7 +701,7 @@ TableBlock DatabaseManager::getTableInfo(std::string tableName)
         return {};
     }
 
-    const auto &dbRootPath = getDataRootPath();
+    const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
         LogWriter::warning("storage", "DatabaseManager", "getTableInfo", "Database root directory not found.");
         return {};
@@ -734,7 +731,7 @@ TableBlock DatabaseManager::getTableInfo(std::string tableName)
 std::vector<TableBlock> DatabaseManager::getAllTables()
 {
     std::vector<TableBlock> blocks;
-    const auto &dbRootPath = getDataRootPath();
+    const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
     if (!std::filesystem::exists(dbRootPath) || !std::filesystem::is_directory(dbRootPath)) {
         LogWriter::warning("storage", "DatabaseManager", "getAllTables", "Database root directory not found.");
         return blocks;
@@ -758,7 +755,75 @@ std::vector<TableBlock> DatabaseManager::getAllTables()
     }
     LogWriter::debug("storage",
                      "DatabaseManager",
-                     "getAllTables",
-                     std::string("Enumerated table count=") + std::to_string(blocks.size()));
+                      "getAllTables",
+                      std::string("Enumerated table count=") + std::to_string(blocks.size()));
     return blocks;
+}
+
+std::vector<TableBlock> DatabaseManager::getAllTablesForDb(const std::string &dbName)
+{
+    std::vector<TableBlock> blocks;
+    if (dbName.empty()) {
+        return blocks;
+    }
+
+    const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
+    const auto dbPath = dbRootPath / dbName;
+    if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
+        return blocks;
+    }
+
+    const auto descriptorBlocks = readTableBlocksFromDescriptor(dbPath);
+    if (!descriptorBlocks.empty()) {
+        return descriptorBlocks;
+    }
+
+    for (const auto &dbFile : std::filesystem::directory_iterator(dbPath)) {
+        if (dbFile.is_regular_file() && dbFile.path().extension() == ".tdf") {
+            blocks.push_back(buildTableBlock(dbPath, dbFile.path().stem().string()));
+        }
+    }
+
+    LogWriter::debug("storage",
+                     "DatabaseManager",
+                     "getAllTablesForDb",
+                     std::string("Enumerated table count=") + std::to_string(blocks.size())
+                         + " for database " + dbName);
+    return blocks;
+}
+
+std::vector<std::string> DatabaseManager::getTableColumns(const std::string &dbName,
+                                                           const std::string &tableName)
+{
+    if (dbName.empty() || tableName.empty()) {
+        return {};
+    }
+
+    const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
+    const auto tdfPath = dbRootPath / dbName / (tableName + ".tdf");
+    if (!std::filesystem::exists(tdfPath)) {
+        return {};
+    }
+
+    std::ifstream ifs(tdfPath);
+    if (!ifs.good()) {
+        return {};
+    }
+
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.rfind("columns=", 0) == 0) {
+            const std::string columnsStr = line.substr(8);
+            std::vector<std::string> columns;
+            std::stringstream ss(columnsStr);
+            std::string item;
+            while (std::getline(ss, item, '|')) {
+                const auto colonPos = item.find(':');
+                columns.push_back(colonPos == std::string::npos ? item : item.substr(0, colonPos));
+            }
+            return columns;
+        }
+    }
+
+    return {};
 }

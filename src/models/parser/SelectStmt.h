@@ -30,9 +30,17 @@ public:
     const std::shared_ptr<ConditionNode> &getWhereCondition() const;
     void setWhereCondition(const std::shared_ptr<ConditionNode> &whereCondition);
 
+    const std::vector<std::string> &getGroupByColumns() const;
+    void setGroupByColumns(const std::vector<std::string> &groupByColumns);
+
+    const std::shared_ptr<ConditionNode> &getHavingCondition() const;
+    void setHavingCondition(const std::shared_ptr<ConditionNode> &havingCondition);
+
 private:
     std::string tableName;
     std::vector<std::string> targetFields;
     bool selectAllFields;
     std::shared_ptr<ConditionNode> whereCondition;
+    std::vector<std::string> groupByColumns;
+    std::shared_ptr<ConditionNode> havingCondition;
 };

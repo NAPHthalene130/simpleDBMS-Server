@@ -1,5 +1,7 @@
 #include "ClientSessionManager.h"
 
+#include <string>
+
 #include "log/LogWriter.h"
 
 ClientSessionManager::ClientSessionManager(Core *core)
@@ -16,14 +18,20 @@ void ClientSessionManager::addSession(asio::ip::tcp::socket *clientSocket)
     }
 
     std::lock_guard<std::mutex> lock(sessionMutex);
-    if (sessionMap.find(clientSocket) != sessionMap.end()) {
-        LogWriter::warning("network", "ClientSessionManager", "addSession", "Session already exists for client.");
-        return;
-    }
+    NetworkExecutionContext &networkExecutionContext = sessionMap[clientSocket];
 
-    NetworkExecutionContext networkExecutionContext;
-    sessionMap.emplace(clientSocket, networkExecutionContext);
-    LogWriter::debug("network", "ClientSessionManager", "addSession", "Session placeholder added for client.");
+    try {
+        const asio::ip::tcp::endpoint remoteEndpoint = clientSocket->remote_endpoint();
+        networkExecutionContext.setConnectionId(
+            remoteEndpoint.address().to_string() + ":" + std::to_string(remoteEndpoint.port()));
+        LogWriter::debug("network",
+                         "ClientSessionManager",
+                         "addSession",
+                         "Session registered for " + networkExecutionContext.getConnectionId() + ".");
+    } catch (...) {
+        networkExecutionContext.setConnectionId("unknown");
+        LogWriter::warning("network", "ClientSessionManager", "addSession", "Failed to resolve remote endpoint.");
+    }
 }
 
 void ClientSessionManager::removeSession(asio::ip::tcp::socket *clientSocket)
@@ -35,7 +43,7 @@ void ClientSessionManager::removeSession(asio::ip::tcp::socket *clientSocket)
 
     std::lock_guard<std::mutex> lock(sessionMutex);
     sessionMap.erase(clientSocket);
-    LogWriter::debug("network", "ClientSessionManager", "removeSession", "Session placeholder removed for client.");
+    LogWriter::debug("network", "ClientSessionManager", "removeSession", "Session removed for disconnected client.");
 }
 
 NetworkExecutionContext *ClientSessionManager::findSessionContext(asio::ip::tcp::socket *clientSocket)

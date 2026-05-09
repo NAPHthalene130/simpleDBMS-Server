@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,12 @@ using uInt64 = std::uint64_t;
 class SystemCatalogManager
 {
 public:
+    /**
+     * @brief 获取数据存储根目录的绝对路径
+     * @author NAPH130
+     * @return 数据根目录路径
+     */
+    static const std::filesystem::path &getDataRootPath();
     /**
      * @brief 构造函数
      * @author NAPH130

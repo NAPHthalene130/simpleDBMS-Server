@@ -65,11 +65,15 @@ public:
     const std::string &getTableName() const;
     void setTableName(const std::string &tableName);
 
+    const std::vector<std::string> &getColumns() const;
+    void setColumns(const std::vector<std::string> &columns);
+
 private:
     ExecutionStatus status;
     std::string message;
     std::int32_t affectedRows;
     std::vector<std::vector<std::string>> resultSet;
+    std::vector<std::string> columns;
     std::string dbName;
     std::string tableName;
 };

@@ -15,23 +15,9 @@
 
 namespace {
 
-/**
- * @brief 获取数据存储根目录的绝对路径
- * @author NAPH130
- * @return 数据根目录路径（基于源文件位置，不依赖进程工作目录）
- * @details 本文件位于 src/storage/manager/，数据目录期望在 src/storage/data/。
- *          通过 __FILE__ 向上两级获得 storage/ 再拼接 data/，确保无论从何处启动服务端都写入正确位置。
- */
-const std::filesystem::path &getDataRootPath()
-{
-    static const std::filesystem::path dataRoot =
-        (std::filesystem::path(__FILE__).parent_path().parent_path() / "data").lexically_normal();
-    return dataRoot;
-}
-
 const std::filesystem::path &getDatabaseCatalogPath()
 {
-    static const std::filesystem::path catalogPath = getDataRootPath() / "database.db";
+    static const std::filesystem::path catalogPath = SystemCatalogManager::getDataRootPath() / "database.db";
     return catalogPath;
 }
 
@@ -162,7 +148,7 @@ bool parseCatalogBlock(const std::vector<std::string> &lines, DatabaseBlock &out
         DatabaseBlock block;
         block.setName(stringToArray<128>(dbName));
         block.setType(false);
-        block.setFileName(stringToArray<256>((getDataRootPath() / dbName).string()));
+        block.setFileName(stringToArray<256>((SystemCatalogManager::getDataRootPath() / dbName).string()));
         block.setCreateTime(buildCurrentDateTime());
         out = block;
         return true;
@@ -199,7 +185,7 @@ bool parseCatalogBlock(const std::vector<std::string> &lines, DatabaseBlock &out
     DatabaseBlock block;
     block.setName(stringToArray<128>(name));
     block.setType(hasType ? type : false);
-    block.setFileName(stringToArray<256>(fileName.empty() ? (getDataRootPath() / name).string() : fileName));
+    block.setFileName(stringToArray<256>(fileName.empty() ? (SystemCatalogManager::getDataRootPath() / name).string() : fileName));
     block.setCreateTime(hasCreateTime ? createTime : buildCurrentDateTime());
     out = block;
     return true;
@@ -243,7 +229,7 @@ std::vector<DatabaseBlock> readDatabaseCatalog()
 
 bool writeDatabaseCatalog(const std::vector<DatabaseBlock> &blocks)
 {
-    std::filesystem::create_directories(getDataRootPath());
+    std::filesystem::create_directories(SystemCatalogManager::getDataRootPath());
     std::ofstream ofs(getDatabaseCatalogPath(), std::ios::trunc);
     if (!ofs.good()) {
         return false;
@@ -267,6 +253,13 @@ bool writeDatabaseCatalog(const std::vector<DatabaseBlock> &blocks)
 SystemCatalogManager::SystemCatalogManager(Core *core)
     : core(core)
 {
+}
+
+const std::filesystem::path &SystemCatalogManager::getDataRootPath()
+{
+    static const std::filesystem::path dataRoot =
+        (std::filesystem::path(__FILE__).parent_path().parent_path() / "data").lexically_normal();
+    return dataRoot;
 }
 
 bool SystemCatalogManager::createDatabase(DatabaseBlock dbInfo)

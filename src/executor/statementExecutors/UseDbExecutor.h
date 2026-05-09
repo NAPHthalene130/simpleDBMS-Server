@@ -7,7 +7,7 @@
 /**
  * @class UseDbExecutor
  * @brief 切换数据库语句执行器
- * @details 负责处理 USE 语句的数据库存在性校验与当前执行上下文切换流程。
+ * @details 负责校验目标数据库是否存在，并将执行上下文切换到目标数据库。
  * @author NAPH130
  */
 class UseDbExecutor : public StatementExecutor

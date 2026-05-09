@@ -125,7 +125,8 @@ void Tokenizer::initializeKeywords()
         "DROP",
         "DELETE",
         "UPDATE",
-        "SET"
+        "SET",
+        "DEFAULT"
     };
 }
 

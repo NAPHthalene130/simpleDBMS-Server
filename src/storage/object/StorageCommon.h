@@ -5,7 +5,19 @@
 #include <string>
 #include <vector>
 
+#include <cstdint>
+
 namespace storage {
+
+/**
+ * @struct ColumnMeta
+ * @brief 列元数据
+ * @author NAPH130
+ */
+struct ColumnMeta {
+    std::int32_t integrities = 0;
+    std::string defaultValue;
+};
 
 /**
  * @struct Row
@@ -24,6 +36,7 @@ struct Row {
 struct TableSchema {
     std::string name;
     std::vector<std::string> columns;
+    std::vector<ColumnMeta> columnMetas;
 };
 
 /**

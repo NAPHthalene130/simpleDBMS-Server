@@ -74,36 +74,34 @@ Table::Table(std::filesystem::path dbPath, TableSchema schema)
 
 Table Table::create(const std::filesystem::path& dbPath,
                     const std::string& tableName,
-                    const std::vector<std::string>& columns) {
-    std::vector<ColumnDefinition> defs;
-    defs.reserve(columns.size());
-    for (const auto& c : columns) {
-        defs.push_back(ColumnDefinition{c, ColumnConstraintSpec{c}});
-    }
-    return create(dbPath, tableName, defs);
-}
-
-Table Table::create(const std::filesystem::path& dbPath,
-                    const std::string& tableName,
-                    const std::vector<ColumnDefinition>& columns) {
+                    const std::vector<std::string>& columns,
+                    const std::vector<ColumnMeta>& columnMetas) {
     ensure(!tableName.empty(), "table name cannot be empty");
     ensure(!columns.empty(), "table must contain at least one column");
-    std::vector<std::string> columnNames;
-    columnNames.reserve(columns.size());
     for (const auto& col : columns) {
-        ensure(!col.name.empty(), "column name cannot be empty");
-        columnNames.push_back(col.name);
+        ensure(!col.empty(), "column name cannot be empty");
     }
 
-    Table table(dbPath, TableSchema{tableName, columnNames});
-    for (const auto& col : columns) {
-        ColumnConstraintSpec spec = col.constraints;
-        spec.column = col.name;
-        table.constraintsByColumn_[col.name] = spec;
+    Table table(dbPath, TableSchema{tableName, columns, columnMetas});
+    if (table.schema_.columnMetas.empty()) {
+        table.schema_.columnMetas.resize(columns.size());
+    } else if (table.schema_.columnMetas.size() < columns.size()) {
+        table.schema_.columnMetas.resize(columns.size());
     }
-    if (!columnNames.empty()) {
-        table.constraintsByColumn_[columnNames.front()].notNull = true;
-        table.constraintsByColumn_[columnNames.front()].unique = true;
+    for (std::size_t i = 0; i < columns.size(); ++i) {
+        ColumnConstraintSpec spec;
+        spec.column = columns[i];
+        const std::int32_t flags = table.schema_.columnMetas[i].integrities;
+        spec.notNull = (flags & 1) != 0;
+        spec.unique = (flags & 4) != 0;
+        spec.hasDefault = !table.schema_.columnMetas[i].defaultValue.empty();
+        spec.defaultValue = table.schema_.columnMetas[i].defaultValue;
+        table.constraintsByColumn_[columns[i]] = spec;
+    }
+    if (!columns.empty()) {
+        table.schema_.columnMetas.front().integrities |= (1 | 2 | 4);
+        table.constraintsByColumn_[columns.front()].notNull = true;
+        table.constraintsByColumn_[columns.front()].unique = true;
     }
 
     ensure(!std::filesystem::exists(table.metaFilePath()), "table already exists: " + tableName);
@@ -120,16 +118,41 @@ Table Table::create(const std::filesystem::path& dbPath,
     indexOfs.close();
 
     for (std::size_t i = 1; i < columns.size(); ++i) {
-        std::ofstream secondaryOfs(table.nonPrimaryIndexFilePath(columns[i].name), std::ios::app);
+        std::ofstream secondaryOfs(table.nonPrimaryIndexFilePath(columns[i]), std::ios::app);
         ensure(secondaryOfs.good(),
                "failed to create non-primary index reserve file: "
-               + table.nonPrimaryIndexFilePath(columns[i].name).string());
+               + table.nonPrimaryIndexFilePath(columns[i]).string());
     }
 
     table.flushIntegrityMeta();
     table.initializeTidFile();
 
     return table;
+}
+
+Table Table::create(const std::filesystem::path& dbPath,
+                    const std::string& tableName,
+                    const std::vector<ColumnDefinition>& columns) {
+    std::vector<std::string> names;
+    std::vector<ColumnMeta> metas;
+    names.reserve(columns.size());
+    metas.reserve(columns.size());
+    for (const auto& col : columns) {
+        ensure(!col.name.empty(), "column name cannot be empty");
+        names.push_back(col.name);
+        ColumnMeta meta;
+        if (col.constraints.notNull) {
+            meta.integrities |= 1;
+        }
+        if (col.constraints.unique) {
+            meta.integrities |= 4;
+        }
+        if (col.constraints.hasDefault) {
+            meta.defaultValue = col.constraints.defaultValue;
+        }
+        metas.push_back(std::move(meta));
+    }
+    return create(dbPath, tableName, names, metas);
 }
 
 Table Table::load(const std::filesystem::path& dbPath,
@@ -142,12 +165,18 @@ Table Table::load(const std::filesystem::path& dbPath,
 
     std::string nameLine;
     std::string columnsLine;
+    std::string integritiesLine;
+    std::string defaultsLine;
     std::string line;
     while (std::getline(ifs, line)) {
         if (line.rfind("table=", 0) == 0) {
             nameLine = line;
         } else if (line.rfind("columns=", 0) == 0) {
             columnsLine = line;
+        } else if (line.rfind("integrities=", 0) == 0) {
+            integritiesLine = line;
+        } else if (line.rfind("defaults=", 0) == 0) {
+            defaultsLine = line;
         }
     }
 
@@ -160,17 +189,42 @@ Table Table::load(const std::filesystem::path& dbPath,
         parsedColumns.push_back(sepPos == std::string::npos ? colMeta : colMeta.substr(0, sepPos));
     }
 
-    Table table(dbPath, TableSchema{nameLine.substr(6), parsedColumns});
-    for (const auto& col : parsedColumns) {
-        table.constraintsByColumn_[col].column = col;
+    std::vector<ColumnMeta> columnMetas(parsedColumns.size());
+    if (!integritiesLine.empty()) {
+        const auto integList = split(integritiesLine.substr(13), '|');
+        for (std::size_t i = 0; i < integList.size() && i < columnMetas.size(); ++i) {
+            try {
+                columnMetas[i].integrities = std::stoi(integList[i]);
+            } catch (...) {
+                columnMetas[i].integrities = 0;
+            }
+        }
     }
-    if (!parsedColumns.empty()) {
-        table.constraintsByColumn_[parsedColumns.front()].notNull = true;
-        table.constraintsByColumn_[parsedColumns.front()].unique = true;
+    if (!defaultsLine.empty()) {
+        const auto defaultList = split(defaultsLine.substr(9), '|');
+        for (std::size_t i = 0; i < defaultList.size() && i < columnMetas.size(); ++i) {
+            columnMetas[i].defaultValue = defaultList[i];
+        }
+    }
+
+    Table table(dbPath, TableSchema{nameLine.substr(6), parsedColumns, columnMetas});
+    for (std::size_t i = 0; i < parsedColumns.size(); ++i) {
+        ColumnConstraintSpec spec;
+        spec.column = parsedColumns[i];
+        spec.notNull = (table.schema_.columnMetas[i].integrities & 1) != 0;
+        spec.unique = (table.schema_.columnMetas[i].integrities & 4) != 0;
+        spec.hasDefault = !table.schema_.columnMetas[i].defaultValue.empty();
+        spec.defaultValue = table.schema_.columnMetas[i].defaultValue;
+        table.constraintsByColumn_[parsedColumns[i]] = spec;
     }
 
     table.loadIndexFromTid();
     table.loadConstraintsFromIntegrityMeta();
+    if (!table.schema_.columns.empty()) {
+        table.schema_.columnMetas.front().integrities |= (1 | 2 | 4);
+        table.constraintsByColumn_[table.schema_.columns.front()].notNull = true;
+        table.constraintsByColumn_[table.schema_.columns.front()].unique = true;
+    }
     return table;
 }
 
@@ -520,12 +574,27 @@ bool Table::addColumnConstraint(const ColumnConstraintSpec& spec) {
     }
     ensure(validateConstraintForExistingRows(merged), "constraint conflicts with existing rows");
     constraintsByColumn_[spec.column] = merged;
+    const std::size_t idx = columnIndex(spec.column);
+    if (idx >= schema_.columnMetas.size()) {
+        schema_.columnMetas.resize(schema_.columns.size());
+    }
+    if (merged.notNull) {
+        schema_.columnMetas[idx].integrities |= 1;
+    }
+    if (merged.unique) {
+        schema_.columnMetas[idx].integrities |= 4;
+    }
+    if (merged.hasDefault) {
+        schema_.columnMetas[idx].defaultValue = merged.defaultValue;
+    }
+    flushMeta();
     flushIntegrityMeta();
     return true;
 }
 
 bool Table::addColumnConstraints(const std::vector<ColumnConstraintSpec>& specs) {
     auto backup = constraintsByColumn_;
+    auto metasBackup = schema_.columnMetas;
     try {
         for (const auto& spec : specs) {
             addColumnConstraint(spec);
@@ -533,6 +602,8 @@ bool Table::addColumnConstraints(const std::vector<ColumnConstraintSpec>& specs)
         return true;
     } catch (...) {
         constraintsByColumn_ = std::move(backup);
+        schema_.columnMetas = std::move(metasBackup);
+        flushMeta();
         flushIntegrityMeta();
         return false;
     }
@@ -592,6 +663,20 @@ void Table::flushMeta() const {
         ofs << "index_reserved=" << schema_.columns[i] << ":BTREE:" << schema_.name << "."
             << schema_.columns[i] << ".nidx\n";
     }
+
+    std::vector<std::string> integList;
+    integList.reserve(schema_.columnMetas.size());
+    for (const auto& meta : schema_.columnMetas) {
+        integList.push_back(std::to_string(meta.integrities));
+    }
+    ofs << "integrities=" << join(integList, "|") << '\n';
+
+    std::vector<std::string> defaultList;
+    defaultList.reserve(schema_.columnMetas.size());
+    for (const auto& meta : schema_.columnMetas) {
+        defaultList.push_back(meta.defaultValue);
+    }
+    ofs << "defaults=" << join(defaultList, "|") << '\n';
 }
 
 void Table::flushIntegrityMeta() const {
@@ -654,10 +739,30 @@ void Table::loadConstraintsFromIntegrityMeta() {
             constraintsByColumn_[col].defaultValue = decodeConstraintValue(body.substr(sep + 1));
         }
     }
+    if (schema_.columnMetas.size() < schema_.columns.size()) {
+        schema_.columnMetas.resize(schema_.columns.size());
+    }
+    for (std::size_t i = 0; i < schema_.columns.size(); ++i) {
+        const auto it = constraintsByColumn_.find(schema_.columns[i]);
+        if (it == constraintsByColumn_.end()) {
+            continue;
+        }
+        const auto& spec = it->second;
+        if (spec.notNull) {
+            schema_.columnMetas[i].integrities |= 1;
+        }
+        if (spec.unique) {
+            schema_.columnMetas[i].integrities |= 4;
+        }
+        if (spec.hasDefault) {
+            schema_.columnMetas[i].defaultValue = spec.defaultValue;
+        }
+    }
     if (!schema_.columns.empty()) {
         constraintsByColumn_[schema_.columns.front()].column = schema_.columns.front();
         constraintsByColumn_[schema_.columns.front()].notNull = true;
         constraintsByColumn_[schema_.columns.front()].unique = true;
+        schema_.columnMetas.front().integrities |= (1 | 2 | 4);
     }
 }
 
@@ -878,6 +983,10 @@ std::vector<std::string> Table::normalizeInputValues(const std::vector<std::stri
         normalized[i] = values[i];
     }
     for (std::size_t i = values.size(); i < schema_.columns.size(); ++i) {
+        if (i < schema_.columnMetas.size() && !schema_.columnMetas[i].defaultValue.empty()) {
+            normalized[i] = schema_.columnMetas[i].defaultValue;
+            continue;
+        }
         const auto it = constraintsByColumn_.find(schema_.columns[i]);
         if (it != constraintsByColumn_.end() && it->second.hasDefault) {
             normalized[i] = it->second.defaultValue;

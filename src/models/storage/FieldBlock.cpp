@@ -69,3 +69,18 @@ void FieldBlock::setIntegrities(std::int32_t integrities)
 {
     this->integrities = integrities;
 }
+
+void FieldBlock::addIntegrityFlag(std::int32_t flag)
+{
+    this->integrities |= flag;
+}
+
+const std::string &FieldBlock::getDefaultValue() const
+{
+    return defaultValue;
+}
+
+void FieldBlock::setDefaultValue(const std::string &defaultValue)
+{
+    this->defaultValue = defaultValue;
+}

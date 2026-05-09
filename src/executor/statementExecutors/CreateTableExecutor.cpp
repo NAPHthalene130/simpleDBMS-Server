@@ -7,7 +7,10 @@
 #include <filesystem>
 #include <unordered_set>
 
+#include "Core.h"
+#include "dbLog/DbLogManager.h"
 #include "log/LogWriter.h"
+#include "storage/manager/SystemCatalogManager.h"
 
 namespace {
 ExecutionResult buildFailureResult(const std::string &message,
@@ -154,13 +157,36 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
         }
     }
 
+    std::vector<std::string> columnNames;
+    std::vector<storage::ColumnMeta> columnMetas;
+    columnNames.reserve(fieldBlocks.size());
+    columnMetas.reserve(fieldBlocks.size());
+    for (const FieldBlock &fieldBlock : fieldBlocks) {
+        columnNames.push_back(fixedArrayToString(fieldBlock.getName()));
+        storage::ColumnMeta meta;
+        meta.integrities = fieldBlock.getIntegrities();
+        meta.defaultValue = fieldBlock.getDefaultValue();
+        columnMetas.push_back(meta);
+    }
+
     const TableBlock tableBlock = buildTableBlock(createTableStmt, dbName);
-    if (!databaseManager->createTable(tableBlock)) {
+    if (!databaseManager->createTable(dbName, tableName, columnNames, columnMetas)) {
         LogWriter::error("executor",
                          "CreateTableExecutor",
                          "executeCreateTable",
                          "Storage layer failed to create table " + tableName + " in database " + dbName + ".");
         return buildFailureResult("Create table failed in storage layer.", dbName, tableName);
+    }
+
+    // 记录创建表日志
+    if (core != nullptr && core->getDbLogManager() != nullptr) {
+        nlohmann::json tableSnapshot;
+        tableSnapshot["columns"] = columnNames;
+        tableSnapshot["field_count"] = fieldBlocks.size();
+        core->getDbLogManager()->logCreateTable(
+            dbName, tableName, tableSnapshot.dump(),
+            "CREATE TABLE " + tableName + " (...)"
+        );
     }
 
     LogWriter::info("executor",
@@ -179,7 +205,7 @@ TableBlock CreateTableExecutor::buildTableBlock(const CreateTableStmt *createTab
 
     const std::string tableName = fixedArrayToString(createTableStmt->getTableName());
     const DateTime currentDateTime = buildCurrentDateTime();
-    const std::filesystem::path dbPath = std::filesystem::path("data") / dbName;
+    const std::filesystem::path dbPath = SystemCatalogManager::getDataRootPath() / dbName;
 
     tableBlock.setName(createTableStmt->getTableName());
     tableBlock.setRecordNum(0);

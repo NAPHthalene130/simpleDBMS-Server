@@ -121,6 +121,7 @@ int main()
     const std::string tableName = "StartaleTB";
     const std::string aggTableName = "AggTB";
     const std::string constraintTableName = "ConstraintTB";
+    const std::string joinTableName = "JoinTB";
     const std::filesystem::path dbRoot("data");
     const std::filesystem::path dbDir = dbRoot / dbName;
     const std::filesystem::path tbFile = dbDir / (dbName + ".tb");
@@ -169,6 +170,15 @@ int main()
     ensure(databaseManager->deleteRowByPrimaryKey(dbName, tableName, "v5"), "deleteRowByPrimaryKey failed");
     ensure(databaseManager->insertRow(dbName, tableName, {"v2", "v3", "v4"}), "insertRow failed");
     ensure(databaseManager->insertRow(dbName, tableName, {"v3", "v1", "v5"}), "insertRow failed");
+
+    ensure(databaseManager->createTable(dbName, joinTableName, {"ARef", "Label", "Weight"}),
+           "createTable join failed");
+    ensure(databaseManager->insertRow(dbName, joinTableName, {"v1", "alpha", "10"}),
+           "insertRow join failed");
+    ensure(databaseManager->insertRow(dbName, joinTableName, {"v3", "gamma", "30"}),
+           "insertRow join failed");
+    ensure(databaseManager->insertRow(dbName, joinTableName, {"v4", "delta", "40"}),
+           "insertRow join failed");
 
     ensure(databaseManager->createTable(dbName, aggTableName, {"ID", "Score", "Qty"}),
            "createTable agg failed");
@@ -330,6 +340,47 @@ int main()
         {},
         {storage::Table::QueryConstraint{"Name", storage::Table::ConstraintType::UNIQUE, true}});
     ensure(uniqueRows.size() == 2, "query constraint UNIQUE filter mismatch");
+
+    DatabaseManager::JoinQuery joinQuery;
+    joinQuery.baseTable = tableName;
+    joinQuery.baseAlias = "l";
+    DatabaseManager::JoinSpec innerJoin;
+    innerJoin.type = DatabaseManager::JoinType::INNER_JOIN;
+    innerJoin.tableName = joinTableName;
+    innerJoin.alias = "r";
+    innerJoin.onConditions.push_back({{"l", "A"}, {"r", "ARef"}, storage::Table::CompareOp::EQ});
+    joinQuery.joins.push_back(innerJoin);
+    joinQuery.projections = {
+        {{"l", "A"}, "leftA"},
+        {{"l", "B"}, "leftB"},
+        {{"r", "Label"}, "rightLabel"},
+        {{"r", "Weight"}, "weight"}
+    };
+    joinQuery.postFilters.push_back({{"r", "Weight"}, storage::Table::CompareOp::GT, "15", "", {}});
+    joinQuery.options.orderByOutput = "leftA";
+    const auto joinedRows = databaseManager->selectJoinRows(dbName, joinQuery);
+    ensure(joinedRows.columns.size() == 4, "join columns size mismatch");
+    ensure(joinedRows.rows.size() == 1, "inner join row count mismatch");
+    ensure(joinedRows.rows.front().values[0] == "v3", "inner join key mismatch");
+    ensure(joinedRows.rows.front().values[2] == "gamma", "inner join projected value mismatch");
+
+    DatabaseManager::JoinQuery leftJoinQuery;
+    leftJoinQuery.baseTable = tableName;
+    leftJoinQuery.baseAlias = "l";
+    DatabaseManager::JoinSpec leftJoin = innerJoin;
+    leftJoin.type = DatabaseManager::JoinType::LEFT_JOIN;
+    leftJoinQuery.joins.push_back(leftJoin);
+    leftJoinQuery.projections = {
+        {{"l", "A"}, "leftA"},
+        {{"r", "Label"}, "rightLabel"}
+    };
+    leftJoinQuery.options.orderByOutput = "leftA";
+    const auto leftJoined = databaseManager->selectJoinRows(dbName, leftJoinQuery);
+    ensure(leftJoined.rows.size() == 3, "left join row count mismatch");
+    ensure(leftJoined.rows[0].values[0] == "v1", "left join order mismatch");
+    ensure(leftJoined.rows[1].values[0] == "v2", "left join order mismatch");
+    ensure(leftJoined.rows[2].values[0] == "v3", "left join order mismatch");
+    ensure(leftJoined.rows[1].values[1].empty(), "left join unmatched row should be empty");
 
     ensure(std::filesystem::exists(catalogFile), "database.db file not found");
     ensure(std::filesystem::exists(tdfFile), ".tdf file not found");

@@ -2,13 +2,16 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "log/LogWriter.h"
@@ -289,6 +292,175 @@ bool readTableBlock(const std::filesystem::path &dbPath, const std::string &tabl
     }
     out = *it;
     return true;
+}
+
+bool tryParseNumber(const std::string &text, double &value)
+{
+    errno = 0;
+    char *end = nullptr;
+    const double parsed = std::strtod(text.c_str(), &end);
+    if (end == text.c_str() || *end != '\0' || errno == ERANGE) {
+        return false;
+    }
+    value = parsed;
+    return true;
+}
+
+bool likeMatch(const std::string &text, const std::string &pattern)
+{
+    std::size_t t = 0;
+    std::size_t p = 0;
+    std::size_t star = std::string::npos;
+    std::size_t match = 0;
+
+    while (t < text.size()) {
+        if (p < pattern.size() && pattern[p] == text[t]) {
+            ++t;
+            ++p;
+            continue;
+        }
+        if (p < pattern.size() && pattern[p] == '%') {
+            star = p++;
+            match = t;
+            continue;
+        }
+        if (star != std::string::npos) {
+            p = star + 1;
+            t = ++match;
+            continue;
+        }
+        return false;
+    }
+    while (p < pattern.size() && pattern[p] == '%') {
+        ++p;
+    }
+    return p == pattern.size();
+}
+
+bool compareByOp(const std::string &left,
+                 storage::Table::CompareOp op,
+                 const std::string &right)
+{
+    if (op == storage::Table::CompareOp::LIKE) {
+        return likeMatch(left, right);
+    }
+    double leftNum = 0.0;
+    double rightNum = 0.0;
+    const bool leftIsNum = tryParseNumber(left, leftNum);
+    const bool rightIsNum = tryParseNumber(right, rightNum);
+    if (leftIsNum && rightIsNum) {
+        switch (op) {
+            case storage::Table::CompareOp::EQ: return leftNum == rightNum;
+            case storage::Table::CompareOp::NE: return leftNum != rightNum;
+            case storage::Table::CompareOp::GT: return leftNum > rightNum;
+            case storage::Table::CompareOp::GE: return leftNum >= rightNum;
+            case storage::Table::CompareOp::LT: return leftNum < rightNum;
+            case storage::Table::CompareOp::LE: return leftNum <= rightNum;
+            case storage::Table::CompareOp::LIKE:
+            case storage::Table::CompareOp::IN:
+            case storage::Table::CompareOp::BETWEEN:
+                break;
+        }
+    }
+    switch (op) {
+        case storage::Table::CompareOp::EQ: return left == right;
+        case storage::Table::CompareOp::NE: return left != right;
+        case storage::Table::CompareOp::GT: return left > right;
+        case storage::Table::CompareOp::GE: return left >= right;
+        case storage::Table::CompareOp::LT: return left < right;
+        case storage::Table::CompareOp::LE: return left <= right;
+        case storage::Table::CompareOp::LIKE: return likeMatch(left, right);
+        case storage::Table::CompareOp::IN:
+        case storage::Table::CompareOp::BETWEEN:
+            return false;
+    }
+    return false;
+}
+
+std::string buildJoinedKey(const std::string &source, const std::string &column)
+{
+    return source + "." + column;
+}
+
+std::string resolveJoinKey(
+    const DatabaseManager::JoinColumnRef &ref,
+    const std::unordered_map<std::string, std::vector<std::string>> &aliasColumns)
+{
+    if (ref.column.empty()) {
+        throw std::runtime_error("join column is empty");
+    }
+    if (!ref.source.empty()) {
+        return buildJoinedKey(ref.source, ref.column);
+    }
+
+    std::string matchedSource;
+    for (const auto &entry : aliasColumns) {
+        if (std::find(entry.second.begin(), entry.second.end(), ref.column) == entry.second.end()) {
+            continue;
+        }
+        if (!matchedSource.empty()) {
+            throw std::runtime_error("ambiguous join column: " + ref.column);
+        }
+        matchedSource = entry.first;
+    }
+    if (matchedSource.empty()) {
+        throw std::runtime_error("unknown join column: " + ref.column);
+    }
+    return buildJoinedKey(matchedSource, ref.column);
+}
+
+using JoinedRecord = std::unordered_map<std::string, std::string>;
+
+JoinedRecord buildRecord(const std::string &alias,
+                         const std::vector<std::string> &columns,
+                         const storage::Row &row)
+{
+    JoinedRecord out;
+    const std::size_t n = std::min(columns.size(), row.values.size());
+    for (std::size_t i = 0; i < n; ++i) {
+        out[buildJoinedKey(alias, columns[i])] = row.values[i];
+    }
+    return out;
+}
+
+JoinedRecord mergeRecord(const JoinedRecord &left, const JoinedRecord &right)
+{
+    JoinedRecord merged = left;
+    merged.insert(right.begin(), right.end());
+    return merged;
+}
+
+bool evaluateJoinCondition(const JoinedRecord &record,
+                           const DatabaseManager::JoinCondition &condition,
+                           const std::unordered_map<std::string, std::vector<std::string>> &aliasColumns)
+{
+    const std::string leftKey = resolveJoinKey(condition.left, aliasColumns);
+    const std::string rightKey = resolveJoinKey(condition.right, aliasColumns);
+    const auto leftIt = record.find(leftKey);
+    const auto rightIt = record.find(rightKey);
+    if (leftIt == record.end() || rightIt == record.end()) {
+        return false;
+    }
+    return compareByOp(leftIt->second, condition.op, rightIt->second);
+}
+
+bool evaluateJoinFilter(const JoinedRecord &record,
+                        const DatabaseManager::JoinFilter &filter,
+                        const std::unordered_map<std::string, std::vector<std::string>> &aliasColumns)
+{
+    const std::string key = resolveJoinKey(filter.column, aliasColumns);
+    const auto it = record.find(key);
+    if (it == record.end()) {
+        return false;
+    }
+    if (filter.op == storage::Table::CompareOp::IN) {
+        return std::find(filter.values.begin(), filter.values.end(), it->second) != filter.values.end();
+    }
+    if (filter.op == storage::Table::CompareOp::BETWEEN) {
+        return compareByOp(it->second, storage::Table::CompareOp::GE, filter.value)
+            && compareByOp(it->second, storage::Table::CompareOp::LE, filter.secondValue);
+    }
+    return compareByOp(it->second, filter.op, filter.value);
 }
 
 } // namespace
@@ -601,6 +773,163 @@ std::vector<storage::Row> DatabaseManager::selectRows(
         }
         auto table = storage::Table::load(dbPath, tableName);
         return table.select(targetColumns, whereConditions, queryConstraints, options);
+    } catch (...) {
+        return {};
+    }
+}
+
+DatabaseManager::JoinResult DatabaseManager::selectJoinRows(
+    const std::string &dbName,
+    const JoinQuery &query)
+{
+    JoinResult result;
+    if (dbName.empty() || query.baseTable.empty()) {
+        return result;
+    }
+
+    try {
+        const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
+            return result;
+        }
+
+        const auto normalizeAlias = [](const std::string &tableName, const std::string &alias) {
+            return alias.empty() ? tableName : alias;
+        };
+
+        std::vector<std::string> aliasOrder;
+        std::unordered_map<std::string, std::vector<std::string>> aliasColumns;
+
+        const std::string baseAlias = normalizeAlias(query.baseTable, query.baseAlias);
+        auto baseTable = storage::Table::load(dbPath, query.baseTable);
+        auto baseRows = baseTable.select({"*"}, query.basePreFilters);
+        aliasOrder.push_back(baseAlias);
+        aliasColumns[baseAlias] = baseTable.schema().columns;
+
+        std::vector<JoinedRecord> joinedRows;
+        joinedRows.reserve(baseRows.size());
+        for (const auto &row : baseRows) {
+            joinedRows.push_back(buildRecord(baseAlias, aliasColumns[baseAlias], row));
+        }
+
+        for (const auto &joinSpec : query.joins) {
+            if (joinSpec.tableName.empty()) {
+                throw std::runtime_error("join table name cannot be empty");
+            }
+            const std::string joinAlias = normalizeAlias(joinSpec.tableName, joinSpec.alias);
+            if (aliasColumns.find(joinAlias) != aliasColumns.end()) {
+                throw std::runtime_error("duplicate join alias: " + joinAlias);
+            }
+
+            auto rightTable = storage::Table::load(dbPath, joinSpec.tableName);
+            auto rightRows = rightTable.select({"*"}, joinSpec.preFilters);
+            aliasOrder.push_back(joinAlias);
+            aliasColumns[joinAlias] = rightTable.schema().columns;
+
+            std::vector<JoinedRecord> nextRows;
+            for (const auto &leftRecord : joinedRows) {
+                bool matched = false;
+                for (const auto &rightRow : rightRows) {
+                    const JoinedRecord rightRecord = buildRecord(joinAlias, aliasColumns[joinAlias], rightRow);
+                    const JoinedRecord candidate = mergeRecord(leftRecord, rightRecord);
+                    bool ok = true;
+                    for (const auto &condition : joinSpec.onConditions) {
+                        if (!evaluateJoinCondition(candidate, condition, aliasColumns)) {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    if (!ok) {
+                        continue;
+                    }
+                    matched = true;
+                    nextRows.push_back(std::move(candidate));
+                }
+
+                if (!matched && joinSpec.type == JoinType::LEFT_JOIN) {
+                    JoinedRecord padded = leftRecord;
+                    for (const auto &column : aliasColumns[joinAlias]) {
+                        padded[buildJoinedKey(joinAlias, column)] = "";
+                    }
+                    nextRows.push_back(std::move(padded));
+                }
+            }
+            joinedRows = std::move(nextRows);
+        }
+
+        if (!query.postFilters.empty()) {
+            std::vector<JoinedRecord> filtered;
+            filtered.reserve(joinedRows.size());
+            for (const auto &record : joinedRows) {
+                bool ok = true;
+                for (const auto &filter : query.postFilters) {
+                    if (!evaluateJoinFilter(record, filter, aliasColumns)) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (ok) {
+                    filtered.push_back(record);
+                }
+            }
+            joinedRows = std::move(filtered);
+        }
+
+        std::vector<std::string> projectionKeys;
+        if (query.projections.empty()) {
+            for (const auto &alias : aliasOrder) {
+                for (const auto &column : aliasColumns[alias]) {
+                    const std::string key = buildJoinedKey(alias, column);
+                    projectionKeys.push_back(key);
+                    result.columns.push_back(key);
+                }
+            }
+        } else {
+            for (const auto &projection : query.projections) {
+                const std::string key = resolveJoinKey(projection.column, aliasColumns);
+                projectionKeys.push_back(key);
+                result.columns.push_back(projection.outputName.empty() ? key : projection.outputName);
+            }
+        }
+
+        result.rows.reserve(joinedRows.size());
+        for (const auto &record : joinedRows) {
+            storage::Row row;
+            row.values.reserve(projectionKeys.size());
+            for (const auto &key : projectionKeys) {
+                const auto it = record.find(key);
+                row.values.push_back(it == record.end() ? "" : it->second);
+            }
+            result.rows.push_back(std::move(row));
+        }
+
+        if (!query.options.orderByOutput.empty()) {
+            const auto orderIt = std::find(result.columns.begin(), result.columns.end(), query.options.orderByOutput);
+            if (orderIt != result.columns.end()) {
+                const std::size_t orderIdx = static_cast<std::size_t>(std::distance(result.columns.begin(), orderIt));
+                const bool desc = query.options.orderByDesc;
+                std::stable_sort(result.rows.begin(),
+                                 result.rows.end(),
+                                 [orderIdx, desc](const storage::Row &lhs, const storage::Row &rhs) {
+                                     const std::string &lv = lhs.values[orderIdx];
+                                     const std::string &rv = rhs.values[orderIdx];
+                                     double ln = 0.0;
+                                     double rn = 0.0;
+                                     const bool lNum = tryParseNumber(lv, ln);
+                                     const bool rNum = tryParseNumber(rv, rn);
+                                     if (lNum && rNum) {
+                                         return desc ? (ln > rn) : (ln < rn);
+                                     }
+                                     return desc ? (lv > rv) : (lv < rv);
+                                 });
+            }
+        }
+
+        if (query.options.hasLimit && query.options.limit < result.rows.size()) {
+            result.rows.resize(query.options.limit);
+        }
+
+        return result;
     } catch (...) {
         return {};
     }

@@ -185,6 +185,7 @@ $RECYCLE.BIN/
 src/log/logs.log
 src/storage/data/StartaleDB/
 src/storage/DONTREADME.txt
+src/storage/plan.md
 vcpkg_installed/
 /build-msvc/
 src/storage/data/*

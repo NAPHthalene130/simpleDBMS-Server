@@ -284,7 +284,8 @@ ExecutionResult SelectExecutor::executeTableSelect(const SelectStmt *selectStmt,
             }
         }
 
-        const auto allRows = table.select({}, {});
+        const auto allRows = table.select(std::vector<std::string>{},
+                                                std::vector<storage::Table::WhereCondition>{});
         const auto *whereCondition = selectStmt->getWhereCondition().get();
         const auto *havingCondition = selectStmt->getHavingCondition().get();
 

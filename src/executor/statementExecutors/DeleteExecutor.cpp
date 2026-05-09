@@ -129,7 +129,8 @@ ExecutionResult DeleteExecutor::executeDelete(const DeleteStmt *deleteStmt,
         auto table = storage::Table::load(dbPath, tableName);
         const auto &schema = table.schema();
 
-        const auto allRows = table.select({}, {});
+        const auto allRows = table.select(std::vector<std::string>{},
+                                                std::vector<storage::Table::WhereCondition>{});
         const auto *whereCondition = deleteStmt->getWhereCondition().get();
 
         std::vector<std::string> keysToDelete;

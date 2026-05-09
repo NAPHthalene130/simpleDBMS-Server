@@ -4,12 +4,17 @@ class Core;
 class CreateDbExecutor;
 class CreateTableExecutor;
 class DatabaseManager;
+class DeleteExecutor;
+class DropExecutor;
 class ExecutorEngine;
 class InsertExecutor;
 class SelectExecutor;
+class ShowExecutor;
 class SystemCatalogManager;
 class TableDefManager;
+class UpdateExecutor;
 class UseDbExecutor;
+class UseExecutor;
 
 /**
  * @class ExecutorManager
@@ -39,6 +44,11 @@ public:
     InsertExecutor *getInsertExecutor() const;
     SelectExecutor *getSelectExecutor() const;
     UseDbExecutor *getUseDbExecutor() const;
+    UseExecutor *getUseExecutor() const;
+    ShowExecutor *getShowExecutor() const;
+    DropExecutor *getDropExecutor() const;
+    DeleteExecutor *getDeleteExecutor() const;
+    UpdateExecutor *getUpdateExecutor() const;
 
     SystemCatalogManager *getSystemCatalogManager() const;
     DatabaseManager *getDatabaseManager() const;
@@ -53,4 +63,9 @@ private:
     InsertExecutor *insertExecutor;
     SelectExecutor *selectExecutor;
     UseDbExecutor *useDbExecutor;
+    UseExecutor *useExecutor;
+    ShowExecutor *showExecutor;
+    DropExecutor *dropExecutor;
+    DeleteExecutor *deleteExecutor;
+    UpdateExecutor *updateExecutor;
 };

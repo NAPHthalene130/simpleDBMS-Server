@@ -182,9 +182,10 @@ private:
     /**
      * @brief 获取日志文件路径
      * @author NAPH130
+     * @param databaseName 数据库名称
      * @return 日志文件路径
      */
-    std::string getLogFilePath() const;
+    std::string getLogFilePath(const std::string &databaseName) const;
 
     /**
      * @brief 从当前系统时间构造 DateTime

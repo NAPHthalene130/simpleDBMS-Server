@@ -1,5 +1,11 @@
 #pragma once
 
+// Windows header may define IN as macro, breaking CompareOp enum
+#ifdef IN
+#undef IN
+#endif
+
+
 #include "BTree.h"
 #include "StorageCommon.h"
 

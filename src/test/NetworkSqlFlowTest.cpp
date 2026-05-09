@@ -220,6 +220,15 @@ bool containsTableNameInTb(const std::filesystem::path &tbPath, const std::strin
     return false;
 }
 
+bool containsValueInFirstColumn(const std::vector<std::vector<std::string>> &rows, const std::string &expectedValue)
+{
+    return std::any_of(rows.begin(),
+                       rows.end(),
+                       [&expectedValue](const std::vector<std::string> &row) {
+                           return !row.empty() && row[0] == expectedValue;
+                       });
+}
+
 std::string joinStrings(const std::vector<std::string> &values, const std::string &separator)
 {
     std::string result;
@@ -354,6 +363,76 @@ int main()
                          "type=" + createTableResponse.getType()
                              + ", message=" + createTableResponse.getMessage()
                              + ", tdfExists=" + (std::filesystem::exists(tableDir / (tableName + ".tdf")) ? "true" : "false"));
+
+        NetworkTransferData insertRequest1(NetworkTransferData::SQL_EXEC_REQUEST, testUserId);
+        insertRequest1.setDbName(dbName);
+        insertRequest1.setSql("INSERT INTO " + tableName + " (id, name) VALUES (1, 'alice');");
+        const NetworkTransferData insertResponse1 = sendRequestAndReceive(&clientSocket, insertRequest1);
+        const bool insertPassed1 = insertResponse1.getType() == NetworkTransferData::SQL_EXEC_RESPONSE
+                                   && insertResponse1.getSuccess();
+        appendStepResult(&stepResults,
+                         "INSERT ROW 1",
+                         insertPassed1,
+                         "type=" + insertResponse1.getType() + ", message=" + insertResponse1.getMessage());
+
+        NetworkTransferData insertRequest2(NetworkTransferData::SQL_EXEC_REQUEST, testUserId);
+        insertRequest2.setDbName(dbName);
+        insertRequest2.setSql("INSERT INTO " + tableName + " (id, name) VALUES (2, 'bob');");
+        const NetworkTransferData insertResponse2 = sendRequestAndReceive(&clientSocket, insertRequest2);
+        const bool insertPassed2 = insertResponse2.getType() == NetworkTransferData::SQL_EXEC_RESPONSE
+                                   && insertResponse2.getSuccess();
+        appendStepResult(&stepResults,
+                         "INSERT ROW 2",
+                         insertPassed2,
+                         "type=" + insertResponse2.getType() + ", message=" + insertResponse2.getMessage());
+
+        NetworkTransferData selectAllRequest(NetworkTransferData::SQL_EXEC_REQUEST, testUserId);
+        selectAllRequest.setDbName(dbName);
+        selectAllRequest.setSql("SELECT col1, col2 FROM " + tableName + ";");
+        const NetworkTransferData selectAllResponse = sendRequestAndReceive(&clientSocket, selectAllRequest);
+        const bool selectAllPassed = selectAllResponse.getType() == NetworkTransferData::SQL_EXEC_RESPONSE
+                                     && selectAllResponse.getSuccess()
+                                     && selectAllResponse.getRows().size() >= 2;
+        appendStepResult(&stepResults,
+                         "SELECT ALL",
+                         selectAllPassed,
+                         "type=" + selectAllResponse.getType()
+                             + ", success=" + (selectAllResponse.getSuccess() ? std::string("true") : std::string("false"))
+                             + ", columns=" + joinStrings(selectAllResponse.getColumns(), ",")
+                             + ", rowCount=" + std::to_string(selectAllResponse.getRows().size())
+                             + ", message=" + selectAllResponse.getMessage());
+
+        NetworkTransferData selectWhereRequest(NetworkTransferData::SQL_EXEC_REQUEST, testUserId);
+        selectWhereRequest.setDbName(dbName);
+        selectWhereRequest.setSql("SELECT col1 FROM " + tableName + " WHERE col1 = 2;");
+        const NetworkTransferData selectWhereResponse = sendRequestAndReceive(&clientSocket, selectWhereRequest);
+        const bool selectWherePassed = selectWhereResponse.getType() == NetworkTransferData::SQL_EXEC_RESPONSE
+                                       && selectWhereResponse.getSuccess()
+                                       && containsValueInFirstColumn(selectWhereResponse.getRows(), "2");
+        appendStepResult(&stepResults,
+                         "SELECT WHERE",
+                         selectWherePassed,
+                         "type=" + selectWhereResponse.getType()
+                             + ", success=" + (selectWhereResponse.getSuccess() ? std::string("true") : std::string("false"))
+                             + ", columns=" + joinStrings(selectWhereResponse.getColumns(), ",")
+                             + ", rowCount=" + std::to_string(selectWhereResponse.getRows().size())
+                             + ", message=" + selectWhereResponse.getMessage());
+
+        NetworkTransferData selectLikeRequest(NetworkTransferData::SQL_EXEC_REQUEST, testUserId);
+        selectLikeRequest.setDbName(dbName);
+        selectLikeRequest.setSql("SELECT col2 FROM " + tableName + " WHERE col2 LIKE 'a%';");
+        const NetworkTransferData selectLikeResponse = sendRequestAndReceive(&clientSocket, selectLikeRequest);
+        const bool selectLikePassed = selectLikeResponse.getType() == NetworkTransferData::SQL_EXEC_RESPONSE
+                                      && selectLikeResponse.getSuccess()
+                                      && containsValueInFirstColumn(selectLikeResponse.getRows(), "alice");
+        appendStepResult(&stepResults,
+                         "SELECT LIKE",
+                         selectLikePassed,
+                         "type=" + selectLikeResponse.getType()
+                             + ", success=" + (selectLikeResponse.getSuccess() ? std::string("true") : std::string("false"))
+                             + ", columns=" + joinStrings(selectLikeResponse.getColumns(), ",")
+                             + ", rowCount=" + std::to_string(selectLikeResponse.getRows().size())
+                             + ", message=" + selectLikeResponse.getMessage());
 
         clientSocket.shutdown(asio::ip::tcp::socket::shutdown_both);
         clientSocket.close();

@@ -9,9 +9,10 @@
 enum class ExecutionStatementType
 {
     CreateDatabase,  ///< 创建数据库
-    DropDatabase,    ///< 删除数据库
+    DropDatabase,    ///< 删除数据库（预留）
     CreateTable,     ///< 创建表
-    DropTable,       ///< 删除表
+    DropTable,       ///< 删除表（预留）
+    Drop,            ///< 删除操作（泛型，通过 DropTargetType 区分）
     Insert,          ///< 插入记录
     Delete,          ///< 删除记录
     Select,          ///< 查询记录

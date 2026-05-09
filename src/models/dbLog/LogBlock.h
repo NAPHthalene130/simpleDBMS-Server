@@ -91,6 +91,14 @@ public:
      */
     static bool fromJsonString(const std::string &jsonStr, LogBlock &outBlock);
 
+    /**
+     * @brief 操作类型枚举转字符串
+     * @author NAPH130
+     * @param opType 操作类型
+     * @return 字符串表示
+     */
+    static std::string operationTypeToString(DbLogOperationType opType);
+
 private:
     /**
      * @brief 将 DateTime 转为 JSON 对象
@@ -108,14 +116,6 @@ private:
      * @return 是否解析成功
      */
     static bool jsonToDateTime(const nlohmann::json &jsonData, DateTime &outDateTime);
-
-    /**
-     * @brief 操作类型枚举转字符串
-     * @author NAPH130
-     * @param opType 操作类型
-     * @return 字符串表示
-     */
-    static std::string operationTypeToString(DbLogOperationType opType);
 
     /**
      * @brief 字符串转操作类型枚举

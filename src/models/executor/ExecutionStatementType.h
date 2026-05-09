@@ -8,10 +8,16 @@
  */
 enum class ExecutionStatementType
 {
-    CreateDatabase,
-    CreateTable,
-    Insert,
-    Select,
-    UseDatabase,
-    Unknown
+    CreateDatabase,  ///< 创建数据库
+    DropDatabase,    ///< 删除数据库
+    CreateTable,     ///< 创建表
+    DropTable,       ///< 删除表
+    Insert,          ///< 插入记录
+    Delete,          ///< 删除记录
+    Select,          ///< 查询记录
+    Update,          ///< 更新记录
+    UseDatabase,     ///< 切换数据库
+    Show,            ///< 查看数据库/表
+    Use,             ///< 用户相关操作
+    Unknown          ///< 未知类型
 };

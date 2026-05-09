@@ -155,7 +155,8 @@ ExecutionResult UpdateExecutor::executeUpdate(const UpdateStmt *updateStmt,
                 static_cast<std::size_t>(std::distance(schema.columns.begin(), it)));
         }
 
-        const auto allRows = table.select({}, {});
+        const auto allRows = table.select(std::vector<std::string>{},
+                                                std::vector<storage::Table::WhereCondition>{});
         const auto *whereCondition = updateStmt->getWhereCondition().get();
 
         struct RowUpdate {

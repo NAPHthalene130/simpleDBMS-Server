@@ -284,12 +284,10 @@ private:
     std::uint64_t appendDataRow(const std::vector<std::string>& values) const;
 
     /**
-     * @brief 追加主键索引记录到 .tid 文件
+     * @brief 将内存 BTree 索引刷盘为页式 .tid 文件
      * @author Startale
-     * @param key 主键值
-     * @param offset 对应数据在 .trd 中的偏移
      */
-    void appendIndexEntry(const std::string& key, std::uint64_t offset);
+    void flushIndexToTid();
 
     /**
      * @brief 从 .tid 恢复内存索引

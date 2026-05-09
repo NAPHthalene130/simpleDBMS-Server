@@ -191,6 +191,28 @@ public:
         return lines;
     }
 
+    /**
+     * @struct TidNodeRef
+     * @brief .tid 页序列化所需的节点结构引用
+     * @author Startale
+     */
+    struct TidNodeRef {
+        bool isLeaf = true;
+        std::vector<Key> keys;
+        std::vector<std::size_t> childIndices;
+    };
+
+    /**
+     * @brief 导出 B 树节点结构列表（前序遍历）
+     * @author Startale
+     * @return 节点结构列表，children 引用 indices 为列表下标
+     */
+    std::vector<TidNodeRef> dumpNodeRefs() const {
+        std::vector<TidNodeRef> nodes;
+        dumpNodeRefsRecursive(root_.get(), nodes);
+        return nodes;
+    }
+
 private:
     std::size_t t_;
     Compare comp_;
@@ -336,6 +358,21 @@ private:
         if (!node->leaf) {
             for (const auto& child : node->children) {
                 dumpNodeLinesInternal(child.get(), depth + 1, lines, formatter);
+            }
+        }
+    }
+
+    void dumpNodeRefsRecursive(const Node* node, std::vector<TidNodeRef>& nodes) const {
+        const std::size_t idx = nodes.size();
+        nodes.emplace_back();
+        nodes[idx].isLeaf = node->leaf;
+        for (const auto& entry : node->entries) {
+            nodes[idx].keys.push_back(entry.key);
+        }
+        if (!node->leaf) {
+            for (const auto& child : node->children) {
+                nodes[idx].childIndices.push_back(nodes.size());
+                dumpNodeRefsRecursive(child.get(), nodes);
             }
         }
     }

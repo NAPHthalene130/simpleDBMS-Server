@@ -427,7 +427,7 @@ int main()
         }
     }
     while (std::getline(tid, line)) {
-        if (line == "TID_PAGED_V1") foundTidHeader = true;
+        if (line == "TID_PAGED_V2") foundTidHeader = true;
         if (line == "root_page=1") foundTidRootPage = true;
         if (line.rfind("ENTRY|v1|", 0) == 0) foundTidKeyEntry = true;
     }

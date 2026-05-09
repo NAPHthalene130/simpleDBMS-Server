@@ -46,14 +46,14 @@ DbLogManager::DbLogManager(Core *core)
         for (const auto &entry : std::filesystem::directory_iterator(dataRootPath)) {
             if (!entry.is_directory()) {
                 continue;
-        }
+            }
 
             const std::string databaseName = entry.path().filename().string();
             updateOperationCounterFromLogFile(entry.path() / (databaseName + ".log"), operationIdCounter);
+        }
     }
 
     LogWriter::info("dbLog", "DbLogManager", "DbLogManager",
-                    "DbLogManager initialized. Current operation ID: " + std::to_string(operationIdCounter));
                     "DbLogManager initialized. Current operation ID: " + std::to_string(operationIdCounter));
 }
 

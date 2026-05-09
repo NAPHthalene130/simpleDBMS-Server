@@ -8,6 +8,8 @@
 #include <stdexcept>
 #include <string>
 
+#include "Core.h"
+#include "dbLog/DbLogManager.h"
 #include "log/LogWriter.h"
 #include "storage/manager/SystemCatalogManager.h"
 
@@ -142,6 +144,18 @@ ExecutionResult DeleteExecutor::executeDelete(const DeleteStmt *deleteStmt,
             }
 
             keysToDelete.push_back(row.values.front());
+        }
+
+        // 记录删除日志 -- NAPH130
+        if (core != nullptr && core->getDbLogManager() != nullptr && !keysToDelete.empty()) {
+            nlohmann::json deleteSnapshot;
+            deleteSnapshot["deleted_keys"] = keysToDelete;
+            deleteSnapshot["deleted_count"] = static_cast<std::int32_t>(keysToDelete.size());
+            core->getDbLogManager()->logDelete(
+                dbName, tableName,
+                deleteSnapshot.dump(),
+                "DELETE FROM " + tableName + " WHERE ..."
+            );
         }
 
         std::int32_t deletedCount = 0;

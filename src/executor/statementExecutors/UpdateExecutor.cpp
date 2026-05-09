@@ -8,6 +8,8 @@
 #include <stdexcept>
 #include <string>
 
+#include "Core.h"
+#include "dbLog/DbLogManager.h"
 #include "log/LogWriter.h"
 #include "storage/manager/SystemCatalogManager.h"
 
@@ -178,6 +180,21 @@ ExecutionResult UpdateExecutor::executeUpdate(const UpdateStmt *updateStmt,
             }
 
             rowsToUpdate.push_back({row.values.front(), std::move(newValues)});
+        }
+
+        // 记录更新日志 -- NAPH130
+        if (core != nullptr && core->getDbLogManager() != nullptr && !rowsToUpdate.empty()) {
+            for (const auto &rowUpdate : rowsToUpdate) {
+                nlohmann::json updateSnapshot;
+                updateSnapshot["primary_key"] = rowUpdate.primaryKey;
+                updateSnapshot["new_values"] = rowUpdate.newValues;
+                core->getDbLogManager()->logUpdate(
+                    dbName, tableName,
+                    "",
+                    updateSnapshot.dump(),
+                    "UPDATE " + tableName + " SET ... WHERE ..."
+                );
+            }
         }
 
         std::int32_t updatedCount = 0;

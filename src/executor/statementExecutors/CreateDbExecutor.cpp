@@ -6,6 +6,8 @@
 #include <ctime>
 #include <filesystem>
 
+#include "Core.h"
+#include "dbLog/DbLogManager.h"
 #include "log/LogWriter.h"
 
 namespace {
@@ -131,6 +133,14 @@ ExecutionResult CreateDbExecutor::executeCreateDb(const CreateDbStmt *createDbSt
                          "executeCreateDb",
                          "Storage layer failed to create database " + dbName + ".");
         return buildFailureResult("Create database failed in storage layer.", dbName);
+    }
+
+    // 记录数据库创建日志
+    if (core != nullptr && core->getDbLogManager() != nullptr) {
+        core->getDbLogManager()->logCreateDatabase(
+            dbName,
+            "CREATE DATABASE " + dbName
+        );
     }
 
     LogWriter::info("executor", "CreateDbExecutor", "executeCreateDb", "Database created successfully: " + dbName + ".");

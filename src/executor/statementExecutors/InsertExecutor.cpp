@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <unordered_set>
 
+#include "Core.h"
+#include "dbLog/DbLogManager.h"
 #include "log/LogWriter.h"
 #include "storage/manager/SystemCatalogManager.h"
 #include "storage/object/Table.h"
@@ -158,6 +160,21 @@ ExecutionResult InsertExecutor::executeInsert(const InsertStmt *insertStmt, Exec
                              std::string("Insert into ") + dbName + "." + tableName + " failed: " + exception.what());
             return buildFailureResult(std::string("Insert failed: ") + exception.what(), dbName, tableName);
         }
+    }
+
+    // 记录插入日志
+    if (core != nullptr && core->getDbLogManager() != nullptr) {
+        const std::vector<std::string> &insertValues = insertStmt->getValues();
+        const std::vector<std::string> &insertColumns = insertStmt->getColumnNames();
+        nlohmann::json insertSnapshot;
+        for (std::size_t i = 0; i < insertColumns.size() && i < insertValues.size(); ++i) {
+            insertSnapshot[insertColumns[i]] = insertValues[i];
+        }
+        core->getDbLogManager()->logInsert(
+            dbName, tableName,
+            insertSnapshot.dump(),
+            "INSERT INTO " + tableName + " VALUES (...)"
+        );
     }
 
     LogWriter::info("executor", "InsertExecutor", "executeInsert",

@@ -6,6 +6,7 @@ class StorageManager;
 class Tokenizer;
 class ParserManager;
 class SqlPipeline;
+class DbLogManager;
 
 /**
  * @class Core
@@ -57,6 +58,13 @@ public:
      */
     SqlPipeline *getSqlPipeline();
 
+    /**
+     * @brief 获取数据库日志管理器
+     * @author NAPH130
+     * @return 数据库日志管理器指针
+     */
+    DbLogManager *getDbLogManager();
+
 private:
     NetworkManager *networkManager;
     StorageManager *storageManager;
@@ -64,4 +72,5 @@ private:
     Tokenizer *tokenizer;
     ParserManager *parserManager;
     SqlPipeline *sqlPipeline;
+    DbLogManager *dbLogManager;
 };

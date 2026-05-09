@@ -1,5 +1,7 @@
 #include "DropExecutor.h"
 
+#include "Core.h"
+#include "dbLog/DbLogManager.h"
 #include "log/LogWriter.h"
 
 namespace {
@@ -70,6 +72,16 @@ ExecutionResult DropExecutor::execute(const SQLStatement *statement, ExecutionCo
                              "Failed to drop database: " + targetName + ".");
             return buildFailureResult("Failed to drop database.", targetName);
         }
+
+        // 记录删除数据库日志
+        if (core != nullptr && core->getDbLogManager() != nullptr) {
+            core->getDbLogManager()->logDropDatabase(
+                targetName,
+                "Database metadata snapshot for: " + targetName,
+                "DROP DATABASE " + targetName
+            );
+        }
+
         LogWriter::info("executor", "DropExecutor", "execute",
                         "Database dropped successfully: " + targetName + ".");
         return buildSuccessResult("Drop database succeeded.", "");
@@ -87,6 +99,17 @@ ExecutionResult DropExecutor::execute(const SQLStatement *statement, ExecutionCo
                              "Failed to drop table " + targetName + " in " + dbName + ".");
             return buildFailureResult("Failed to drop table.", dbName);
         }
+
+        // 记录删除表日志
+        if (core != nullptr && core->getDbLogManager() != nullptr) {
+            core->getDbLogManager()->logDropTable(
+                dbName,
+                targetName,
+                "Table metadata snapshot for: " + dbName + "." + targetName,
+                "DROP TABLE " + targetName
+            );
+        }
+
         LogWriter::info("executor", "DropExecutor", "execute",
                         "Table dropped successfully: " + dbName + "." + targetName + ".");
         return buildSuccessResult("Drop table succeeded.", dbName);

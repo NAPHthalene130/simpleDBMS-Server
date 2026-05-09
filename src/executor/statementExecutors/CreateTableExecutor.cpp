@@ -7,6 +7,8 @@
 #include <filesystem>
 #include <unordered_set>
 
+#include "Core.h"
+#include "dbLog/DbLogManager.h"
 #include "log/LogWriter.h"
 #include "storage/manager/SystemCatalogManager.h"
 
@@ -174,6 +176,17 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
                          "executeCreateTable",
                          "Storage layer failed to create table " + tableName + " in database " + dbName + ".");
         return buildFailureResult("Create table failed in storage layer.", dbName, tableName);
+    }
+
+    // 记录创建表日志
+    if (core != nullptr && core->getDbLogManager() != nullptr) {
+        nlohmann::json tableSnapshot;
+        tableSnapshot["columns"] = columnNames;
+        tableSnapshot["field_count"] = fieldBlocks.size();
+        core->getDbLogManager()->logCreateTable(
+            dbName, tableName, tableSnapshot.dump(),
+            "CREATE TABLE " + tableName + " (...)"
+        );
     }
 
     LogWriter::info("executor",

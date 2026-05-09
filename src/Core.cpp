@@ -1,5 +1,6 @@
 #include "Core.h"
 
+#include "dbLog/DbLogManager.h"
 #include "executor/ExecutorManager.h"
 #include "log/LogWriter.h"
 #include "network/NetworkManager.h"
@@ -12,7 +13,8 @@ Core::Core()
       storageManager(new StorageManager(this)),
       executorManager(new ExecutorManager(this)),
       tokenizer(new Tokenizer(this)),
-      parserManager(new ParserManager(this))
+      parserManager(new ParserManager(this)),
+      dbLogManager(new DbLogManager(this))
 {
     LogWriter::info("core", "Core", "Core", "Core modules initialized.");
 }
@@ -26,11 +28,13 @@ Core::~Core()
     delete networkManager;
     delete storageManager;
     delete executorManager;
+    delete dbLogManager;
     parserManager = nullptr;
     tokenizer = nullptr;
     networkManager = nullptr;
     storageManager = nullptr;
     executorManager = nullptr;
+    dbLogManager = nullptr;
     LogWriter::info("core", "Core", "~Core", "Core modules released.");
 }
 
@@ -73,4 +77,9 @@ Tokenizer *Core::getTokenizer()
 ParserManager *Core::getParserManager()
 {
     return parserManager;
+}
+
+DbLogManager *Core::getDbLogManager()
+{
+    return dbLogManager;
 }

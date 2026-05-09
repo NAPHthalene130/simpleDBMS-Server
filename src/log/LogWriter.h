@@ -5,8 +5,8 @@
 
 /**
  * @class LogWriter
- * @brief 文件日志写入工具类
- * @details 负责将统一格式的日志内容追加写入 src/log/logs.log 文件。
+ * @brief 服务端文件日志写入工具
+ * @details 负责将统一格式的日志内容追加写入 src/log/logs.log。
  * @author NAPH130
  */
 class LogWriter
@@ -18,7 +18,7 @@ public:
      * @param moduleName 模块名
      * @param className 类名
      * @param methodName 方法名
-     * @param message 日志信息
+     * @param message 英文日志消息
      */
     static void debug(const std::string &moduleName,
                       const std::string &className,
@@ -31,7 +31,7 @@ public:
      * @param moduleName 模块名
      * @param className 类名
      * @param methodName 方法名
-     * @param message 日志信息
+     * @param message 英文日志消息
      */
     static void info(const std::string &moduleName,
                      const std::string &className,
@@ -44,7 +44,7 @@ public:
      * @param moduleName 模块名
      * @param className 类名
      * @param methodName 方法名
-     * @param message 日志信息
+     * @param message 英文日志消息
      */
     static void warning(const std::string &moduleName,
                         const std::string &className,
@@ -57,7 +57,7 @@ public:
      * @param moduleName 模块名
      * @param className 类名
      * @param methodName 方法名
-     * @param message 日志信息
+     * @param message 英文日志消息
      */
     static void error(const std::string &moduleName,
                       const std::string &className,
@@ -70,7 +70,7 @@ public:
      * @param moduleName 模块名
      * @param className 类名
      * @param methodName 方法名
-     * @param message 日志信息
+     * @param message 英文日志消息
      */
     static void fatal(const std::string &moduleName,
                       const std::string &className,
@@ -81,13 +81,13 @@ private:
     /**
      * @brief 写入统一格式日志
      * @author NAPH130
-     * @param status 日志级别
+     * @param level 日志级别
      * @param moduleName 模块名
      * @param className 类名
      * @param methodName 方法名
-     * @param message 日志信息
+     * @param message 英文日志消息
      */
-    static void writeLog(const std::string &status,
+    static void writeLog(const std::string &level,
                          const std::string &moduleName,
                          const std::string &className,
                          const std::string &methodName,
@@ -96,14 +96,14 @@ private:
     /**
      * @brief 获取日志文件路径
      * @author NAPH130
-     * @return 日志文件绝对路径字符串
+     * @return 日志文件路径
      */
     static std::string getLogFilePath();
 
     /**
-     * @brief 生成当前时间字符串
+     * @brief 构建当前时间戳字符串
      * @author NAPH130
-     * @return 格式化后的时间字符串
+     * @return 格式化时间戳
      */
     static std::string buildTimestamp();
 

@@ -1,12 +1,35 @@
 #include "DbLogManager.h"
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <algorithm>
 
 #include "Core.h"
 #include "log/LogWriter.h"
+#include "storage/manager/SystemCatalogManager.h"
+
+namespace {
+void updateOperationCounterFromLogFile(const std::filesystem::path &logPath, std::int64_t &operationIdCounter)
+{
+    if (!std::filesystem::exists(logPath)) {
+        return;
+    }
+
+    std::ifstream inFile(logPath);
+    std::string line;
+    while (std::getline(inFile, line)) {
+        if (line.empty()) {
+            continue;
+        }
+        LogBlock block;
+        if (LogBlock::fromJsonString(line, block) && block.getOperationId() > operationIdCounter) {
+            operationIdCounter = block.getOperationId();
+        }
+    }
+}
+} // namespace
 
 // ──────────────────────────────────────────────
 // 构造 / 析构
@@ -16,29 +39,21 @@ DbLogManager::DbLogManager(Core *core)
     : core(core),
       operationIdCounter(0)
 {
-    // 确保日志目录存在
-    const std::filesystem::path logDir = std::filesystem::path(getLogFilePath()).parent_path();
-    std::filesystem::create_directories(logDir);
+    const auto &dataRootPath = SystemCatalogManager::getDataRootPath();
+    std::filesystem::create_directories(dataRootPath);
 
-    // 从已有日志文件中恢复 operationIdCounter
-    const std::string logPath = getLogFilePath();
-    if (std::filesystem::exists(logPath)) {
-        std::ifstream inFile(logPath);
-        std::string line;
-        while (std::getline(inFile, line)) {
-            if (line.empty()) {
+    if (std::filesystem::exists(dataRootPath)) {
+        for (const auto &entry : std::filesystem::directory_iterator(dataRootPath)) {
+            if (!entry.is_directory()) {
                 continue;
-            }
-            LogBlock block;
-            if (LogBlock::fromJsonString(line, block)) {
-                if (block.getOperationId() > operationIdCounter) {
-                    operationIdCounter = block.getOperationId();
-                }
-            }
         }
+
+            const std::string databaseName = entry.path().filename().string();
+            updateOperationCounterFromLogFile(entry.path() / (databaseName + ".log"), operationIdCounter);
     }
 
     LogWriter::info("dbLog", "DbLogManager", "DbLogManager",
+                    "DbLogManager initialized. Current operation ID: " + std::to_string(operationIdCounter));
                     "DbLogManager initialized. Current operation ID: " + std::to_string(operationIdCounter));
 }
 
@@ -252,9 +267,9 @@ bool DbLogManager::dbRecover(const std::string &databaseName, const DateTime &ta
 std::vector<LogBlock> DbLogManager::getLogsForDatabase(const std::string &databaseName)
 {
     std::vector<LogBlock> result;
-    const std::string logPath = getLogFilePath();
+    const std::string logPath = getLogFilePath(databaseName);
 
-    if (!std::filesystem::exists(logPath)) {
+    if (logPath.empty() || !std::filesystem::exists(logPath)) {
         return result;
     }
 
@@ -302,7 +317,14 @@ void DbLogManager::appendLog(const LogBlock &block)
 {
     std::lock_guard<std::mutex> lock(logFileMutex);
 
-    const std::string logPath = getLogFilePath();
+    const std::string logPath = getLogFilePath(block.getDatabaseName());
+    if (logPath.empty()) {
+        LogWriter::error("dbLog", "DbLogManager", "appendLog",
+                         "Failed to resolve database log file path.");
+        return;
+    }
+
+    std::filesystem::create_directories(std::filesystem::path(logPath).parent_path());
     std::ofstream outFile(logPath, std::ios::app);
     if (!outFile.is_open()) {
         LogWriter::error("dbLog", "DbLogManager", "appendLog",
@@ -319,11 +341,14 @@ std::int64_t DbLogManager::nextOperationId()
     return ++operationIdCounter;
 }
 
-std::string DbLogManager::getLogFilePath() const
+std::string DbLogManager::getLogFilePath(const std::string &databaseName) const
 {
-    // 日志文件存放于 src/dbLog/dbOperation.log
-    const std::filesystem::path moduleDir = std::filesystem::path(__FILE__).parent_path();
-    return (moduleDir / "dbOperation.log").string();
+    if (databaseName.empty()) {
+        return "";
+    }
+
+    const std::filesystem::path dbDir = SystemCatalogManager::getDataRootPath() / databaseName;
+    return (dbDir / (databaseName + ".log")).string();
 }
 
 DateTime DbLogManager::buildCurrentDateTime()

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstring>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -8,6 +9,10 @@
 #include <cstdint>
 
 namespace storage {
+
+static constexpr std::uint32_t kDataPageSize   = 4096;
+static constexpr std::uint32_t kDataPageHeader = 32;
+static constexpr std::uint32_t kSlotSize       = 4;
 
 /**
  * @struct ColumnMeta
@@ -18,6 +23,34 @@ struct ColumnMeta {
     std::int32_t integrities = 0;
     std::string defaultValue;
 };
+
+/**
+ * @struct DataPageHeader
+ * @brief 数据页头部 (32 bytes)
+ * @author Startale
+ */
+#pragma pack(push, 1)
+struct DataPageHeader {
+    std::uint32_t pageId      = 0;
+    std::uint16_t freeStart   = kDataPageHeader;  // tuple 写入起始
+    std::uint16_t freeEnd     = kDataPageSize;     // slot 写入起始 (倒序)
+    std::uint16_t slotCount   = 0;
+    std::uint16_t flags       = 0;
+    std::uint8_t  reserved[20]{};
+};
+#pragma pack(pop)
+
+/**
+ * @struct PageSlot
+ * @brief 槽目录项 (4 bytes)
+ * @author Startale
+ */
+#pragma pack(push, 1)
+struct PageSlot {
+    std::uint16_t offset = 0;  // tuple 在页内偏移
+    std::uint16_t flags  = 0;  // 0=有效, 1=已删除
+};
+#pragma pack(pop)
 
 /**
  * @struct Row

@@ -102,6 +102,8 @@ public:
     struct ColumnDefinition {
         std::string name;
         ColumnConstraintSpec constraints;
+        DataType dataType = DataType::TEXT;
+        std::uint16_t varcharLen = 0;
     };
 
     struct QueryConstraint {
@@ -438,7 +440,8 @@ private:
      */
     static bool compareValue(const std::string& left, CompareOp op, const std::string& right);
     static bool compareValue(const std::string& left,
-                             const WhereCondition& condition);
+                              const WhereCondition& condition);
+    bool compareTyped(std::size_t colIndex, const std::string& left, CompareOp op, const std::string& right) const;
 
     /**
      * @brief LIKE 模式匹配

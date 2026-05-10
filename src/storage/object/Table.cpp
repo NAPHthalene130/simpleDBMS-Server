@@ -148,15 +148,11 @@ Table Table::create(const std::filesystem::path& dbPath,
         ensure(!col.name.empty(), "column name cannot be empty");
         names.push_back(col.name);
         ColumnMeta meta;
-        if (col.constraints.notNull) {
-            meta.integrities |= 1;
-        }
-        if (col.constraints.unique) {
-            meta.integrities |= 4;
-        }
-        if (col.constraints.hasDefault) {
-            meta.defaultValue = col.constraints.defaultValue;
-        }
+        meta.dataType = col.dataType;
+        meta.varcharLen = col.varcharLen;
+        if (col.constraints.notNull)  meta.integrities |= 1;
+        if (col.constraints.unique)   meta.integrities |= 4;
+        if (col.constraints.hasDefault) meta.defaultValue = col.constraints.defaultValue;
         metas.push_back(std::move(meta));
     }
     return create(dbPath, tableName, names, metas);
@@ -197,6 +193,25 @@ Table Table::load(const std::filesystem::path& dbPath,
     }
 
     std::vector<ColumnMeta> columnMetas(parsedColumns.size());
+    // Parse types from columns line
+    {
+        auto typeParts = split(columnsLine.substr(8), '|');
+        for (std::size_t i = 0; i < typeParts.size() && i < columnMetas.size(); ++i) {
+            const auto sepPos = typeParts[i].find(':');
+            if (sepPos == std::string::npos) continue;
+            std::string typeStr = typeParts[i].substr(sepPos + 1);
+            if (typeStr == "INT") {
+                columnMetas[i].dataType = DataType::INT;
+            } else if (typeStr == "FLOAT") {
+                columnMetas[i].dataType = DataType::FLOAT;
+            } else if (typeStr.rfind("VARCHAR(", 0) == 0 && typeStr.back() == ')') {
+                columnMetas[i].dataType = DataType::VARCHAR;
+                try { columnMetas[i].varcharLen = static_cast<std::uint16_t>(std::stoul(typeStr.substr(8, typeStr.size()-9))); }
+                catch (...) { columnMetas[i].varcharLen = 0; }
+            }
+            // else: TEXT (default)
+        }
+    }
     if (!integritiesLine.empty()) {
         const auto integList = split(integritiesLine.substr(13), '|');
         for (std::size_t i = 0; i < integList.size() && i < columnMetas.size(); ++i) {
@@ -692,8 +707,15 @@ void Table::flushMeta() const {
     ofs << "table=" << schema_.name << '\n';
     std::vector<std::string> columnMetas;
     columnMetas.reserve(schema_.columns.size());
-    for (const auto& column : schema_.columns) {
-        columnMetas.push_back(column + ":TEXT");
+    for (std::size_t i = 0; i < schema_.columns.size(); ++i) {
+        std::string typeStr;
+        switch (schema_.columnMetas[i].dataType) {
+            case DataType::INT:     typeStr = "INT"; break;
+            case DataType::FLOAT:   typeStr = "FLOAT"; break;
+            case DataType::VARCHAR: typeStr = "VARCHAR(" + std::to_string(schema_.columnMetas[i].varcharLen) + ")"; break;
+            default:                typeStr = "TEXT"; break;
+        }
+        columnMetas.push_back(schema_.columns[i] + ":" + typeStr);
     }
     ofs << "columns=" << join(columnMetas, "|") << '\n';
     ofs << "primary_key=" << schema_.columns.front() << '\n';
@@ -1810,26 +1832,24 @@ std::size_t Table::columnIndex(const std::string& columnName) const {
 bool Table::matchWhere(const Row& row, const std::vector<WhereCondition>& whereConditions) const {
     for (const auto& condition : whereConditions) {
         const std::size_t idx = columnIndex(condition.column);
-        if (idx >= row.values.size()) {
-            return false;
-        }
-        if (!compareValue(row.values[idx], condition)) {
-            return false;
+        if (idx >= row.values.size()) return false;
+        if (condition.op == CompareOp::IN || condition.op == CompareOp::BETWEEN || condition.op == CompareOp::LIKE) {
+            if (!compareValue(row.values[idx], condition)) return false;
+        } else {
+            if (!compareTyped(idx, row.values[idx], condition.op, condition.value)) return false;
         }
     }
     return true;
 }
 
 bool Table::matchConditionTree(const Row& row, const std::shared_ptr<ConditionNode>& node) const {
-    if (!node) {
-        return true;
-    }
+    if (!node) return true;
     if (node->isLeaf) {
         const std::size_t idx = columnIndex(node->condition.column);
-        if (idx >= row.values.size()) {
-            return false;
-        }
-        return compareValue(row.values[idx], node->condition);
+        if (idx >= row.values.size()) return false;
+        if (node->condition.op == CompareOp::IN || node->condition.op == CompareOp::BETWEEN || node->condition.op == CompareOp::LIKE)
+            return compareValue(row.values[idx], node->condition);
+        return compareTyped(idx, row.values[idx], node->condition.op, node->condition.value);
     }
     const bool leftMatch = matchConditionTree(row, node->left);
     const bool rightMatch = matchConditionTree(row, node->right);
@@ -2018,52 +2038,48 @@ std::vector<std::uint64_t> Table::mergeOffsetIntersection(const std::vector<std:
 }
 
 bool Table::compareValue(const std::string& left, CompareOp op, const std::string& right) {
-    if (op == CompareOp::IN || op == CompareOp::BETWEEN) {
-        return false;
+    if (op == CompareOp::LIKE) return likeMatch(left, right);
+    double lv=0, rv=0;
+    bool li=false, ri=false;
+    { errno=0; char* e=nullptr; lv=std::strtod(left.c_str(),&e); li=(e!=left.c_str()&&*e=='\0'&&errno!=ERANGE); }
+    { errno=0; char* e=nullptr; rv=std::strtod(right.c_str(),&e); ri=(e!=right.c_str()&&*e=='\0'&&errno!=ERANGE); }
+    if (li && ri) {
+        switch (op) { case CompareOp::EQ: return lv==rv; case CompareOp::NE: return lv!=rv; case CompareOp::GT: return lv>rv; case CompareOp::GE: return lv>=rv; case CompareOp::LT: return lv<rv; case CompareOp::LE: return lv<=rv; }
     }
-    if (op == CompareOp::LIKE) {
-        return likeMatch(left, right);
-    }
+    switch (op) { case CompareOp::EQ: return left==right; case CompareOp::NE: return left!=right; case CompareOp::GT: return left>right; case CompareOp::GE: return left>=right; case CompareOp::LT: return left<right; case CompareOp::LE: return left<=right; }
+    return false;
+}
 
-    double leftNum = 0.0;
-    double rightNum = 0.0;
-    const bool leftIsNum = tryParseNumber(left, leftNum);
-    const bool rightIsNum = tryParseNumber(right, rightNum);
+bool Table::compareTyped(std::size_t colIndex, const std::string& left, CompareOp op, const std::string& right) const {
+    if (op == CompareOp::LIKE) return likeMatch(left, right);
+    if (op == CompareOp::IN || op == CompareOp::BETWEEN) return false;
 
-    if (leftIsNum && rightIsNum) {
-        switch (op) {
-            case CompareOp::EQ:
-                return leftNum == rightNum;
-            case CompareOp::NE:
-                return leftNum != rightNum;
-            case CompareOp::GT:
-                return leftNum > rightNum;
-            case CompareOp::GE:
-                return leftNum >= rightNum;
-            case CompareOp::LT:
-                return leftNum < rightNum;
-            case CompareOp::LE:
-                return leftNum <= rightNum;
-        case CompareOp::LIKE:
-            return likeMatch(left, right);
+    if (colIndex < schema_.columnMetas.size()) {
+        DataType dt = schema_.columnMetas[colIndex].dataType;
+        if (dt == DataType::INT || dt == DataType::FLOAT) {
+            double lv = 0, rv = 0;
+            bool li = false, ri = false;
+            { errno=0; char* e=nullptr; lv=std::strtod(left.c_str(),&e); li=(e!=left.c_str()&&*e=='\0'&&errno!=ERANGE); }
+            { errno=0; char* e=nullptr; rv=std::strtod(right.c_str(),&e); ri=(e!=right.c_str()&&*e=='\0'&&errno!=ERANGE); }
+            if (li && ri) {
+                switch (op) {
+                    case CompareOp::EQ: return lv == rv;
+                    case CompareOp::NE: return lv != rv;
+                    case CompareOp::GT: return lv > rv;
+                    case CompareOp::GE: return lv >= rv;
+                    case CompareOp::LT: return lv < rv;
+                    case CompareOp::LE: return lv <= rv;
+                }
+            }
         }
     }
-
     switch (op) {
-        case CompareOp::EQ:
-            return left == right;
-        case CompareOp::NE:
-            return left != right;
-        case CompareOp::GT:
-            return left > right;
-        case CompareOp::GE:
-            return left >= right;
-        case CompareOp::LT:
-            return left < right;
-        case CompareOp::LE:
-            return left <= right;
-        case CompareOp::LIKE:
-            return likeMatch(left, right);
+        case CompareOp::EQ: return left == right;
+        case CompareOp::NE: return left != right;
+        case CompareOp::GT: return left > right;
+        case CompareOp::GE: return left >= right;
+        case CompareOp::LT: return left < right;
+        case CompareOp::LE: return left <= right;
     }
     return false;
 }

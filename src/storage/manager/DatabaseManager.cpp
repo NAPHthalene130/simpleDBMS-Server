@@ -564,15 +564,11 @@ bool DatabaseManager::createTable(const std::string &dbName,
         for (const auto &column : columns) {
             names.push_back(column.name);
             storage::ColumnMeta meta;
-            if (column.constraints.notNull) {
-                meta.integrities |= 1;
-            }
-            if (column.constraints.unique) {
-                meta.integrities |= 4;
-            }
-            if (column.constraints.hasDefault) {
-                meta.defaultValue = column.constraints.defaultValue;
-            }
+            meta.dataType = column.dataType;
+            meta.varcharLen = column.varcharLen;
+            if (column.constraints.notNull)  meta.integrities |= 1;
+            if (column.constraints.unique)   meta.integrities |= 4;
+            if (column.constraints.hasDefault) meta.defaultValue = column.constraints.defaultValue;
             columnMetas.push_back(std::move(meta));
         }
         return createTable(dbName, tableName, names, columnMetas);

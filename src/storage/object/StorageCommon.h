@@ -15,6 +15,18 @@ static constexpr std::uint32_t kDataPageHeader = 32;
 static constexpr std::uint32_t kSlotSize       = 4;
 
 /**
+ * @enum DataType
+ * @brief 列数据类型
+ * @author Startale
+ */
+enum class DataType : std::uint8_t {
+    TEXT    = 0,  // 无界文本（默认兼容旧数据）
+    INT     = 1,  // 32 位有符号整数
+    FLOAT   = 2,  // 双精度浮点
+    VARCHAR = 3,  // 变长字符串，maxLen 在 ColumnMeta::varcharLen
+};
+
+/**
  * @struct ColumnMeta
  * @brief 列元数据
  * @author NAPH130
@@ -22,6 +34,8 @@ static constexpr std::uint32_t kSlotSize       = 4;
 struct ColumnMeta {
     std::int32_t integrities = 0;
     std::string defaultValue;
+    DataType     dataType    = DataType::TEXT;
+    std::uint16_t varcharLen = 0;  // VARCHAR(n) 的最大长度
 };
 
 /**

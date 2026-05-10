@@ -122,6 +122,10 @@ Table Table::create(const std::filesystem::path& dbPath,
         ensure(secondaryOfs.good(),
                "failed to create non-primary index reserve file: "
                + table.nonPrimaryIndexFilePath(columns[i]).string());
+        ColumnIndex ci;
+        ci.filePath = table.nonPrimaryIndexFilePath(columns[i]);
+        ci.active = true;
+        table.secondaryIndexes_[columns[i]] = std::move(ci);
     }
 
     table.flushIntegrityMeta();
@@ -219,6 +223,17 @@ Table Table::load(const std::filesystem::path& dbPath,
     }
 
     table.loadIndexFromTid();
+    for (std::size_t i = 1; i < table.schema_.columns.size(); ++i) {
+        const std::string& col = table.schema_.columns[i];
+        auto nidxPath = table.nonPrimaryIndexFilePath(col);
+        if (std::filesystem::exists(nidxPath)) {
+            ColumnIndex ci;
+            ci.filePath = nidxPath;
+            ci.active = true;
+            ci.load(nidxPath);
+            table.secondaryIndexes_[col] = std::move(ci);
+        }
+    }
     table.loadConstraintsFromIntegrityMeta();
     if (!table.schema_.columns.empty()) {
         table.schema_.columnMetas.front().integrities |= (1 | 2 | 4);
@@ -241,11 +256,20 @@ void Table::insert(const std::vector<std::string>& values) {
     const std::uint64_t offset = appendDataRow(normalized);
     primaryKeyOffsets_[primaryKey] = offset;
     primaryKeyOffsetsOrdered_[primaryKey] = offset;
+
+    for (std::size_t i = 1; i < schema_.columns.size(); ++i) {
+        auto it = secondaryIndexes_.find(schema_.columns[i]);
+        if (it != secondaryIndexes_.end() && it->second.active) {
+            it->second.add(normalized[i], offset);
+            it->second.save(it->second.filePath);
+        }
+    }
+
     syncIndexPages();
 }
 
 bool Table::updateByPrimaryKey(const std::string& primaryKey,
-                               const std::vector<std::string>& newValues) {
+                                const std::vector<std::string>& newValues) {
     if (primaryKey.empty() || newValues.empty()) {
         return false;
     }
@@ -261,6 +285,14 @@ bool Table::updateByPrimaryKey(const std::string& primaryKey,
     }
     if (hitIndex == rows.size()) {
         return false;
+    }
+
+    const std::vector<std::string>& oldValues = rows[hitIndex].values;
+    for (std::size_t i = 1; i < schema_.columns.size() && i < oldValues.size(); ++i) {
+        auto it = secondaryIndexes_.find(schema_.columns[i]);
+        if (it != secondaryIndexes_.end() && it->second.active) {
+            it->second.remove(oldValues[i], primaryKeyOffsets_[primaryKey]);
+        }
     }
 
     const std::string newPrimaryKey = makePrimaryKey(normalized);
@@ -282,6 +314,15 @@ bool Table::updateByPrimaryKey(const std::string& primaryKey,
     rows[hitIndex] = Row{normalized};
     rewriteDataRows(rows);
     rebuildIndexFromData();
+
+    for (std::size_t i = 1; i < schema_.columns.size() && i < normalized.size(); ++i) {
+        auto it = secondaryIndexes_.find(schema_.columns[i]);
+        if (it != secondaryIndexes_.end() && it->second.active) {
+            it->second.add(normalized[i], primaryKeyOffsets_[newPrimaryKey]);
+            it->second.save(it->second.filePath);
+        }
+    }
+
     return true;
 }
 
@@ -291,6 +332,14 @@ bool Table::deleteByPrimaryKey(const std::string& primaryKey) {
     }
 
     std::vector<Row> rows = readAllDataRows();
+    std::vector<std::string> oldValues;
+    for (const auto& row : rows) {
+        if (!row.values.empty() && row.values.front() == primaryKey) {
+            oldValues = row.values;
+            break;
+        }
+    }
+
     std::vector<Row> keptRows;
     keptRows.reserve(rows.size());
     bool deleted = false;
@@ -303,6 +352,14 @@ bool Table::deleteByPrimaryKey(const std::string& primaryKey) {
     }
     if (!deleted) {
         return false;
+    }
+
+    for (std::size_t i = 1; i < schema_.columns.size() && i < oldValues.size(); ++i) {
+        auto it = secondaryIndexes_.find(schema_.columns[i]);
+        if (it != secondaryIndexes_.end() && it->second.active) {
+            it->second.remove(oldValues[i], primaryKeyOffsets_[primaryKey]);
+            it->second.save(it->second.filePath);
+        }
     }
 
     rewriteDataRows(keptRows);
@@ -776,6 +833,89 @@ std::uint64_t Table::appendDataRow(const std::vector<std::string>& values) const
     ensure(ofs.good(), "failed to open table data file: " + dataFilePath().string());
     ofs << "ROW|" << join(values, "|") << '\n';
     return offset;
+}
+
+void Table::ColumnIndex::save(const std::filesystem::path& path) {
+    std::ofstream ofs(path, std::ios::trunc);
+    for (const auto& kv : entries) {
+        ofs << kv.first << "|" << kv.second << '\n';
+    }
+}
+
+void Table::ColumnIndex::load(const std::filesystem::path& path) {
+    entries.clear();
+    if (!std::filesystem::exists(path)) return;
+    std::ifstream ifs(path);
+    if (!ifs.good()) return;
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.empty()) continue;
+        auto sep = line.rfind('|');
+        if (sep == std::string::npos || sep == 0 || sep == line.size() - 1) continue;
+        try {
+            std::string key = line.substr(0, sep);
+            std::uint64_t off = std::stoull(line.substr(sep + 1));
+            entries.emplace(std::move(key), off);
+        } catch (...) {}
+    }
+}
+
+bool Table::ColumnIndex::lookup(const std::string& value, Table::CompareOp op,
+                                 const std::string& secondValue,
+                                 const std::vector<std::string>& values,
+                                 std::vector<std::uint64_t>& offsets) const {
+    offsets.clear();
+    switch (op) {
+        case Table::CompareOp::EQ: {
+            auto range = entries.equal_range(value);
+            for (auto it = range.first; it != range.second; ++it) offsets.push_back(it->second);
+            break;
+        }
+        case Table::CompareOp::NE: {
+            for (const auto& kv : entries) {
+                if (kv.first != value) offsets.push_back(kv.second);
+            }
+            break;
+        }
+        case Table::CompareOp::GT: {
+            for (auto it = entries.upper_bound(value); it != entries.end(); ++it)
+                offsets.push_back(it->second);
+            break;
+        }
+        case Table::CompareOp::GE: {
+            for (auto it = entries.lower_bound(value); it != entries.end(); ++it)
+                offsets.push_back(it->second);
+            break;
+        }
+        case Table::CompareOp::LT: {
+            for (auto it = entries.begin(); it != entries.lower_bound(value); ++it)
+                offsets.push_back(it->second);
+            break;
+        }
+        case Table::CompareOp::LE: {
+            for (auto it = entries.begin(); it != entries.upper_bound(value); ++it)
+                offsets.push_back(it->second);
+            break;
+        }
+        case Table::CompareOp::BETWEEN: {
+            for (auto it = entries.lower_bound(value);
+                 it != entries.upper_bound(secondValue); ++it)
+                offsets.push_back(it->second);
+            break;
+        }
+        case Table::CompareOp::IN: {
+            for (const auto& v : values) {
+                auto range = entries.equal_range(v);
+                for (auto it = range.first; it != range.second; ++it) offsets.push_back(it->second);
+            }
+            break;
+        }
+        case Table::CompareOp::LIKE:
+            return false;
+    }
+    std::sort(offsets.begin(), offsets.end());
+    offsets.erase(std::unique(offsets.begin(), offsets.end()), offsets.end());
+    return true;
 }
 
 namespace {
@@ -1458,7 +1598,9 @@ bool Table::matchConditionTree(const Row& row, const std::shared_ptr<ConditionNo
 }
 
 bool Table::hasIndexForColumn(const std::string& column) const {
-    return !schema_.columns.empty() && column == schema_.columns.front();
+    if (!schema_.columns.empty() && column == schema_.columns.front()) return true;
+    auto it = secondaryIndexes_.find(column);
+    return it != secondaryIndexes_.end() && it->second.active;
 }
 
 bool Table::canUseIndexForCondition(const WhereCondition& condition) const {
@@ -1477,8 +1619,8 @@ bool Table::lookupOffsetsByIndexedRequest(const IndexedLookupRequest& request,
 }
 
 bool Table::lookupOffsetsByPrimaryIndex(const IndexedLookupRequest& request,
-                                        std::vector<std::uint64_t>& offsets) const {
-    if (!hasIndexForColumn(request.column)) {
+                                         std::vector<std::uint64_t>& offsets) const {
+    if (schema_.columns.empty() || request.column != schema_.columns.front()) {
         return false;
     }
     offsets.clear();
@@ -1556,11 +1698,11 @@ bool Table::lookupOffsetsByPrimaryIndex(const IndexedLookupRequest& request,
 }
 
 bool Table::lookupOffsetsBySecondaryIndex(const IndexedLookupRequest& request,
-                                          std::vector<std::uint64_t>& offsets) const {
-    (void)request;
+                                           std::vector<std::uint64_t>& offsets) const {
     offsets.clear();
-    // Reserved extension point: future non-primary index providers can be plugged in here.
-    return false;
+    auto it = secondaryIndexes_.find(request.column);
+    if (it == secondaryIndexes_.end() || !it->second.active) return false;
+    return it->second.lookup(request.value, request.op, request.secondValue, request.values, offsets);
 }
 
 bool Table::lookupOffsetsByIndexedCondition(const WhereCondition& condition,

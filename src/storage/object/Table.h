@@ -224,12 +224,34 @@ public:
     bool containsPrimaryKey(const std::string& key) const;
 
 private:
+    struct ColumnIndex {
+        std::multimap<std::string, std::uint64_t> entries;
+        std::filesystem::path filePath;
+        bool active = false;
+
+        void add(const std::string& value, std::uint64_t offset) {
+            entries.emplace(value, offset);
+        }
+        void remove(const std::string& value, std::uint64_t offset) {
+            auto range = entries.equal_range(value);
+            for (auto it = range.first; it != range.second; ++it) {
+                if (it->second == offset) { entries.erase(it); break; }
+            }
+        }
+        void save(const std::filesystem::path& path);
+        void load(const std::filesystem::path& path);
+        bool lookup(const std::string& value, Table::CompareOp op,
+                    const std::string& secondValue, const std::vector<std::string>& values,
+                    std::vector<std::uint64_t>& offsets) const;
+    };
+
     std::filesystem::path dbPath_;
     TableSchema schema_;
     BTree<std::string, Row> index_{2};
     std::unordered_map<std::string, std::uint64_t> primaryKeyOffsets_;
     std::map<std::string, std::uint64_t> primaryKeyOffsetsOrdered_;
     std::unordered_map<std::string, ColumnConstraintSpec> constraintsByColumn_;
+    std::unordered_map<std::string, ColumnIndex> secondaryIndexes_;
     std::uint32_t rootPageId_ = 1;
     std::uint32_t nextPageId_ = 2;
     using TidNodeRef = BTree<std::string, Row>::TidNodeRef;

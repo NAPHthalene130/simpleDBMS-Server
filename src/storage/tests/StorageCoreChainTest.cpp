@@ -491,6 +491,46 @@ int main()
         {"Key"}, {storage::Table::WhereCondition{"Key", storage::Table::CompareOp::EQ, "0200"}});
     ensure(lastRow.size() == 1 && lastRow.front().values.front() == "0200", "bulk EQ last query mismatch");
 
+    const std::string sidxTableName = "SITB";
+    ensure(databaseManager->createTable(dbName, sidxTableName, {"ID", "Tag", "Score"}),
+           "createTable secondary index failed");
+    for (int i = 1; i <= 100; ++i) {
+        std::string id = std::to_string(i);
+        while (id.size() < 3) id = "0" + id;
+        std::string tag = (i <= 50) ? "alpha" : "beta";
+        std::string score = std::to_string((i * 7) % 100);
+        if (score.size() < 2) score = "0" + score;
+        ensure(databaseManager->insertRow(dbName, sidxTableName, {id, tag, score}),
+               ("insertRow si failed i=" + std::to_string(i)).c_str());
+    }
+
+    auto siTable = storage::Table::load(dbDir, sidxTableName);
+
+    auto tagAlpha = siTable.select(
+        {"ID"}, {storage::Table::WhereCondition{"Tag", storage::Table::CompareOp::EQ, "alpha"}});
+    ensure(tagAlpha.size() == 50, "secondary index EQ Tag=alpha mismatch (" + std::to_string(tagAlpha.size()) + ")");
+
+    auto tagBeta = siTable.select(
+        {"ID"}, {storage::Table::WhereCondition{"Tag", storage::Table::CompareOp::EQ, "beta"}});
+    ensure(tagBeta.size() == 50, "secondary index EQ Tag=beta mismatch (" + std::to_string(tagBeta.size()) + ")");
+
+    storage::Table::WhereCondition scoreBetween;
+    scoreBetween.column = "Score";
+    scoreBetween.op = storage::Table::CompareOp::BETWEEN;
+    scoreBetween.value = "20";
+    scoreBetween.secondValue = "40";
+    auto scoreRange = siTable.select({"ID"}, {scoreBetween});
+    std::cout << "[SI] Score BETWEEN 20-40: " << scoreRange.size() << " rows" << std::endl;
+
+    auto scoreGT = siTable.select(
+        {"ID"}, {storage::Table::WhereCondition{"Score", storage::Table::CompareOp::GT, "80"}});
+    std::cout << "[SI] Score GT 80: " << scoreGT.size() << " rows" << std::endl;
+
+    ensure(std::filesystem::exists(dbDir / (sidxTableName + ".Tag.nidx")),
+           ".nidx file for Tag not found");
+    ensure(std::filesystem::exists(dbDir / (sidxTableName + ".Score.nidx")),
+           ".nidx file for Score not found");
+
     std::cout << "StorageCoreChainTest passed." << std::endl;
     return 0;
     } catch (const std::exception &e) {

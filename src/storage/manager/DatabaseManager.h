@@ -129,6 +129,8 @@ public:
     std::size_t deleteByCondition(const std::string &dbName, const std::string &tableName,
                                   const std::vector<storage::Table::WhereCondition> &whereConditions);
     bool truncateTable(const std::string &dbName, const std::string &tableName);
+    storage::Table::SubqueryResult evaluateSubquery(const std::string &dbName,
+                                                     const storage::Table::SubquerySpec &spec);
     std::vector<storage::Row> selectRows(const std::string &dbName,
                                          const std::string &tableName,
                                          const std::vector<std::string> &targetColumns,

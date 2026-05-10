@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
@@ -132,6 +134,33 @@ inline std::vector<std::string> split(const std::string& text, char delim) {
         result.push_back(item);
     }
     return result;
+}
+
+/**
+ * @brief 尝试字符串转数值
+ */
+inline bool tryParseNumber(const std::string& text, double& value) {
+    errno = 0;
+    char* end = nullptr;
+    const double parsed = std::strtod(text.c_str(), &end);
+    if (end == text.c_str() || *end != '\0' || errno == ERANGE) return false;
+    value = parsed;
+    return true;
+}
+
+/**
+ * @brief LIKE 模式匹配，支持 % 通配
+ */
+inline bool likeMatch(const std::string& text, const std::string& pattern) {
+    std::size_t t = 0, p = 0, star = std::string::npos, match = 0;
+    while (t < text.size()) {
+        if (p < pattern.size() && (pattern[p] == text[t] || pattern[p] == '_')) { ++t; ++p; continue; }
+        if (p < pattern.size() && pattern[p] == '%') { star = p++; match = t; continue; }
+        if (star != std::string::npos) { p = star + 1; t = ++match; continue; }
+        return false;
+    }
+    while (p < pattern.size() && pattern[p] == '%') ++p;
+    return p == pattern.size();
 }
 
 /**

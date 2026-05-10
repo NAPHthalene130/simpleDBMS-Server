@@ -698,6 +698,113 @@ int main()
         ensure(r.size() == 0, "truncate: expected 0 rows");
     }
 
+    // ======== Subquery Tests ========
+    const std::string sqTable1 = "SQT1";
+    const std::string sqTable2 = "SQT2";
+    ensure(databaseManager->createTable(dbName, sqTable1, {"A", "B"}), "create sqt1 failed");
+    ensure(databaseManager->createTable(dbName, sqTable2, {"X", "Y"}), "create sqt2 failed");
+    for (int i = 1; i <= 5; ++i)
+        ensure(databaseManager->insertRow(dbName, sqTable1, {std::to_string(i), "val"+std::to_string(i)}), "insert sqt1 failed");
+    ensure(databaseManager->insertRow(dbName, sqTable2, {"3", "match3"}), "insert sqt2 failed");
+    ensure(databaseManager->insertRow(dbName, sqTable2, {"5", "match5"}), "insert sqt2 failed");
+    ensure(databaseManager->insertRow(dbName, sqTable2, {"7", "match7"}), "insert sqt2 failed");
+
+    // Test: Scalar subquery (SELECT MAX(A) FROM SQT1) used as condition
+    {
+        storage::Table::SubquerySpec spec;
+        spec.dbName = dbName; spec.tableName = sqTable1;
+        spec.targetColumns = {"A"};
+        spec.aggregates = {storage::Table::AggregateExpr{storage::Table::AggregateOp::MAX, "A"}};
+        auto t = storage::Table::load(dbDir, sqTable1);
+        auto result = t.evaluateSubquery(spec);
+        ensure(result.kind == storage::Table::SubqueryKind::Scalar && result.scalarValue == "5",
+               "scalar subquery MAX(A) mismatch: " + result.scalarValue);
+    }
+
+    // Test: IN subquery (A IN (SELECT X FROM SQT2))
+    {
+        storage::Table::SubquerySpec spec;
+        spec.dbName = dbName; spec.tableName = sqTable2;
+        spec.targetColumns = {"X"};
+        auto t = storage::Table::load(dbDir, sqTable1);
+        auto result = t.evaluateSubquery(spec);
+        ensure(result.kind == storage::Table::SubqueryKind::RowSet && result.rows.size() == 3,
+               "IN subquery row count mismatch: " + std::to_string(result.rows.size()));
+
+        // Use IN result in WhereCondition
+        storage::Table::WhereCondition cond;
+        cond.column = "A";
+        cond.op = storage::Table::CompareOp::IN;
+        cond.values = result.rows;
+        auto matched = t.select({"A"}, {cond});
+        ensure(matched.size() == 2, "IN subquery match count: expected 2 (3,5), got " + std::to_string(matched.size()));
+    }
+
+    // Test: NOT IN subquery
+    {
+        storage::Table::SubquerySpec spec;
+        spec.dbName = dbName; spec.tableName = sqTable2;
+        spec.targetColumns = {"X"};
+        auto t = storage::Table::load(dbDir, sqTable1);
+        auto result = t.evaluateSubquery(spec);
+
+        storage::Table::WhereCondition cond;
+        cond.column = "A";
+        cond.op = storage::Table::CompareOp::IN;
+        cond.values = result.rows;
+        cond.isSubqueryNot = true;
+        auto matched = t.select({"A"}, {cond});
+        ensure(matched.size() == 3, "NOT IN subquery: expected 3, got " + std::to_string(matched.size()));
+    }
+
+    // Test: EXISTS subquery
+    {
+        storage::Table::SubquerySpec spec;
+        spec.dbName = dbName; spec.tableName = sqTable2;
+        spec.whereConditions = {storage::Table::WhereCondition{"X", storage::Table::CompareOp::EQ, "3"}};
+        auto t = storage::Table::load(dbDir, sqTable1);
+        auto result = t.evaluateSubquery(spec);
+
+        storage::Table::WhereCondition cond;
+        cond.isExistsCheck = true;
+        cond.values = result.rows.empty() ? std::vector<std::string>{} : std::vector<std::string>{"1"};
+        auto matched = t.select({"A"}, {cond});
+        ensure(matched.size() == 5, "EXISTS: expected 5 rows, got " + std::to_string(matched.size()));
+    }
+
+    // Test: NOT EXISTS subquery (subquery returns empty)
+    {
+        storage::Table::SubquerySpec spec;
+        spec.dbName = dbName; spec.tableName = sqTable2;
+        spec.whereConditions = {storage::Table::WhereCondition{"X", storage::Table::CompareOp::EQ, "99"}};
+        auto t = storage::Table::load(dbDir, sqTable1);
+        auto result = t.evaluateSubquery(spec);
+
+        storage::Table::WhereCondition cond;
+        cond.isExistsCheck = true;
+        cond.isSubqueryNot = true;
+        cond.values = result.rows.empty() ? std::vector<std::string>{} : std::vector<std::string>{"1"};
+        auto matched = t.select({"A"}, {cond});
+        ensure(matched.size() == 5, "NOT EXISTS (empty): expected 5 rows, got " + std::to_string(matched.size()));
+    }
+
+    // Test: Correlated subquery ($outer.col reference)
+    // SELECT * FROM SQT1 WHERE EXISTS (SELECT 1 FROM SQT2 WHERE SQT2.X = SQT1.A)
+    {
+        auto outerTable = storage::Table::load(dbDir, sqTable1);
+        auto outerRows = outerTable.select({"*"});
+        std::size_t matchCount = 0;
+        for (const auto& row : outerRows) {
+            storage::Table::SubquerySpec spec;
+            spec.dbName = dbName; spec.tableName = sqTable2;
+            spec.targetColumns = {"X"};
+            spec.whereConditions = {storage::Table::WhereCondition{"X", storage::Table::CompareOp::EQ, "$outer.A"}};
+            auto result = outerTable.evaluateSubqueryForRow(spec, row);
+            if (!result.rows.empty()) ++matchCount;
+        }
+        ensure(matchCount == 2, "correlated EXISTS: expected 2 matches (A=3,5), got " + std::to_string(matchCount));
+    }
+
     std::cout << "StorageCoreChainTest passed." << std::endl;
     return 0;
     } catch (const std::exception &e) {

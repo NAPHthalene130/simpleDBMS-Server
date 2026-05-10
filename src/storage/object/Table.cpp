@@ -17,17 +17,6 @@ namespace storage {
 
 namespace {
 
-bool tryParseNumber(const std::string& text, double& value) {
-    errno = 0;
-    char* end = nullptr;
-    const double parsed = std::strtod(text.c_str(), &end);
-    if (end == text.c_str() || *end != '\0' || errno == ERANGE) {
-        return false;
-    }
-    value = parsed;
-    return true;
-}
-
 std::string formatDouble(double value) {
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(6) << value;
@@ -392,6 +381,62 @@ void Table::truncate() {
     primaryKeyOffsetsOrdered_.clear();
     std::filesystem::resize_file(dataFilePath(), 0);
     syncIndexPages();
+}
+
+Table::SubqueryResult Table::evaluateSubquery(const SubquerySpec& spec) const {
+    SubqueryResult result;
+    if (spec.dbName.empty() || spec.tableName.empty()) return result;
+
+    auto dbPath = dbPath_.parent_path() / spec.dbName;
+    if (spec.dbName == dbPath_.filename().string()) dbPath = dbPath_;
+    else if (!std::filesystem::exists(dbPath)) return result;
+
+    auto targetTable = Table::load(dbPath, spec.tableName);
+
+    if (!spec.aggregates.empty()) {
+        auto agg = targetTable.aggregate(spec.aggregates, spec.whereConditions);
+        result.kind = SubqueryKind::Scalar;
+        if (!agg.empty()) result.scalarValue = agg.front();
+        return result;
+    }
+
+    auto rows = targetTable.select(spec.targetColumns.empty() ? std::vector<std::string>{"*"} : spec.targetColumns,
+                                    spec.whereConditions, {}, spec.options);
+    result.kind = SubqueryKind::RowSet;
+    result.rows.reserve(rows.size());
+    for (const auto& r : rows) {
+        if (!r.values.empty()) result.rows.push_back(r.values.front());
+    }
+    return result;
+}
+
+Table::SubqueryResult Table::evaluateSubqueryForRow(const SubquerySpec& spec, const Row& outerRow) const {
+    SubquerySpec resolved = spec;
+    for (auto& cond : resolved.whereConditions) {
+        if (cond.value.size() > 7 && cond.value.rfind("$outer.", 0) == 0) {
+            std::string colName = cond.value.substr(7);
+            for (std::size_t i = 0; i < schema_.columns.size(); ++i) {
+                if (schema_.columns[i] == colName && i < outerRow.values.size()) {
+                    cond.value = outerRow.values[i];
+                    break;
+                }
+            }
+        }
+        if (cond.secondValue.size() > 7 && cond.secondValue.rfind("$outer.", 0) == 0) {
+            std::string colName = cond.secondValue.substr(7);
+            for (std::size_t i = 0; i < schema_.columns.size(); ++i) {
+                if (schema_.columns[i] == colName && i < outerRow.values.size()) {
+                    cond.secondValue = outerRow.values[i];
+                    break;
+                }
+            }
+        }
+    }
+    auto dbPath = dbPath_.parent_path() / resolved.dbName;
+    if (resolved.dbName == dbPath_.filename().string()) dbPath = dbPath_;
+    else if (!std::filesystem::exists(dbPath)) return SubqueryResult{};
+    auto targetTable = Table::load(dbPath, resolved.tableName);
+    return targetTable.evaluateSubquery(resolved);
 }
 
 std::size_t Table::compact() {
@@ -2054,11 +2099,19 @@ bool Table::matchWhere(const Row& row, const std::vector<WhereCondition>& whereC
 bool Table::matchConditionTree(const Row& row, const std::shared_ptr<ConditionNode>& node) const {
     if (!node) return true;
     if (node->isLeaf) {
-        const std::size_t idx = columnIndex(node->condition.column);
+        const auto& cond = node->condition;
+        if (cond.isExistsCheck) {
+            bool hasRows = !cond.values.empty() && cond.values[0] == "1";
+            return cond.isSubqueryNot ? !hasRows : hasRows;
+        }
+        const std::size_t idx = columnIndex(cond.column);
         if (idx >= row.values.size()) return false;
-        if (node->condition.op == CompareOp::IN || node->condition.op == CompareOp::BETWEEN || node->condition.op == CompareOp::LIKE)
-            return compareValue(row.values[idx], node->condition);
-        return compareTyped(idx, row.values[idx], node->condition.op, node->condition.value);
+        bool match;
+        if (cond.op == CompareOp::IN || cond.op == CompareOp::BETWEEN || cond.op == CompareOp::LIKE)
+            match = compareValue(row.values[idx], cond);
+        else
+            match = compareTyped(idx, row.values[idx], cond.op, cond.value);
+        return cond.isSubqueryNot ? !match : match;
     }
     const bool leftMatch = matchConditionTree(row, node->left);
     const bool rightMatch = matchConditionTree(row, node->right);
@@ -2305,38 +2358,6 @@ bool Table::compareValue(const std::string& left, const WhereCondition& conditio
                && compareValue(left, CompareOp::LE, condition.secondValue);
     }
     return compareValue(left, condition.op, condition.value);
-}
-
-bool Table::likeMatch(const std::string& text, const std::string& pattern) {
-    // Support SQL-like wildcard '%' (zero or more chars).
-    std::size_t t = 0;
-    std::size_t p = 0;
-    std::size_t star = std::string::npos;
-    std::size_t match = 0;
-
-    while (t < text.size()) {
-        if (p < pattern.size() && (pattern[p] == text[t])) {
-            ++t;
-            ++p;
-            continue;
-        }
-        if (p < pattern.size() && pattern[p] == '%') {
-            star = p++;
-            match = t;
-            continue;
-        }
-        if (star != std::string::npos) {
-            p = star + 1;
-            t = ++match;
-            continue;
-        }
-        return false;
-    }
-
-    while (p < pattern.size() && pattern[p] == '%') {
-        ++p;
-    }
-    return p == pattern.size();
 }
 
 std::string Table::makePrimaryKey(const std::vector<std::string>& values) const {

@@ -294,89 +294,6 @@ bool readTableBlock(const std::filesystem::path &dbPath, const std::string &tabl
     return true;
 }
 
-bool tryParseNumber(const std::string &text, double &value)
-{
-    errno = 0;
-    char *end = nullptr;
-    const double parsed = std::strtod(text.c_str(), &end);
-    if (end == text.c_str() || *end != '\0' || errno == ERANGE) {
-        return false;
-    }
-    value = parsed;
-    return true;
-}
-
-bool likeMatch(const std::string &text, const std::string &pattern)
-{
-    std::size_t t = 0;
-    std::size_t p = 0;
-    std::size_t star = std::string::npos;
-    std::size_t match = 0;
-
-    while (t < text.size()) {
-        if (p < pattern.size() && pattern[p] == text[t]) {
-            ++t;
-            ++p;
-            continue;
-        }
-        if (p < pattern.size() && pattern[p] == '%') {
-            star = p++;
-            match = t;
-            continue;
-        }
-        if (star != std::string::npos) {
-            p = star + 1;
-            t = ++match;
-            continue;
-        }
-        return false;
-    }
-    while (p < pattern.size() && pattern[p] == '%') {
-        ++p;
-    }
-    return p == pattern.size();
-}
-
-bool compareByOp(const std::string &left,
-                 storage::Table::CompareOp op,
-                 const std::string &right)
-{
-    if (op == storage::Table::CompareOp::LIKE) {
-        return likeMatch(left, right);
-    }
-    double leftNum = 0.0;
-    double rightNum = 0.0;
-    const bool leftIsNum = tryParseNumber(left, leftNum);
-    const bool rightIsNum = tryParseNumber(right, rightNum);
-    if (leftIsNum && rightIsNum) {
-        switch (op) {
-            case storage::Table::CompareOp::EQ: return leftNum == rightNum;
-            case storage::Table::CompareOp::NE: return leftNum != rightNum;
-            case storage::Table::CompareOp::GT: return leftNum > rightNum;
-            case storage::Table::CompareOp::GE: return leftNum >= rightNum;
-            case storage::Table::CompareOp::LT: return leftNum < rightNum;
-            case storage::Table::CompareOp::LE: return leftNum <= rightNum;
-            case storage::Table::CompareOp::LIKE:
-            case storage::Table::CompareOp::IN:
-            case storage::Table::CompareOp::BETWEEN:
-                break;
-        }
-    }
-    switch (op) {
-        case storage::Table::CompareOp::EQ: return left == right;
-        case storage::Table::CompareOp::NE: return left != right;
-        case storage::Table::CompareOp::GT: return left > right;
-        case storage::Table::CompareOp::GE: return left >= right;
-        case storage::Table::CompareOp::LT: return left < right;
-        case storage::Table::CompareOp::LE: return left <= right;
-        case storage::Table::CompareOp::LIKE: return likeMatch(left, right);
-        case storage::Table::CompareOp::IN:
-        case storage::Table::CompareOp::BETWEEN:
-            return false;
-    }
-    return false;
-}
-
 std::string buildJoinedKey(const std::string &source, const std::string &column)
 {
     return source + "." + column;
@@ -441,7 +358,7 @@ bool evaluateJoinCondition(const JoinedRecord &record,
     if (leftIt == record.end() || rightIt == record.end()) {
         return false;
     }
-    return compareByOp(leftIt->second, condition.op, rightIt->second);
+    return storage::Table::compareValue(leftIt->second, condition.op, rightIt->second);
 }
 
 bool evaluateJoinFilter(const JoinedRecord &record,
@@ -457,10 +374,10 @@ bool evaluateJoinFilter(const JoinedRecord &record,
         return std::find(filter.values.begin(), filter.values.end(), it->second) != filter.values.end();
     }
     if (filter.op == storage::Table::CompareOp::BETWEEN) {
-        return compareByOp(it->second, storage::Table::CompareOp::GE, filter.value)
-            && compareByOp(it->second, storage::Table::CompareOp::LE, filter.secondValue);
+        return storage::Table::compareValue(it->second, storage::Table::CompareOp::GE, filter.value)
+            && storage::Table::compareValue(it->second, storage::Table::CompareOp::LE, filter.secondValue);
     }
-    return compareByOp(it->second, filter.op, filter.value);
+    return storage::Table::compareValue(it->second, filter.op, filter.value);
 }
 
 } // namespace
@@ -841,6 +758,17 @@ bool DatabaseManager::truncateTable(const std::string &dbName, const std::string
     } catch (...) { return false; }
 }
 
+storage::Table::SubqueryResult DatabaseManager::evaluateSubquery(const std::string &dbName,
+                                                                  const storage::Table::SubquerySpec &spec) {
+    storage::Table::SubqueryResult result;
+    if (dbName.empty()) return result;
+    try {
+        auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        auto table = storage::Table::load(dbPath, spec.tableName);
+        return table.evaluateSubquery(spec);
+    } catch (...) { return result; }
+}
+
 std::vector<storage::Row> DatabaseManager::selectRows(
     const std::string &dbName,
     const std::string &tableName,
@@ -1001,8 +929,8 @@ DatabaseManager::JoinResult DatabaseManager::selectJoinRows(
                                      const std::string &rv = rhs.values[orderIdx];
                                      double ln = 0.0;
                                      double rn = 0.0;
-                                     const bool lNum = tryParseNumber(lv, ln);
-                                     const bool rNum = tryParseNumber(rv, rn);
+                                      const bool lNum = storage::tryParseNumber(lv, ln);
+                                      const bool rNum = storage::tryParseNumber(rv, rn);
                                      if (lNum && rNum) {
                                          return desc ? (ln > rn) : (ln < rn);
                                      }

@@ -60,6 +60,8 @@ public:
         std::string value;
         std::string secondValue;
         std::vector<std::string> values;
+        bool isSubqueryNot = false;
+        bool isExistsCheck = false;
     };
 
     struct AggregateExpr {
@@ -80,6 +82,25 @@ public:
         bool orderByDesc = false;
         bool hasLimit = false;
         std::size_t limit = 0;
+    };
+
+    enum class SubqueryKind { Scalar, RowSet, Exists };
+
+    struct SubqueryResult {
+        SubqueryKind kind = SubqueryKind::Scalar;
+        std::string scalarValue;
+        std::vector<std::string> rows;
+        bool exists = false;
+        bool empty() const { return kind == SubqueryKind::RowSet ? rows.empty() : (kind == SubqueryKind::Exists ? !exists : scalarValue.empty()); }
+    };
+
+    struct SubquerySpec {
+        std::string dbName;
+        std::string tableName;
+        std::vector<std::string> targetColumns;
+        std::vector<WhereCondition> whereConditions;
+        std::vector<AggregateExpr> aggregates;
+        SelectOptions options;
     };
 
     enum class ConstraintType {
@@ -197,49 +218,23 @@ public:
      */
     void truncate();
 
-    /**
-     * @brief 压缩 .trd 数据文件，整理页内碎片并回收空间
-     * @author Startale
-     * @return 移除的已删除槽位数
-     */
     std::size_t compact();
 
-    /**
-     * @brief 添加新列，已有行用默认值填充
-     * @author Startale
-     */
     bool addColumn(const std::string& name, DataType type, std::uint16_t varcharLen = 0,
                    const std::string& defaultValue = "");
-
-    /**
-     * @brief 重命名表及所有物理文件
-     * @author Startale
-     */
     bool rename(const std::string& newName);
-
-    /**
-     * @brief 移除指定列的指定类型约束
-     * @author Startale
-     */
     bool dropConstraint(const std::string& column, ConstraintType type);
-
-    /**
-     * @brief 删除指定列（不能删除主键列）
-     * @author Startale
-     */
     bool dropColumn(const std::string& name);
-
-    /**
-     * @brief 重命名指定列
-     * @author Startale
-     */
     bool renameColumn(const std::string& oldName, const std::string& newName);
+    bool alterColumnType(const std::string& column, DataType newType, std::uint16_t varcharLen = 0);
+
+    SubqueryResult evaluateSubquery(const SubquerySpec& spec) const;
 
     /**
-     * @brief 修改指定列的数据类型
+     * @brief 求值关联子查询，将 spec 中 "$outer.col" 引用替换为 outerRow 对应列值
      * @author Startale
      */
-    bool alterColumnType(const std::string& column, DataType newType, std::uint16_t varcharLen = 0);
+    SubqueryResult evaluateSubqueryForRow(const SubquerySpec& spec, const Row& outerRow) const;
 
     /**
      * @brief 按列投影并按条件过滤查询数据
@@ -498,15 +493,6 @@ private:
     static bool compareValue(const std::string& left,
                               const WhereCondition& condition);
     bool compareTyped(std::size_t colIndex, const std::string& left, CompareOp op, const std::string& right) const;
-
-    /**
-     * @brief LIKE 模式匹配
-     * @author Startale
-     * @param text 待匹配文本
-     * @param pattern LIKE 模式，支持 % 通配
-     * @return 是否匹配
-     */
-    static bool likeMatch(const std::string& text, const std::string& pattern);
 
     /**
      * @brief 生成主键值

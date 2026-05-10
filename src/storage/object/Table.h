@@ -267,7 +267,6 @@ private:
 
     struct DataPageManager {
         Table& table;
-        std::uint32_t nextPageId = 1;
 
         explicit DataPageManager(Table& t) : table(t) {}
 

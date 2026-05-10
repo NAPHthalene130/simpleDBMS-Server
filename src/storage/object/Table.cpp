@@ -983,8 +983,10 @@ TupleRef Table::DataPageManager::allocate(const std::vector<std::string>& values
     const auto path = table.dataFilePath();
     Row row{values};
     std::string tupleData = serializeRow(row);
+    std::uintmax_t fileSize = std::filesystem::exists(path) ? std::filesystem::file_size(path) : 0;
+    std::uint32_t maxPg = static_cast<std::uint32_t>(fileSize / kDataPageSize);
 
-    for (std::uint32_t pg = 1; pg <= nextPageId; ++pg) {
+    for (std::uint32_t pg = 1; pg <= maxPg; ++pg) {
         std::string pageData = FileManager::readPage(path, pg);
         if (!pageData.empty()) {
             DataPageHeader hdr;
@@ -1005,7 +1007,7 @@ TupleRef Table::DataPageManager::allocate(const std::vector<std::string>& values
         }
     }
     // Allocate new page
-    std::uint32_t pg = nextPageId++;
+    std::uint32_t pg = maxPg + 1;
     std::string pageData(kDataPageSize, '\0');
     DataPageHeader hdr;
     hdr.pageId = pg; hdr.freeStart = kDataPageHeader; hdr.freeEnd = kDataPageSize;
@@ -1062,7 +1064,9 @@ std::vector<Row> Table::DataPageManager::scanAll() const {
 void Table::DataPageManager::scan(std::function<void(TupleRef, const Row&)> visitor) const {
     const auto path = table.dataFilePath();
     if (!std::filesystem::exists(path)) return;
-    for (std::uint32_t pg = 1; pg <= nextPageId + 1; ++pg) {
+    std::uintmax_t fileSize = std::filesystem::file_size(path);
+    std::uint32_t maxPage = static_cast<std::uint32_t>(fileSize / kDataPageSize);
+    for (std::uint32_t pg = 1; pg <= maxPage; ++pg) {
         std::string pageData = FileManager::readPage(path, pg);
         if (pageData.empty()) break;
         DataPageHeader hdr;

@@ -85,7 +85,8 @@ public:
     enum class ConstraintType {
         NOT_NULL,
         UNIQUE,
-        DEFAULT_VALUE
+        DEFAULT_VALUE,
+        CHECK_CONSTRAINT
     };
 
     struct ColumnConstraintSpec {
@@ -94,6 +95,8 @@ public:
         bool unique = false;
         bool hasDefault = false;
         std::string defaultValue;
+        bool hasCheck = false;
+        std::string checkExpr;  // format: "op|value" e.g. ">=|18" or "<|100"
     };
 
     struct ColumnDefinition {
@@ -172,6 +175,13 @@ public:
      * @return 是否删除成功
      */
     bool deleteByPrimaryKey(const std::string& primaryKey);
+
+    /**
+     * @brief 压缩 .trd 数据文件，移除 DEL| 标记行并回收空间
+     * @author Startale
+     * @return 移除的已删除行数
+     */
+    std::size_t compact();
 
     /**
      * @brief 按列投影并按条件过滤查询数据

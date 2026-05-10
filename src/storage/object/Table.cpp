@@ -344,6 +344,70 @@ bool Table::deleteByPrimaryKey(const std::string& primaryKey) {
     return true;
 }
 
+std::size_t Table::compact() {
+    std::vector<std::pair<std::uint64_t, Row>> activeRows;
+    std::uint64_t oldOffset = 0;
+    std::uint64_t deletedCount = 0;
+    {
+        std::ifstream ifs(dataFilePath());
+        if (!ifs.good()) return 0;
+        std::string line;
+        std::uint64_t pos = 0;
+        while (std::getline(ifs, line)) {
+            std::uint64_t lineLen = static_cast<std::uint64_t>(line.size()) + 1;
+            if (line.rfind("DEL|", 0) == 0) {
+                deletedCount++;
+            } else if (line.rfind("ROW|", 0) == 0) {
+                Row row = deserializeRow(line.substr(4));
+                if (row.values.size() == schema_.columns.size()) {
+                    activeRows.push_back({pos, std::move(row)});
+                }
+            }
+            pos += lineLen;
+        }
+    }
+
+    if (deletedCount == 0) return 0;
+
+    std::unordered_map<std::uint64_t, std::uint64_t> oldToNewOffset;
+    {
+        std::ofstream ofs(dataFilePath(), std::ios::trunc | std::ios::binary);
+        ensure(ofs.good(), "failed to rewrite table data file: " + dataFilePath().string());
+        std::uint64_t newPos = 0;
+        for (auto& kv : activeRows) {
+            oldToNewOffset[kv.first] = newPos;
+            std::string rowStr = "ROW|" + serializeRow(kv.second) + "\n";
+            ofs.write(rowStr.data(), static_cast<std::streamsize>(rowStr.size()));
+            newPos += static_cast<std::uint64_t>(rowStr.size());
+        }
+    }
+
+    for (auto& kv : primaryKeyOffsets_) {
+        auto it = oldToNewOffset.find(kv.second);
+        if (it != oldToNewOffset.end()) kv.second = it->second;
+    }
+    for (auto& kv : primaryKeyOffsetsOrdered_) {
+        auto it = oldToNewOffset.find(kv.second);
+        if (it != oldToNewOffset.end()) kv.second = it->second;
+    }
+
+    for (auto& kv : secondaryIndexes_) {
+        if (!kv.second.active) continue;
+        std::multimap<std::string, std::uint64_t> newEntries;
+        for (const auto& entry : kv.second.entries) {
+            auto it = oldToNewOffset.find(entry.second);
+            if (it != oldToNewOffset.end()) {
+                newEntries.emplace(entry.first, it->second);
+            }
+        }
+        kv.second.entries = std::move(newEntries);
+        kv.second.save(kv.second.filePath);
+    }
+
+    syncIndexPages();
+    return deletedCount;
+}
+
 std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
                                const std::vector<WhereCondition>& whereConditions,
                                const SelectOptions& options) const {
@@ -421,7 +485,7 @@ std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
         ensure(ifs.good(), "failed to open table data file: " + dataFilePath().string());
         std::string line;
         while (std::getline(ifs, line)) {
-            if (line.rfind("DEL|ROW|", 0) == 0) continue;
+            if (line.rfind("DEL|", 0) == 0) continue;
             if (line.rfind("ROW|", 0) != 0) continue;
             Row row = deserializeRow(line.substr(4));
             if (row.values.size() != schema_.columns.size()) continue;
@@ -509,7 +573,7 @@ std::vector<std::string> Table::aggregate(const std::vector<AggregateExpr>& expr
     ensure(ifs.good(), "failed to open table data file: " + dataFilePath().string());
     std::string line;
     while (std::getline(ifs, line)) {
-        if (line.rfind("DEL|ROW|", 0) == 0) continue;
+        if (line.rfind("DEL|", 0) == 0) continue;
         if (line.rfind("ROW|", 0) != 0) continue;
         Row row = deserializeRow(line.substr(4));
         if (row.values.size() != schema_.columns.size()) continue;
@@ -596,6 +660,10 @@ bool Table::addColumnConstraint(const ColumnConstraintSpec& spec) {
     if (spec.hasDefault) {
         merged.hasDefault = true;
         merged.defaultValue = spec.defaultValue;
+    }
+    if (spec.hasCheck) {
+        merged.hasCheck = true;
+        merged.checkExpr = spec.checkExpr;
     }
     ensure(validateConstraintForExistingRows(merged), "constraint conflicts with existing rows");
     constraintsByColumn_[spec.column] = merged;
@@ -730,6 +798,9 @@ void Table::flushIntegrityMeta() const {
         if (spec.hasDefault) {
             ofs << "constraint=DEFAULT(" << col << "|" << encodeConstraintValue(spec.defaultValue) << ")\n";
         }
+        if (spec.hasCheck) {
+            ofs << "constraint=CHECK(" << col << "|" << encodeConstraintValue(spec.checkExpr) << ")\n";
+        }
     }
 }
 
@@ -762,6 +833,15 @@ void Table::loadConstraintsFromIntegrityMeta() {
             constraintsByColumn_[col].column = col;
             constraintsByColumn_[col].hasDefault = true;
             constraintsByColumn_[col].defaultValue = decodeConstraintValue(body.substr(sep + 1));
+        }
+        if (line.rfind("constraint=CHECK(", 0) == 0 && !line.empty() && line.back() == ')') {
+            const std::string body = line.substr(17, line.size() - 18);
+            const auto sep = body.find('|');
+            if (sep == std::string::npos || sep == 0) continue;
+            const std::string col = body.substr(0, sep);
+            constraintsByColumn_[col].column = col;
+            constraintsByColumn_[col].hasCheck = true;
+            constraintsByColumn_[col].checkExpr = decodeConstraintValue(body.substr(sep + 1));
         }
     }
     if (schema_.columnMetas.size() < schema_.columns.size()) {
@@ -822,7 +902,7 @@ std::vector<Row> Table::readAllDataRows() const {
     if (!ifs.good()) return rows;
     std::string line;
     while (std::getline(ifs, line)) {
-        if (line.rfind("DEL|ROW|", 0) == 0) continue;
+        if (line.rfind("DEL|", 0) == 0) continue;
         if (line.rfind("ROW|", 0) != 0) continue;
         Row row = deserializeRow(line.substr(4));
         if (row.values.size() != schema_.columns.size()) continue;
@@ -838,7 +918,7 @@ bool Table::readRowByOffset(std::uint64_t offset, Row& row) const {
     if (!ifs.good()) return false;
     std::string line;
     if (!std::getline(ifs, line)) return false;
-    if (line.rfind("DEL|ROW|", 0) == 0) return false;
+    if (line.rfind("DEL|", 0) == 0) return false;
     if (line.rfind("ROW|", 0) != 0) return false;
     row = deserializeRow(line.substr(4));
     return true;
@@ -1163,7 +1243,7 @@ void Table::rebuildIndexFromData() {
         if (!std::getline(ifs, line)) break;
         if (linePos == std::streampos(-1)) continue;
         if (line.empty()) continue;
-        if (line.rfind("DEL|ROW|", 0) == 0) continue;
+        if (line.rfind("DEL|", 0) == 0) continue;
         if (line.rfind("ROW|", 0) != 0) continue;
         const std::uint64_t lineStartOffset = static_cast<std::uint64_t>(linePos);
         Row row = deserializeRow(line.substr(4));
@@ -1457,6 +1537,29 @@ void Table::ConstraintValidator::check(const std::vector<std::string>& values,
                 }
             }
         }
+        if (spec.hasCheck) {
+            const auto sep = spec.checkExpr.find('|');
+            if (sep == std::string::npos) continue;
+            std::string op = spec.checkExpr.substr(0, sep);
+            std::string expected = spec.checkExpr.substr(sep + 1);
+            double leftNum = 0, rightNum = 0;
+            bool leftIsNum = false, rightIsNum = false;
+            { errno = 0; char* e = nullptr; leftNum = std::strtod(values[i].c_str(), &e); leftIsNum = (e != values[i].c_str() && *e == '\0' && errno != ERANGE); }
+            { errno = 0; char* e = nullptr; rightNum = std::strtod(expected.c_str(), &e); rightIsNum = (e != expected.c_str() && *e == '\0' && errno != ERANGE); }
+            bool ok = false;
+            if (leftIsNum && rightIsNum) {
+                if (op == "<") ok = (leftNum < rightNum);
+                else if (op == "<=") ok = (leftNum <= rightNum);
+                else if (op == ">") ok = (leftNum > rightNum);
+                else if (op == ">=") ok = (leftNum >= rightNum);
+                else if (op == "=" || op == "==") ok = (leftNum == rightNum);
+                else if (op == "!=" || op == "<>") ok = (leftNum != rightNum);
+            } else {
+                if (op == "=" || op == "==") ok = (values[i] == expected);
+                else if (op == "!=" || op == "<>") ok = (values[i] != expected);
+            }
+            ensure(ok, "CHECK constraint violation on column: " + col + " (" + spec.checkExpr + ")");
+        }
     }
 }
 
@@ -1473,6 +1576,32 @@ bool Table::ConstraintValidator::checkNewConstraint(const ColumnConstraintSpec& 
         for (const auto& row : rows) {
             if (idx >= row.values.size()) continue;
             if (!seen.insert(row.values[idx]).second) return false;
+        }
+    }
+    if (spec.hasCheck) {
+        const auto sep = spec.checkExpr.find('|');
+        if (sep == std::string::npos) return false;
+        std::string op = spec.checkExpr.substr(0, sep);
+        std::string expected = spec.checkExpr.substr(sep + 1);
+        for (const auto& row : rows) {
+            if (idx >= row.values.size()) continue;
+            double leftNum = 0, rightNum = 0;
+            bool leftIsNum = false, rightIsNum = false;
+            { errno = 0; char* e = nullptr; leftNum = std::strtod(row.values[idx].c_str(), &e); leftIsNum = (e != row.values[idx].c_str() && *e == '\0' && errno != ERANGE); }
+            { errno = 0; char* e = nullptr; rightNum = std::strtod(expected.c_str(), &e); rightIsNum = (e != expected.c_str() && *e == '\0' && errno != ERANGE); }
+            bool ok = false;
+            if (leftIsNum && rightIsNum) {
+                if (op == "<") ok = (leftNum < rightNum);
+                else if (op == "<=") ok = (leftNum <= rightNum);
+                else if (op == ">") ok = (leftNum > rightNum);
+                else if (op == ">=") ok = (leftNum >= rightNum);
+                else if (op == "=" || op == "==") ok = (leftNum == rightNum);
+                else if (op == "!=" || op == "<>") ok = (leftNum != rightNum);
+            } else {
+                if (op == "=" || op == "==") ok = (row.values[idx] == expected);
+                else if (op == "!=" || op == "<>") ok = (row.values[idx] != expected);
+            }
+            if (!ok) return false;
         }
     }
     return true;

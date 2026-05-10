@@ -751,6 +751,65 @@ bool DatabaseManager::addColumnConstraint(const std::string &dbName,
     }
 }
 
+bool DatabaseManager::addColumn(const std::string &dbName, const std::string &tableName,
+                                 const std::string &colName, storage::DataType type,
+                                 std::uint16_t varcharLen, const std::string& defaultValue) {
+    if (dbName.empty() || tableName.empty() || colName.empty()) return false;
+    try {
+        auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        auto table = storage::Table::load(dbPath, tableName);
+        return table.addColumn(colName, type, varcharLen, defaultValue);
+    } catch (...) { return false; }
+}
+
+bool DatabaseManager::renameTable(const std::string &dbName, const std::string &oldName, const std::string &newName) {
+    if (dbName.empty() || oldName.empty() || newName.empty()) return false;
+    try {
+        auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        auto table = storage::Table::load(dbPath, oldName);
+        return table.rename(newName);
+    } catch (...) { return false; }
+}
+
+bool DatabaseManager::dropConstraint(const std::string &dbName, const std::string &tableName,
+                                      const std::string &column, storage::Table::ConstraintType type) {
+    if (dbName.empty() || tableName.empty() || column.empty()) return false;
+    try {
+        auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        auto table = storage::Table::load(dbPath, tableName);
+        return table.dropConstraint(column, type);
+    } catch (...) { return false; }
+}
+
+bool DatabaseManager::dropColumn(const std::string &dbName, const std::string &tableName, const std::string &colName) {
+    if (dbName.empty() || tableName.empty() || colName.empty()) return false;
+    try {
+        auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        auto table = storage::Table::load(dbPath, tableName);
+        return table.dropColumn(colName);
+    } catch (...) { return false; }
+}
+
+bool DatabaseManager::renameColumn(const std::string &dbName, const std::string &tableName,
+                                    const std::string &oldName, const std::string &newName) {
+    if (dbName.empty() || tableName.empty() || oldName.empty() || newName.empty()) return false;
+    try {
+        auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        auto table = storage::Table::load(dbPath, tableName);
+        return table.renameColumn(oldName, newName);
+    } catch (...) { return false; }
+}
+
+bool DatabaseManager::alterColumnType(const std::string &dbName, const std::string &tableName,
+                                       const std::string &column, storage::DataType newType, std::uint16_t varcharLen) {
+    if (dbName.empty() || tableName.empty() || column.empty()) return false;
+    try {
+        auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        auto table = storage::Table::load(dbPath, tableName);
+        return table.alterColumnType(column, newType, varcharLen);
+    } catch (...) { return false; }
+}
+
 std::vector<storage::Row> DatabaseManager::selectRows(
     const std::string &dbName,
     const std::string &tableName,

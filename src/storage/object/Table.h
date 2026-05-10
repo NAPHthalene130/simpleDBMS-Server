@@ -186,6 +186,43 @@ public:
     std::size_t compact();
 
     /**
+     * @brief 添加新列，已有行用默认值填充
+     * @author Startale
+     */
+    bool addColumn(const std::string& name, DataType type, std::uint16_t varcharLen = 0,
+                   const std::string& defaultValue = "");
+
+    /**
+     * @brief 重命名表及所有物理文件
+     * @author Startale
+     */
+    bool rename(const std::string& newName);
+
+    /**
+     * @brief 移除指定列的指定类型约束
+     * @author Startale
+     */
+    bool dropConstraint(const std::string& column, ConstraintType type);
+
+    /**
+     * @brief 删除指定列（不能删除主键列）
+     * @author Startale
+     */
+    bool dropColumn(const std::string& name);
+
+    /**
+     * @brief 重命名指定列
+     * @author Startale
+     */
+    bool renameColumn(const std::string& oldName, const std::string& newName);
+
+    /**
+     * @brief 修改指定列的数据类型
+     * @author Startale
+     */
+    bool alterColumnType(const std::string& column, DataType newType, std::uint16_t varcharLen = 0);
+
+    /**
      * @brief 按列投影并按条件过滤查询数据
      * @author Startale
      * @param targetColumns 目标列名列表，传空或 {"*"} 表示返回全部列

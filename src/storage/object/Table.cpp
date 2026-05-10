@@ -381,6 +381,183 @@ std::size_t Table::compact() {
     return removed;
 }
 
+bool Table::addColumn(const std::string& name, DataType type, std::uint16_t varcharLen,
+                       const std::string& defaultValue) {
+    ensure(!name.empty(), "column name cannot be empty");
+    for (const auto& col : schema_.columns) ensure(col != name, "column already exists: " + name);
+
+    std::vector<Row> oldRows = dataPages_.scanAll();
+    std::vector<TupleRef> oldRefs;
+    dataPages_.scan([&](TupleRef ref, const Row&) { oldRefs.push_back(ref); });
+
+    for (auto ref : oldRefs) dataPages_.markDeleted(ref);
+
+    schema_.columns.push_back(name);
+    ColumnMeta meta;
+    meta.dataType = type; meta.varcharLen = varcharLen; meta.defaultValue = defaultValue;
+    schema_.columnMetas.push_back(meta);
+
+    for (const auto& row : oldRows) {
+        std::vector<std::string> vals = row.values;
+        vals.push_back(defaultValue);
+        dataPages_.allocate(vals);
+    }
+
+    index_.clear();
+    primaryKeyOffsets_.clear();
+    primaryKeyOffsetsOrdered_.clear();
+    dataPages_.scan([&](TupleRef ref, const Row& row) {
+        if (!row.values.empty()) {
+            std::string pk = row.values.front();
+            index_.insert(pk, Row{{pk}});
+            uint64_t p = ref.pack();
+            primaryKeyOffsets_[pk] = p; primaryKeyOffsetsOrdered_[pk] = p;
+        }
+    });
+
+    flushMeta();
+    flushIntegrityMeta();
+    syncIndexPages();
+    return true;
+}
+
+bool Table::rename(const std::string& newName) {
+    ensure(!newName.empty(), "new table name cannot be empty");
+    std::string oldName = schema_.name;
+    if (oldName == newName) return true;
+
+    auto renameFile = [&](const std::string& ext) {
+        auto oldP = dbPath_ / (oldName + ext);
+        auto newP = dbPath_ / (newName + ext);
+        if (std::filesystem::exists(oldP)) std::filesystem::rename(oldP, newP);
+    };
+    renameFile(".tdf"); renameFile(".trd"); renameFile(".tic"); renameFile(".tid");
+    for (const auto& col : schema_.columns) {
+        auto o = dbPath_ / (oldName + "." + col + ".nidx");
+        auto n = dbPath_ / (newName + "." + col + ".nidx");
+        if (std::filesystem::exists(o)) std::filesystem::rename(o, n);
+    }
+    schema_.name = newName;
+    flushMeta();
+    return true;
+}
+
+bool Table::dropConstraint(const std::string& column, ConstraintType type) {
+    auto it = constraintsByColumn_.find(column);
+    if (it == constraintsByColumn_.end()) return false;
+    auto& spec = it->second;
+    if (type == ConstraintType::NOT_NULL) spec.notNull = false;
+    else if (type == ConstraintType::UNIQUE) spec.unique = false;
+    else if (type == ConstraintType::DEFAULT_VALUE) { spec.hasDefault = false; spec.defaultValue.clear(); }
+    else if (type == ConstraintType::CHECK_CONSTRAINT) { spec.hasCheck = false; spec.checkExpr.clear(); }
+    else return false;
+
+    const std::size_t idx = columnIndex(column);
+    if (idx < schema_.columnMetas.size()) {
+        if (type == ConstraintType::NOT_NULL) schema_.columnMetas[idx].integrities &= ~1;
+        else if (type == ConstraintType::UNIQUE) schema_.columnMetas[idx].integrities &= ~4;
+    }
+    flushIntegrityMeta();
+    return true;
+}
+
+bool Table::dropColumn(const std::string& name) {
+    ensure(schema_.columns.size() > 1, "cannot drop the only column");
+    ensure(name != schema_.columns.front(), "cannot drop primary key column");
+
+    std::size_t dropIdx = columnIndex(name);
+    std::vector<Row> oldRows = dataPages_.scanAll();
+    std::vector<TupleRef> oldRefs;
+    dataPages_.scan([&](TupleRef ref, const Row&) { oldRefs.push_back(ref); });
+    for (auto ref : oldRefs) dataPages_.markDeleted(ref);
+
+    schema_.columns.erase(schema_.columns.begin() + static_cast<std::ptrdiff_t>(dropIdx));
+    schema_.columnMetas.erase(schema_.columnMetas.begin() + static_cast<std::ptrdiff_t>(dropIdx));
+
+    for (const auto& row : oldRows) {
+        std::vector<std::string> vals;
+        for (std::size_t i = 0; i < row.values.size(); ++i)
+            if (i != dropIdx) vals.push_back(row.values[i]);
+        dataPages_.allocate(vals);
+    }
+
+    // Remove secondary index
+    auto si = secondaryIndexes_.find(name);
+    if (si != secondaryIndexes_.end()) {
+        std::filesystem::remove(si->second.filePath);
+        secondaryIndexes_.erase(si);
+    }
+
+    index_.clear();
+    primaryKeyOffsets_.clear();
+    primaryKeyOffsetsOrdered_.clear();
+    dataPages_.scan([&](TupleRef ref, const Row& row) {
+        if (!row.values.empty()) {
+            std::string pk = row.values.front();
+            index_.insert(pk, Row{{pk}});
+            uint64_t p = ref.pack();
+            primaryKeyOffsets_[pk] = p; primaryKeyOffsetsOrdered_[pk] = p;
+        }
+    });
+
+    flushMeta();
+    flushIntegrityMeta();
+    syncIndexPages();
+    return true;
+}
+
+bool Table::renameColumn(const std::string& oldName, const std::string& newName) {
+    ensure(!newName.empty(), "new column name cannot be empty");
+    for (const auto& c : schema_.columns) ensure(c != newName || c == oldName, "column already exists: " + newName);
+    std::size_t idx = columnIndex(oldName);
+    schema_.columns[idx] = newName;
+    if (idx < schema_.columnMetas.size() && idx == 0) {
+        // Primary key rename: nothing special needed since first column is always PK
+    }
+    // Rename .nidx file if exists
+    auto oldNidx = nonPrimaryIndexFilePath(oldName);
+    if (std::filesystem::exists(oldNidx)) {
+        std::filesystem::rename(oldNidx, nonPrimaryIndexFilePath(newName));
+    }
+    flushMeta();
+    return true;
+}
+
+bool Table::alterColumnType(const std::string& column, DataType newType, std::uint16_t varcharLen) {
+    std::size_t idx = columnIndex(column);
+    if (idx >= schema_.columnMetas.size()) return false;
+    DataType oldType = schema_.columnMetas[idx].dataType;
+    if (oldType == newType && (newType != DataType::VARCHAR || schema_.columnMetas[idx].varcharLen == varcharLen))
+        return true;
+
+    // Validate existing data for narrowing conversions
+    if (newType == DataType::INT || newType == DataType::FLOAT) {
+        auto rows = dataPages_.scanAll();
+        for (const auto& row : rows) {
+            if (idx >= row.values.size()) continue;
+            double v = 0; errno = 0;
+            char* e = nullptr;
+            v = std::strtod(row.values[idx].c_str(), &e);
+            bool ok = (e != row.values[idx].c_str() && *e == '\0' && errno != ERANGE);
+            if (!ok) { ensure(false, "value '" + row.values[idx] + "' cannot convert to numeric type"); }
+            if (newType == DataType::INT && v != static_cast<double>(static_cast<std::int64_t>(v)))
+                ensure(false, "value '" + row.values[idx] + "' cannot convert to INT");
+        }
+    }
+    if (newType == DataType::VARCHAR && varcharLen > 0) {
+        auto rows = dataPages_.scanAll();
+        for (const auto& row : rows) {
+            if (idx < row.values.size() && row.values[idx].size() > varcharLen)
+                ensure(false, "value exceeds VARCHAR(" + std::to_string(varcharLen) + ")");
+        }
+    }
+
+    schema_.columnMetas[idx].dataType = newType;
+    schema_.columnMetas[idx].varcharLen = varcharLen;
+    flushMeta();
+    return true;
+}
+
 std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
                                const std::vector<WhereCondition>& whereConditions,
                                const SelectOptions& options) const {

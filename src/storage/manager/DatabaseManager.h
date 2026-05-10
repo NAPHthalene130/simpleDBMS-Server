@@ -110,8 +110,19 @@ public:
                                const std::string &tableName,
                                const std::string &primaryKey);
     bool addColumnConstraint(const std::string &dbName,
-                             const std::string &tableName,
-                             const storage::Table::ColumnConstraintSpec &constraint);
+                              const std::string &tableName,
+                              const storage::Table::ColumnConstraintSpec &constraint);
+    bool addColumn(const std::string &dbName, const std::string &tableName,
+                   const std::string &colName, storage::DataType type,
+                   std::uint16_t varcharLen = 0, const std::string& defaultValue = "");
+    bool renameTable(const std::string &dbName, const std::string &oldName, const std::string &newName);
+    bool dropConstraint(const std::string &dbName, const std::string &tableName,
+                        const std::string &column, storage::Table::ConstraintType type);
+    bool dropColumn(const std::string &dbName, const std::string &tableName, const std::string &colName);
+    bool renameColumn(const std::string &dbName, const std::string &tableName,
+                      const std::string &oldName, const std::string &newName);
+    bool alterColumnType(const std::string &dbName, const std::string &tableName,
+                         const std::string &column, storage::DataType newType, std::uint16_t varcharLen = 0);
     std::vector<storage::Row> selectRows(const std::string &dbName,
                                          const std::string &tableName,
                                          const std::vector<std::string> &targetColumns,

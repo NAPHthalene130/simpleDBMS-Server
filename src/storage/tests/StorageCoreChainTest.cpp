@@ -573,6 +573,91 @@ int main()
     ensure(withPK2.size() == 1 && withPK2.front().values.front() == "500",
            "reload2 primary EQ mismatch");
 
+    // ======== DDL Tests ========
+    const std::string ddlTableName = "DDLTB";
+    ensure(databaseManager->createTable(dbName, ddlTableName, {"ID", "Val"}),
+           "createTable for DDL failed");
+    for (int i = 1; i <= 3; ++i) {
+        ensure(databaseManager->insertRow(dbName, ddlTableName, {std::to_string(i), "v"+std::to_string(i)}),
+               "DDL insert failed");
+    }
+
+    // ADD COLUMN
+    {
+        auto t = storage::Table::load(dbDir, ddlTableName);
+        ensure(t.addColumn("Extra", storage::DataType::TEXT, 0, "def"),
+               "addColumn failed");
+    }
+    {
+        auto t = storage::Table::load(dbDir, ddlTableName);
+        auto rows = t.select({"*"});
+        ensure(rows.size() == 3, "addColumn row count mismatch");
+        for (auto& r : rows) {
+            ensure(r.values.size() == 3 && r.values[2] == "def",
+                   "addColumn default value mismatch: " + storage::join(r.values, ","));
+        }
+    }
+
+    // RENAME
+    const std::string renamedName = "RenamedTB";
+    {
+        auto t = storage::Table::load(dbDir, ddlTableName);
+        ensure(t.rename(renamedName), "rename failed");
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        auto rows = t.select({"*"});
+        ensure(rows.size() == 3, "rename row count mismatch");
+    }
+
+    // DROP CONSTRAINT
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        ensure(t.dropConstraint("Extra", storage::Table::ConstraintType::DEFAULT_VALUE),
+               "dropConstraint failed");
+    }
+
+    // DROP COLUMN
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        // Already has 3 columns (ID, Val, Extra), drop Extra
+        ensure(t.dropColumn("Extra"), "dropColumn failed");
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        auto rows = t.select({"*"});
+        ensure(rows.size() == 3, "dropColumn row count mismatch");
+        ensure(rows.front().values.size() == 2, "dropColumn: expected 2 columns");
+    }
+
+    // RENAME COLUMN
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        ensure(t.renameColumn("Val", "Value"), "renameColumn failed");
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        auto cols = t.schema().columns;
+        ensure(cols.size() >= 2 && cols[1] == "Value", "renameColumn: column name mismatch");
+    }
+
+    // ALTER COLUMN TYPE
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        // Add a column with numeric-like data for type test
+        ensure(t.addColumn("Score", storage::DataType::TEXT, 0, "100"), "addCol for alterType failed");
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        // Values are "100" (default), should convert to INT
+        ensure(t.alterColumnType("Score", storage::DataType::INT), "alterColumnType to INT failed");
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        ensure(t.alterColumnType("Score", storage::DataType::FLOAT), "alterColumnType to FLOAT failed");
+        ensure(t.alterColumnType("Score", storage::DataType::TEXT), "alterColumnType back to TEXT failed");
+    }
+
     std::cout << "StorageCoreChainTest passed." << std::endl;
     return 0;
     } catch (const std::exception &e) {

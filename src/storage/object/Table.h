@@ -316,6 +316,8 @@ private:
      */
     std::uint64_t appendDataRow(const std::vector<std::string>& values) const;
 
+    void markRowDeleted(std::uint64_t offset) const;
+
     /**
      * @brief 将内存 BTree 索引刷盘为页式 .tid 文件
      * @author Startale

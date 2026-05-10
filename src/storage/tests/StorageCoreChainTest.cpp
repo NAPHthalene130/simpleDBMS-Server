@@ -140,7 +140,6 @@ int main()
     removeDatabaseFromCatalog(catalogFile, dbName);
 
     TestCore core;
-
     auto *systemCatalogManager = core.getStorageManager()->getSystemCatalogManager();
     auto *databaseManager = core.getStorageManager()->getDatabaseManager();
     ensure(systemCatalogManager != nullptr, "systemCatalogManager is null");
@@ -585,4 +584,6 @@ int main()
         return 1;
     }
 }
+
+
 

@@ -16,6 +16,9 @@ std::string FileManager::readPage(const std::filesystem::path& filePath, std::ui
     std::ifstream ifs(filePath, std::ios::binary);
     if (!ifs.good()) return {};
     const std::streamoff offset = static_cast<std::streamoff>(pageId) * kPageSize;
+    ifs.seekg(0, std::ios::end);
+    std::streamoff fileSize = ifs.tellg();
+    if (offset >= fileSize) return {};
     ifs.seekg(offset, std::ios::beg);
     if (!ifs.good()) return {};
     std::string content(kPageSize, '\0');
@@ -25,12 +28,15 @@ std::string FileManager::readPage(const std::filesystem::path& filePath, std::ui
 }
 
 bool FileManager::writePage(const std::filesystem::path& filePath, std::uint32_t pageId, const std::string& content) {
-    std::fstream fs(filePath, std::ios::in | std::ios::out | std::ios::binary);
-    bool existed = fs.good();
-    if (!existed) {
+    std::fstream fs;
+    fs.open(filePath, std::ios::in | std::ios::out | std::ios::binary);
+    if (!fs.good()) {
+        fs.clear();
         fs.open(filePath, std::ios::out | std::ios::binary);
-        if (!fs.good()) return false;
+        fs.close();
+        fs.open(filePath, std::ios::in | std::ios::out | std::ios::binary);
     }
+    if (!fs.good()) return false;
     const std::streamoff offset = static_cast<std::streamoff>(pageId) * kPageSize;
     fs.seekp(offset, std::ios::beg);
     if (!fs.good()) return false;

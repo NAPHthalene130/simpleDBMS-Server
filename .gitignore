@@ -181,6 +181,7 @@ $RECYCLE.BIN/
 /build-tests-cmake/
 /.idea
 /build
+/data
 /CMakeUserPresets.json
 src/log/logs.log
 src/storage/data/StartaleDB/

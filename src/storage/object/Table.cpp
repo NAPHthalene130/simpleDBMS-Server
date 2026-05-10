@@ -10,8 +10,6 @@
 #include <sstream>
 #include <unordered_set>
 
-#include "storage/manager/FileManager.h"
-
 namespace storage {
 
 namespace {
@@ -272,100 +270,78 @@ void Table::insert(const std::vector<std::string>& values) {
 
 bool Table::updateByPrimaryKey(const std::string& primaryKey,
                                 const std::vector<std::string>& newValues) {
-    if (primaryKey.empty() || newValues.empty()) {
-        return false;
-    }
+    if (primaryKey.empty() || newValues.empty()) return false;
     const std::vector<std::string> normalized = normalizeInputValues(newValues);
 
-    std::vector<Row> rows = readAllDataRows();
-    std::size_t hitIndex = rows.size();
-    for (std::size_t i = 0; i < rows.size(); ++i) {
-        if (!rows[i].values.empty() && rows[i].values.front() == primaryKey) {
-            hitIndex = i;
-            break;
-        }
-    }
-    if (hitIndex == rows.size()) {
-        return false;
-    }
+    auto pkIt = primaryKeyOffsets_.find(primaryKey);
+    if (pkIt == primaryKeyOffsets_.end()) return false;
+    std::uint64_t oldOffset = pkIt->second;
 
-    const std::vector<std::string>& oldValues = rows[hitIndex].values;
-    for (std::size_t i = 1; i < schema_.columns.size() && i < oldValues.size(); ++i) {
-        auto it = secondaryIndexes_.find(schema_.columns[i]);
-        if (it != secondaryIndexes_.end() && it->second.active) {
-            it->second.remove(oldValues[i], primaryKeyOffsets_[primaryKey]);
-        }
-    }
+    Row oldRow;
+    if (!readRowByOffset(oldOffset, oldRow)) return false;
+    if (oldRow.values.empty() || oldRow.values.front() != primaryKey) return false;
 
     const std::string newPrimaryKey = makePrimaryKey(normalized);
-    if (newPrimaryKey.empty()) {
-        return false;
-    }
-    if (newPrimaryKey != primaryKey) {
-        for (std::size_t i = 0; i < rows.size(); ++i) {
-            if (i == hitIndex || rows[i].values.empty()) {
-                continue;
-            }
-            if (rows[i].values.front() == newPrimaryKey) {
-                return false;
-            }
+    if (newPrimaryKey.empty()) return false;
+    if (newPrimaryKey != primaryKey && containsPrimaryKey(newPrimaryKey)) return false;
+    enforceRowConstraints(normalized, &primaryKey);
+
+    for (std::size_t i = 1; i < schema_.columns.size() && i < oldRow.values.size(); ++i) {
+        auto it = secondaryIndexes_.find(schema_.columns[i]);
+        if (it != secondaryIndexes_.end() && it->second.active) {
+            it->second.remove(oldRow.values[i], oldOffset);
         }
     }
 
-    enforceRowConstraints(normalized, &primaryKey);
-    rows[hitIndex] = Row{normalized};
-    rewriteDataRows(rows);
-    rebuildIndexFromData();
+    markRowDeleted(oldOffset);
+    std::uint64_t newOffset = appendDataRow(normalized);
+
+    primaryKeyOffsets_.erase(primaryKey);
+    primaryKeyOffsetsOrdered_.erase(primaryKey);
+    primaryKeyOffsets_[newPrimaryKey] = newOffset;
+    primaryKeyOffsetsOrdered_[newPrimaryKey] = newOffset;
+
+    index_.insert(newPrimaryKey, Row{{newPrimaryKey}});
 
     for (std::size_t i = 1; i < schema_.columns.size() && i < normalized.size(); ++i) {
         auto it = secondaryIndexes_.find(schema_.columns[i]);
         if (it != secondaryIndexes_.end() && it->second.active) {
-            it->second.add(normalized[i], primaryKeyOffsets_[newPrimaryKey]);
+            it->second.add(normalized[i], newOffset);
             it->second.save(it->second.filePath);
         }
     }
 
+    syncIndexPages();
     return true;
 }
 
 bool Table::deleteByPrimaryKey(const std::string& primaryKey) {
-    if (primaryKey.empty()) {
-        return false;
-    }
+    if (primaryKey.empty()) return false;
 
-    std::vector<Row> rows = readAllDataRows();
-    std::vector<std::string> oldValues;
-    for (const auto& row : rows) {
-        if (!row.values.empty() && row.values.front() == primaryKey) {
-            oldValues = row.values;
-            break;
-        }
-    }
+    auto pkIt = primaryKeyOffsets_.find(primaryKey);
+    if (pkIt == primaryKeyOffsets_.end()) return false;
+    std::uint64_t oldOffset = pkIt->second;
 
-    std::vector<Row> keptRows;
-    keptRows.reserve(rows.size());
-    bool deleted = false;
-    for (const auto& row : rows) {
-        if (!deleted && !row.values.empty() && row.values.front() == primaryKey) {
-            deleted = true;
-            continue;
-        }
-        keptRows.push_back(row);
-    }
-    if (!deleted) {
-        return false;
-    }
+    Row oldRow;
+    if (!readRowByOffset(oldOffset, oldRow)) return false;
 
-    for (std::size_t i = 1; i < schema_.columns.size() && i < oldValues.size(); ++i) {
+    for (std::size_t i = 1; i < schema_.columns.size() && i < oldRow.values.size(); ++i) {
         auto it = secondaryIndexes_.find(schema_.columns[i]);
         if (it != secondaryIndexes_.end() && it->second.active) {
-            it->second.remove(oldValues[i], primaryKeyOffsets_[primaryKey]);
+            it->second.remove(oldRow.values[i], oldOffset);
             it->second.save(it->second.filePath);
         }
     }
 
-    rewriteDataRows(keptRows);
-    rebuildIndexFromData();
+    markRowDeleted(oldOffset);
+    primaryKeyOffsets_.erase(primaryKey);
+    primaryKeyOffsetsOrdered_.erase(primaryKey);
+    index_.clear();
+    for (const auto& r : readAllDataRows()) {
+        if (!r.values.empty()) index_.insert(r.values.front(), Row{{r.values.front()}});
+    }
+
+    syncIndexPages();
     return true;
 }
 
@@ -446,17 +422,11 @@ std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
         ensure(ifs.good(), "failed to open table data file: " + dataFilePath().string());
         std::string line;
         while (std::getline(ifs, line)) {
-            if (line.rfind("ROW|", 0) != 0) {
-                continue;
-            }
-
+            if (line.rfind("DEL|ROW|", 0) == 0) continue;
+            if (line.rfind("ROW|", 0) != 0) continue;
             Row row = deserializeRow(line.substr(4));
-            if (row.values.size() != schema_.columns.size()) {
-                continue;
-            }
-            if (!matchConditionTree(row, whereTree)) {
-                continue;
-            }
+            if (row.values.size() != schema_.columns.size()) continue;
+            if (!matchConditionTree(row, whereTree)) continue;
             matchedRows.push_back(std::move(row));
         }
     }
@@ -540,16 +510,11 @@ std::vector<std::string> Table::aggregate(const std::vector<AggregateExpr>& expr
     ensure(ifs.good(), "failed to open table data file: " + dataFilePath().string());
     std::string line;
     while (std::getline(ifs, line)) {
-        if (line.rfind("ROW|", 0) != 0) {
-            continue;
-        }
+        if (line.rfind("DEL|ROW|", 0) == 0) continue;
+        if (line.rfind("ROW|", 0) != 0) continue;
         Row row = deserializeRow(line.substr(4));
-        if (row.values.size() != schema_.columns.size()) {
-            continue;
-        }
-        if (!matchConditionTree(row, whereTree)) {
-            continue;
-        }
+        if (row.values.size() != schema_.columns.size()) continue;
+        if (!matchConditionTree(row, whereTree)) continue;
         rows.push_back(std::move(row));
     }
 
@@ -827,6 +792,13 @@ void Table::loadConstraintsFromIntegrityMeta() {
     }
 }
 
+void Table::ColumnIndex::save(const std::filesystem::path& path) {
+    std::ofstream ofs(path, std::ios::trunc);
+    for (const auto& kv : entries) {
+        ofs << kv.first << "|" << kv.second << '\n';
+    }
+}
+
 std::uint64_t Table::appendDataRow(const std::vector<std::string>& values) const {
     const std::uint64_t offset = std::filesystem::exists(dataFilePath())
                                      ? static_cast<std::uint64_t>(std::filesystem::file_size(dataFilePath()))
@@ -837,10 +809,47 @@ std::uint64_t Table::appendDataRow(const std::vector<std::string>& values) const
     return offset;
 }
 
-void Table::ColumnIndex::save(const std::filesystem::path& path) {
-    std::ofstream ofs(path, std::ios::trunc);
-    for (const auto& kv : entries) {
-        ofs << kv.first << "|" << kv.second << '\n';
+void Table::markRowDeleted(std::uint64_t offset) const {
+    std::fstream fs(dataFilePath(), std::ios::in | std::ios::out | std::ios::binary);
+    if (!fs.good()) return;
+    fs.seekp(static_cast<std::streamoff>(offset), std::ios::beg);
+    if (!fs.good()) return;
+    fs.write("DEL|", 4);
+}
+
+std::vector<Row> Table::readAllDataRows() const {
+    std::vector<Row> rows;
+    std::ifstream ifs(dataFilePath());
+    if (!ifs.good()) return rows;
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.rfind("DEL|ROW|", 0) == 0) continue;
+        if (line.rfind("ROW|", 0) != 0) continue;
+        Row row = deserializeRow(line.substr(4));
+        if (row.values.size() != schema_.columns.size()) continue;
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+
+bool Table::readRowByOffset(std::uint64_t offset, Row& row) const {
+    std::ifstream ifs(dataFilePath(), std::ios::binary);
+    if (!ifs.good()) return false;
+    ifs.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
+    if (!ifs.good()) return false;
+    std::string line;
+    if (!std::getline(ifs, line)) return false;
+    if (line.rfind("DEL|ROW|", 0) == 0) return false;
+    if (line.rfind("ROW|", 0) != 0) return false;
+    row = deserializeRow(line.substr(4));
+    return true;
+}
+
+void Table::rewriteDataRows(const std::vector<Row>& rows) const {
+    std::ofstream ofs(dataFilePath(), std::ios::trunc | std::ios::binary);
+    ensure(ofs.good(), "failed to rewrite table data file: " + dataFilePath().string());
+    for (const auto& row : rows) {
+        ofs << "ROW|" << serializeRow(row) << '\n';
     }
 }
 
@@ -1058,11 +1067,17 @@ void Table::syncIndexPages() {
                   << "\nnext_page=" << nextPageId_ << '\n';
         header = headerOss.str();
     }
-    FileManager::writeHeader(indexFilePath(), header);
-    if (!std::filesystem::exists(indexFilePath())) {
-        std::ofstream ofs(indexFilePath(), std::ios::trunc | std::ios::binary);
-        ensure(ofs.good(), "failed to create table index file: " + indexFilePath().string());
-        ofs.write(header.data(), static_cast<std::streamsize>(header.size()));
+    {
+        std::fstream fs(indexFilePath(), std::ios::in | std::ios::out | std::ios::binary);
+        if (!fs.good()) {
+            std::ofstream ofs(indexFilePath(), std::ios::trunc | std::ios::binary);
+            ensure(ofs.good(), "failed to create table index file: " + indexFilePath().string());
+            ofs.write(header.data(), static_cast<std::streamsize>(header.size()));
+            fs.open(indexFilePath(), std::ios::in | std::ios::out | std::ios::binary);
+            ensure(fs.good(), "failed to reopen index file");
+        }
+        fs.seekp(0, std::ios::beg);
+        fs.write(header.data(), static_cast<std::streamsize>(header.size()));
     }
 
     for (const auto& dp : dirtyPages) {
@@ -1103,7 +1118,14 @@ void Table::syncIndexPages() {
         pageOss << "ENDPAGE\n";
         std::string page = pageOss.str();
         ensure(page.size() <= kTidPageSize, "page content exceeds page size");
-        FileManager::writePage(indexFilePath(), dp.pageId, page);
+        const std::streamoff pageOffset = static_cast<std::streamoff>(dp.pageId) * kTidPageSize;
+        {
+            std::fstream fs(indexFilePath(), std::ios::in | std::ios::out | std::ios::binary);
+            if (fs.good()) {
+                fs.seekp(pageOffset, std::ios::beg);
+                fs.write(page.data(), static_cast<std::streamsize>(page.size()));
+            }
+        }
     }
 
     index_.clearDirtyFlags();
@@ -1134,32 +1156,19 @@ void Table::rebuildIndexFromData() {
     primaryKeyOffsetsOrdered_.clear();
 
     std::ifstream ifs(dataFilePath(), std::ios::binary);
-    if (!ifs.good()) {
-        syncIndexPages();
-        return;
-    }
+    if (!ifs.good()) { syncIndexPages(); return; }
 
     std::string line;
     while (true) {
         const std::streampos linePos = ifs.tellg();
-        if (!std::getline(ifs, line)) {
-            break;
-        }
-        if (linePos == std::streampos(-1)) {
-            continue;
-        }
+        if (!std::getline(ifs, line)) break;
+        if (linePos == std::streampos(-1)) continue;
+        if (line.empty()) continue;
+        if (line.rfind("DEL|ROW|", 0) == 0) continue;
+        if (line.rfind("ROW|", 0) != 0) continue;
         const std::uint64_t lineStartOffset = static_cast<std::uint64_t>(linePos);
-
-        if (line.empty()) {
-            continue;
-        }
-        if (line.rfind("ROW|", 0) != 0) {
-            continue;
-        }
         Row row = deserializeRow(line.substr(4));
-        if (row.values.empty()) {
-            continue;
-        }
+        if (row.values.empty()) continue;
         const std::string key = row.values.front();
         index_.insert(key, Row{{key}});
         primaryKeyOffsets_[key] = lineStartOffset;
@@ -1372,55 +1381,6 @@ bool Table::tryLoadPagedTid() {
         }
     }
     return true;
-}
-
-std::vector<Row> Table::readAllDataRows() const {
-    std::vector<Row> rows;
-    std::ifstream ifs(dataFilePath());
-    if (!ifs.good()) {
-        return rows;
-    }
-
-    std::string line;
-    while (std::getline(ifs, line)) {
-        if (line.rfind("ROW|", 0) != 0) {
-            continue;
-        }
-        Row row = deserializeRow(line.substr(4));
-        if (row.values.size() != schema_.columns.size()) {
-            continue;
-        }
-        rows.push_back(std::move(row));
-    }
-    return rows;
-}
-
-bool Table::readRowByOffset(std::uint64_t offset, Row& row) const {
-    std::ifstream ifs(dataFilePath(), std::ios::binary);
-    if (!ifs.good()) {
-        return false;
-    }
-    ifs.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
-    if (!ifs.good()) {
-        return false;
-    }
-    std::string line;
-    if (!std::getline(ifs, line)) {
-        return false;
-    }
-    if (line.rfind("ROW|", 0) != 0) {
-        return false;
-    }
-    row = deserializeRow(line.substr(4));
-    return true;
-}
-
-void Table::rewriteDataRows(const std::vector<Row>& rows) const {
-    std::ofstream ofs(dataFilePath(), std::ios::trunc | std::ios::binary);
-    ensure(ofs.good(), "failed to rewrite table data file: " + dataFilePath().string());
-    for (const auto& row : rows) {
-        ofs << "ROW|" << serializeRow(row) << '\n';
-    }
 }
 
 std::vector<std::string> Table::normalizeInputValues(const std::vector<std::string>& values) const {

@@ -308,6 +308,25 @@ public:
     }
 
     /**
+     * @brief 从外部向量按前序遍历顺序分配页ID
+     * @author Startale
+     * @param ids 前序排列的页ID列表，长度须等于节点总数
+     */
+    void assignPageIdsFrom(const std::vector<std::uint32_t>& ids) {
+        std::size_t idx = 0;
+        std::function<void(Node*)> assign = [&](Node* node) {
+            if (idx >= ids.size()) return;
+            node->pageId = ids[idx++];
+            if (!node->leaf) {
+                for (auto& child : node->children) {
+                    assign(child.get());
+                }
+            }
+        };
+        assign(root_.get());
+    }
+
+    /**
      * @brief 判断是否已有页ID分配
      * @author Startale
      */

@@ -1166,149 +1166,34 @@ bool Table::tryLoadPagedTid() {
                 primaryKeyOffsetsOrdered_[pg.keys[i]] = off;
             }
         }
-        return true;
-    }
-
-    // V2 format: variable-size pages
-    if (magic == "TID_PAGED_V2") {
-
-        struct ParsedPage {
-            std::uint32_t pageId = 0;
-            std::uint32_t parentPageId = 0;
-            std::uint32_t prevPageId = 0;
-            std::uint32_t nextPageId = 0;
-            bool isLeaf = true;
-            std::vector<std::string> keys;
-            std::vector<std::uint64_t> offsets;
-            std::vector<std::uint32_t> childPageIds;
-        };
-
-        std::unordered_map<std::uint32_t, ParsedPage> pages;
-        ParsedPage current;
-        bool inPage = false;
-        std::string line;
-        while (std::getline(ifs, line)) {
-            if (line.rfind("root_page=", 0) == 0) {
-                rootPageId_ = static_cast<std::uint32_t>(std::stoul(line.substr(10)));
-                continue;
-            }
-            if (line.rfind("page_size=", 0) == 0) {
-                continue;
-            }
-            if (line.rfind("PAGE|", 0) == 0) {
-                if (inPage) {
-                    pages[current.pageId] = std::move(current);
-                    current = ParsedPage{};
-                }
-                inPage = true;
-                std::vector<std::string> parts = split(line, '|');
-                if (parts.size() >= 2) {
-                    current.pageId = static_cast<std::uint32_t>(std::stoul(parts[1]));
-                }
-                for (std::size_t pi = 2; pi < parts.size(); ++pi) {
-                    const auto& p = parts[pi];
-                    if (p.rfind("leaf=", 0) == 0) {
-                        current.isLeaf = (p.size() >= 6 && p[5] == '1');
-                    } else if (p.rfind("parent=", 0) == 0) {
-                        current.parentPageId = static_cast<std::uint32_t>(std::stoul(p.substr(7)));
-                    } else if (p.rfind("prev=", 0) == 0) {
-                        current.prevPageId = static_cast<std::uint32_t>(std::stoul(p.substr(5)));
-                    } else if (p.rfind("next=", 0) == 0) {
-                        current.nextPageId = static_cast<std::uint32_t>(std::stoul(p.substr(5)));
-                    }
-                }
-                if (current.pageId >= nextPageId_) {
-                    nextPageId_ = current.pageId + 1;
-                }
-                continue;
-            }
-            if (!inPage) {
-                continue;
-            }
-            if (line.rfind("ENTRY|", 0) == 0) {
-                std::vector<std::string> parts = split(line, '|');
-                if (parts.size() >= 2 && !parts[1].empty()) {
-                    current.keys.push_back(parts[1]);
-                    if (parts.size() >= 3) {
-                        try {
-                            current.offsets.push_back(static_cast<std::uint64_t>(std::stoull(parts[2])));
-                        } catch (...) {
-                            current.offsets.push_back(0);
-                        }
-                    } else {
-                        current.offsets.push_back(0);
-                    }
-                }
-                continue;
-            }
-            if (line.rfind("CHILD|", 0) == 0) {
-                std::vector<std::string> parts = split(line, '|');
-                if (parts.size() >= 2) {
-                    try {
-                        current.childPageIds.push_back(static_cast<std::uint32_t>(std::stoul(parts[1])));
-                    } catch (...) {
-                    }
-                }
-                continue;
-            }
-            if (line == "ENDPAGE") {
-                if (inPage) {
-                    pages[current.pageId] = std::move(current);
-                    current = ParsedPage{};
-                }
-                inPage = false;
-            }
-        }
-        if (inPage) {
-            pages[current.pageId] = std::move(current);
-        }
-
-        if (pages.empty()) {
-            return false;
-        }
-
-        // Walk leaf sibling chain to collect entries in order
-        std::uint32_t leafId = rootPageId_;
         {
-            auto it = pages.find(rootPageId_);
-            if (it != pages.end() && !it->second.isLeaf) {
-                std::uint32_t cursor = rootPageId_;
-                while (true) {
-                    auto cit = pages.find(cursor);
-                    if (cit == pages.end()) break;
-                    if (cit->second.isLeaf) { leafId = cursor; break; }
-                    if (cit->second.childPageIds.empty()) break;
-                    cursor = cit->second.childPageIds.front();
+            std::vector<std::uint32_t> pageOrder;
+            std::function<void(std::uint32_t)> collectOrder = [&](std::uint32_t pid) {
+                pageOrder.push_back(pid);
+                auto it = pages.find(pid);
+                if (it != pages.end() && !it->second.isLeaf) {
+                    for (auto childId : it->second.childPageIds) {
+                        collectOrder(childId);
+                    }
                 }
-            }
+            };
+            collectOrder(rootPageId_);
+            index_.assignPageIdsFrom(pageOrder);
         }
-
-        std::unordered_set<std::uint32_t> visited;
-        while (leafId != 0 && visited.insert(leafId).second) {
-            auto pit = pages.find(leafId);
-            if (pit == pages.end() || !pit->second.isLeaf) break;
-            const auto& pg = pit->second;
-            for (std::size_t i = 0; i < pg.keys.size(); ++i) {
-                std::uint64_t off = (i < pg.offsets.size()) ? pg.offsets[i] : 0;
-                index_.insert(pg.keys[i], Row{{pg.keys[i]}});
-                primaryKeyOffsets_[pg.keys[i]] = off;
-                primaryKeyOffsetsOrdered_[pg.keys[i]] = off;
-            }
-            leafId = pg.nextPageId;
+        {
+            std::vector<std::uint32_t> pageOrder;
+            std::function<void(std::uint32_t)> collectOrder = [&](std::uint32_t pid) {
+                pageOrder.push_back(pid);
+                auto it = pages.find(pid);
+                if (it != pages.end() && !it->second.isLeaf) {
+                    for (auto childId : it->second.childPageIds) {
+                        collectOrder(childId);
+                    }
+                }
+            };
+            collectOrder(rootPageId_);
+            index_.assignPageIdsFrom(pageOrder);
         }
-
-        // Also load remaining entries from all pages (leaf + internal)
-        for (const auto& kv : pages) {
-            const auto& pg = kv.second;
-            if (pg.isLeaf && visited.count(pg.pageId)) continue;
-            for (std::size_t i = 0; i < pg.keys.size(); ++i) {
-                std::uint64_t off = (i < pg.offsets.size()) ? pg.offsets[i] : 0;
-                index_.insert(pg.keys[i], Row{{pg.keys[i]}});
-                primaryKeyOffsets_[pg.keys[i]] = off;
-                primaryKeyOffsetsOrdered_[pg.keys[i]] = off;
-            }
-        }
-
         return true;
     }
 

@@ -427,7 +427,7 @@ int main()
         }
     }
     while (std::getline(tid, line)) {
-        if (line == "TID_PAGED_V2") foundTidHeader = true;
+        if (line == "TID_PAGED_V3") foundTidHeader = true;
         if (line == "root_page=1") foundTidRootPage = true;
         if (line.rfind("ENTRY|v1|", 0) == 0) foundTidKeyEntry = true;
     }
@@ -445,6 +445,54 @@ int main()
     ensure(foundTidHeader, "tid header missing");
     ensure(foundTidRootPage, "tid root page missing");
     ensure(foundTidKeyEntry, "tid key entry missing");
+
+    const std::string bulkTableName = "BulkTB";
+    ensure(databaseManager->createTable(dbName, bulkTableName, {"Key"}), "createTable bulk failed");
+
+    for (int i = 1; i <= 200; ++i) {
+        std::string key = std::to_string(i);
+        while (key.size() < 4) key = "0" + key;
+        ensure(databaseManager->insertRow(dbName, bulkTableName, {key}),
+               ("insertRow bulk failed i=" + std::to_string(i)).c_str());
+    }
+
+    {
+        std::ifstream tidBulk(dbDir / (bulkTableName + ".tid"));
+        int pageCount = 0;
+        std::string tidLine;
+        while (std::getline(tidBulk, tidLine)) {
+            if (tidLine.rfind("PAGE|", 0) == 0) ++pageCount;
+        }
+        ensure(pageCount > 1, "bulk tid should have multiple pages after splits (" + std::to_string(pageCount) + ")");
+    }
+
+    auto bulkTable = storage::Table::load(dbDir, bulkTableName);
+    auto allBulkRows = bulkTable.select({"*"});
+    ensure(allBulkRows.size() == 200,
+           "bulk reload row count mismatch (" + std::to_string(allBulkRows.size()) + ")");
+
+    {
+        storage::Table::WhereCondition between;
+        between.column = "Key";
+        between.op = storage::Table::CompareOp::BETWEEN;
+        between.value = "0050";
+        between.secondValue = "0059";
+        auto partialRows = bulkTable.select({"Key"}, {between});
+        ensure(partialRows.size() == 10,
+               "bulk range query mismatch (" + std::to_string(partialRows.size()) + ")");
+    }
+
+    auto firstRow = bulkTable.select(
+        {"Key"}, {storage::Table::WhereCondition{"Key", storage::Table::CompareOp::EQ, "0001"}});
+    ensure(firstRow.size() == 1 && firstRow.front().values.front() == "0001", "bulk EQ query mismatch");
+
+    auto midRow = bulkTable.select(
+        {"Key"}, {storage::Table::WhereCondition{"Key", storage::Table::CompareOp::EQ, "0100"}});
+    ensure(midRow.size() == 1 && midRow.front().values.front() == "0100", "bulk EQ mid query mismatch");
+
+    auto lastRow = bulkTable.select(
+        {"Key"}, {storage::Table::WhereCondition{"Key", storage::Table::CompareOp::EQ, "0200"}});
+    ensure(lastRow.size() == 1 && lastRow.front().values.front() == "0200", "bulk EQ last query mismatch");
 
     std::cout << "StorageCoreChainTest passed." << std::endl;
     return 0;

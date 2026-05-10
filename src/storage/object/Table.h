@@ -232,6 +232,9 @@ private:
     std::unordered_map<std::string, ColumnConstraintSpec> constraintsByColumn_;
     std::uint32_t rootPageId_ = 1;
     std::uint32_t nextPageId_ = 2;
+    std::vector<std::uint32_t> pageIds_;
+    using TidNodeRef = BTree<std::string, Row>::TidNodeRef;
+    std::vector<TidNodeRef> lastNodeRefs_;
 
     /**
      * @brief 获取表元数据文件路径
@@ -287,7 +290,12 @@ private:
      * @brief 将内存 BTree 索引刷盘为页式 .tid 文件
      * @author Startale
      */
-    void flushIndexToTid();
+    void syncIndexPages();
+    void writePageContent(std::ostream& os,
+                          const std::vector<TidNodeRef>& nodeRefs,
+                          const std::vector<std::uint32_t>& pageIds,
+                          const std::vector<std::uint32_t>& parentPageId,
+                          std::size_t nodeIdx);
 
     /**
      * @brief 从 .tid 恢复内存索引

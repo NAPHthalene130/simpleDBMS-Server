@@ -53,6 +53,19 @@ struct PageSlot {
 #pragma pack(pop)
 
 /**
+ * @struct TupleRef
+ * @brief 行物理定位引用，pack 为 uint64_t 存入索引文件
+ * @author Startale
+ */
+struct TupleRef {
+    std::uint32_t pageId    = 0;
+    std::uint32_t slotIndex = 0;
+
+    std::uint64_t pack() const { return (static_cast<std::uint64_t>(pageId) << 32) | slotIndex; }
+    static TupleRef unpack(std::uint64_t p) { return {static_cast<std::uint32_t>(p >> 32), static_cast<std::uint32_t>(p & 0xFFFFFFFFU)}; }
+};
+
+/**
  * @struct Row
  * @brief 行数据结构
  * @author Startale

@@ -265,6 +265,19 @@ private:
         bool checkNewConstraint(const ColumnConstraintSpec& spec) const;
     };
 
+    struct DataPageManager {
+        Table& table;
+        std::uint32_t nextPageId = 1;
+
+        explicit DataPageManager(Table& t) : table(t) {}
+
+        TupleRef allocate(const std::vector<std::string>& values);
+        bool read(TupleRef ref, Row& out) const;
+        bool markDeleted(TupleRef ref);
+        std::vector<Row> scanAll() const;
+        void scan(std::function<void(TupleRef, const Row&)> visitor) const;
+    };
+
     std::filesystem::path dbPath_;
     TableSchema schema_;
     BTree<std::string, Row> index_{2};
@@ -272,6 +285,7 @@ private:
     std::map<std::string, std::uint64_t> primaryKeyOffsetsOrdered_;
     std::unordered_map<std::string, ColumnConstraintSpec> constraintsByColumn_;
     std::unordered_map<std::string, ColumnIndex> secondaryIndexes_;
+    DataPageManager dataPages_{*this};
     std::uint32_t rootPageId_ = 1;
     std::uint32_t nextPageId_ = 2;
     using TidNodeRef = BTree<std::string, Row>::TidNodeRef;

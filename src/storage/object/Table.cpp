@@ -4,11 +4,14 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <functional>
 #include <iomanip>
 #include <sstream>
 #include <unordered_set>
+
+#include "storage/manager/FileManager.h"
 
 namespace storage {
 
@@ -253,14 +256,15 @@ void Table::insert(const std::vector<std::string>& values) {
 
     Row row{normalized};
     index_.insert(primaryKey, row);
-    const std::uint64_t offset = appendDataRow(normalized);
-    primaryKeyOffsets_[primaryKey] = offset;
-    primaryKeyOffsetsOrdered_[primaryKey] = offset;
+    TupleRef ref = dataPages_.allocate(normalized);
+    std::uint64_t packed = ref.pack();
+    primaryKeyOffsets_[primaryKey] = packed;
+    primaryKeyOffsetsOrdered_[primaryKey] = packed;
 
     for (std::size_t i = 1; i < schema_.columns.size(); ++i) {
         auto it = secondaryIndexes_.find(schema_.columns[i]);
         if (it != secondaryIndexes_.end() && it->second.active) {
-            it->second.add(normalized[i], offset);
+            it->second.add(normalized[i], packed);
             it->second.save(it->second.filePath);
         }
     }
@@ -275,10 +279,10 @@ bool Table::updateByPrimaryKey(const std::string& primaryKey,
 
     auto pkIt = primaryKeyOffsets_.find(primaryKey);
     if (pkIt == primaryKeyOffsets_.end()) return false;
-    std::uint64_t oldOffset = pkIt->second;
+    TupleRef oldRef = TupleRef::unpack(pkIt->second);
 
     Row oldRow;
-    if (!readRowByOffset(oldOffset, oldRow)) return false;
+    if (!dataPages_.read(oldRef, oldRow)) return false;
     if (oldRow.values.empty() || oldRow.values.front() != primaryKey) return false;
 
     const std::string newPrimaryKey = makePrimaryKey(normalized);
@@ -289,27 +293,26 @@ bool Table::updateByPrimaryKey(const std::string& primaryKey,
     for (std::size_t i = 1; i < schema_.columns.size() && i < oldRow.values.size(); ++i) {
         auto it = secondaryIndexes_.find(schema_.columns[i]);
         if (it != secondaryIndexes_.end() && it->second.active) {
-            it->second.remove(oldRow.values[i], oldOffset);
+            it->second.remove(oldRow.values[i], pkIt->second);
         }
     }
 
-    markRowDeleted(oldOffset);
-    std::uint64_t newOffset = appendDataRow(normalized);
+    dataPages_.markDeleted(oldRef);
+    TupleRef newRef = dataPages_.allocate(normalized);
+    std::uint64_t packed = newRef.pack();
 
     primaryKeyOffsets_.erase(primaryKey);
     primaryKeyOffsetsOrdered_.erase(primaryKey);
-    primaryKeyOffsets_[newPrimaryKey] = newOffset;
-    primaryKeyOffsetsOrdered_[newPrimaryKey] = newOffset;
+    primaryKeyOffsets_[newPrimaryKey] = packed;
+    primaryKeyOffsetsOrdered_[newPrimaryKey] = packed;
 
-    if (newPrimaryKey != primaryKey) {
-        index_.remove(primaryKey);
-    }
+    if (newPrimaryKey != primaryKey) index_.remove(primaryKey);
     index_.insert(newPrimaryKey, Row{{newPrimaryKey}});
 
     for (std::size_t i = 1; i < schema_.columns.size() && i < normalized.size(); ++i) {
         auto it = secondaryIndexes_.find(schema_.columns[i]);
         if (it != secondaryIndexes_.end() && it->second.active) {
-            it->second.add(normalized[i], newOffset);
+            it->second.add(normalized[i], packed);
             it->second.save(it->second.filePath);
         }
     }
@@ -323,20 +326,20 @@ bool Table::deleteByPrimaryKey(const std::string& primaryKey) {
 
     auto pkIt = primaryKeyOffsets_.find(primaryKey);
     if (pkIt == primaryKeyOffsets_.end()) return false;
-    std::uint64_t oldOffset = pkIt->second;
+    TupleRef oldRef = TupleRef::unpack(pkIt->second);
 
     Row oldRow;
-    if (!readRowByOffset(oldOffset, oldRow)) return false;
+    if (!dataPages_.read(oldRef, oldRow)) return false;
 
     for (std::size_t i = 1; i < schema_.columns.size() && i < oldRow.values.size(); ++i) {
         auto it = secondaryIndexes_.find(schema_.columns[i]);
         if (it != secondaryIndexes_.end() && it->second.active) {
-            it->second.remove(oldRow.values[i], oldOffset);
+            it->second.remove(oldRow.values[i], pkIt->second);
             it->second.save(it->second.filePath);
         }
     }
 
-    markRowDeleted(oldOffset);
+    dataPages_.markDeleted(oldRef);
     primaryKeyOffsets_.erase(primaryKey);
     primaryKeyOffsetsOrdered_.erase(primaryKey);
     index_.remove(primaryKey);
@@ -481,17 +484,11 @@ std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
             matchedRows.push_back(std::move(row));
         }
     } else {
-        std::ifstream ifs(dataFilePath());
-        ensure(ifs.good(), "failed to open table data file: " + dataFilePath().string());
-        std::string line;
-        while (std::getline(ifs, line)) {
-            if (line.rfind("DEL|", 0) == 0) continue;
-            if (line.rfind("ROW|", 0) != 0) continue;
-            Row row = deserializeRow(line.substr(4));
-            if (row.values.size() != schema_.columns.size()) continue;
-            if (!matchConditionTree(row, whereTree)) continue;
-            matchedRows.push_back(std::move(row));
-        }
+        dataPages_.scan([&](TupleRef, const Row& row) {
+            if (row.values.size() != schema_.columns.size()) return;
+            if (matchConditionTree(row, whereTree))
+                matchedRows.push_back(row);
+        });
     }
 
     if (!queryConstraints.empty()) {
@@ -569,17 +566,11 @@ std::vector<std::string> Table::aggregate(const std::vector<AggregateExpr>& expr
                                           const std::shared_ptr<ConditionNode>& whereTree) const {
     ensure(!expressions.empty(), "aggregate expressions cannot be empty");
     std::vector<Row> rows;
-    std::ifstream ifs(dataFilePath());
-    ensure(ifs.good(), "failed to open table data file: " + dataFilePath().string());
-    std::string line;
-    while (std::getline(ifs, line)) {
-        if (line.rfind("DEL|", 0) == 0) continue;
-        if (line.rfind("ROW|", 0) != 0) continue;
-        Row row = deserializeRow(line.substr(4));
-        if (row.values.size() != schema_.columns.size()) continue;
-        if (!matchConditionTree(row, whereTree)) continue;
-        rows.push_back(std::move(row));
-    }
+    dataPages_.scan([&](TupleRef, const Row& row) {
+        if (row.values.size() != schema_.columns.size()) return;
+        if (matchConditionTree(row, whereTree))
+            rows.push_back(row);
+    });
 
     std::vector<std::string> out;
     out.reserve(expressions.size());
@@ -896,32 +887,12 @@ void Table::markRowDeleted(std::uint64_t offset) const {
     fs.write("DEL|", 4);
 }
 
-std::vector<Row> Table::readAllDataRows() const {
-    std::vector<Row> rows;
-    std::ifstream ifs(dataFilePath());
-    if (!ifs.good()) return rows;
-    std::string line;
-    while (std::getline(ifs, line)) {
-        if (line.rfind("DEL|", 0) == 0) continue;
-        if (line.rfind("ROW|", 0) != 0) continue;
-        Row row = deserializeRow(line.substr(4));
-        if (row.values.size() != schema_.columns.size()) continue;
-        rows.push_back(std::move(row));
-    }
-    return rows;
+bool Table::readRowByOffset(std::uint64_t packed, Row& row) const {
+    return dataPages_.read(TupleRef::unpack(packed), row);
 }
 
-bool Table::readRowByOffset(std::uint64_t offset, Row& row) const {
-    std::ifstream ifs(dataFilePath(), std::ios::binary);
-    if (!ifs.good()) return false;
-    ifs.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
-    if (!ifs.good()) return false;
-    std::string line;
-    if (!std::getline(ifs, line)) return false;
-    if (line.rfind("DEL|", 0) == 0) return false;
-    if (line.rfind("ROW|", 0) != 0) return false;
-    row = deserializeRow(line.substr(4));
-    return true;
+std::vector<Row> Table::readAllDataRows() const {
+    return dataPages_.scanAll();
 }
 
 void Table::rewriteDataRows(const std::vector<Row>& rows) const {
@@ -1006,6 +977,109 @@ bool Table::ColumnIndex::lookup(const std::string& value, Table::CompareOp op,
     std::sort(offsets.begin(), offsets.end());
     offsets.erase(std::unique(offsets.begin(), offsets.end()), offsets.end());
     return true;
+}
+
+TupleRef Table::DataPageManager::allocate(const std::vector<std::string>& values) {
+    const auto path = table.dataFilePath();
+    Row row{values};
+    std::string tupleData = serializeRow(row);
+
+    for (std::uint32_t pg = 1; pg <= nextPageId; ++pg) {
+        std::string pageData = FileManager::readPage(path, pg);
+        if (!pageData.empty()) {
+            DataPageHeader hdr;
+            std::memcpy(&hdr, pageData.data(), sizeof(DataPageHeader));
+            if (hdr.freeEnd - hdr.freeStart >= tupleData.size() + 1 + kSlotSize) {
+                // Write to existing page
+                std::string full = tupleData + '\n';
+                std::memcpy(pageData.data() + hdr.freeStart, full.data(), full.size());
+                PageSlot slot; slot.offset = hdr.freeStart; slot.flags = 0;
+                std::memcpy(pageData.data() + hdr.freeEnd - kSlotSize, &slot, sizeof(PageSlot));
+                hdr.freeStart += static_cast<std::uint16_t>(full.size());
+                TupleRef ref; ref.pageId = pg; ref.slotIndex = hdr.slotCount;
+                hdr.freeEnd -= kSlotSize; hdr.slotCount++;
+                std::memcpy(pageData.data(), &hdr, sizeof(DataPageHeader));
+                FileManager::writePage(path, pg, pageData);
+                return ref;
+            }
+        }
+    }
+    // Allocate new page
+    std::uint32_t pg = nextPageId++;
+    std::string pageData(kDataPageSize, '\0');
+    DataPageHeader hdr;
+    hdr.pageId = pg; hdr.freeStart = kDataPageHeader; hdr.freeEnd = kDataPageSize;
+    std::memcpy(pageData.data(), &hdr, sizeof(DataPageHeader));
+    std::string full = tupleData + '\n';
+    std::memcpy(pageData.data() + hdr.freeStart, full.data(), full.size());
+    PageSlot slot; slot.offset = hdr.freeStart; slot.flags = 0;
+    std::memcpy(pageData.data() + hdr.freeEnd - kSlotSize, &slot, sizeof(PageSlot));
+    hdr.freeStart += static_cast<std::uint16_t>(full.size());
+    hdr.freeEnd -= kSlotSize; hdr.slotCount++;
+    std::memcpy(pageData.data(), &hdr, sizeof(DataPageHeader));
+    FileManager::writePage(path, pg, pageData);
+    return {pg, static_cast<std::uint32_t>(hdr.slotCount - 1)};
+}
+
+bool Table::DataPageManager::read(TupleRef ref, Row& out) const {
+    std::string pageData = FileManager::readPage(table.dataFilePath(), ref.pageId);
+    if (pageData.empty()) return false;
+    DataPageHeader hdr;
+    std::memcpy(&hdr, pageData.data(), sizeof(DataPageHeader));
+    if (ref.slotIndex >= hdr.slotCount) return false;
+    std::uint32_t slotPos = hdr.freeEnd + (hdr.slotCount - 1 - ref.slotIndex) * kSlotSize;
+    PageSlot slot;
+    std::memcpy(&slot, pageData.data() + slotPos, sizeof(PageSlot));
+    if (slot.flags != 0) return false;
+    const char* start = pageData.data() + slot.offset;
+    const char* end = static_cast<const char*>(std::memchr(start, '\n', pageData.size() - slot.offset));
+    if (!end) return false;
+    out = deserializeRow(std::string(start, static_cast<std::size_t>(end - start)));
+    return true;
+}
+
+bool Table::DataPageManager::markDeleted(TupleRef ref) {
+    std::string pageData = FileManager::readPage(table.dataFilePath(), ref.pageId);
+    if (pageData.empty()) return false;
+    DataPageHeader hdr;
+    std::memcpy(&hdr, pageData.data(), sizeof(DataPageHeader));
+    if (ref.slotIndex >= hdr.slotCount) return false;
+    std::uint32_t slotPos = hdr.freeEnd + (hdr.slotCount - 1 - ref.slotIndex) * kSlotSize;
+    PageSlot slot;
+    std::memcpy(&slot, pageData.data() + slotPos, sizeof(PageSlot));
+    if (slot.flags != 0) return false;
+    slot.flags = 1;
+    std::memcpy(pageData.data() + slotPos, &slot, sizeof(PageSlot));
+    return FileManager::writePage(table.dataFilePath(), ref.pageId, pageData);
+}
+
+std::vector<Row> Table::DataPageManager::scanAll() const {
+    std::vector<Row> rows;
+    scan([&](TupleRef, const Row& row) { rows.push_back(row); });
+    return rows;
+}
+
+void Table::DataPageManager::scan(std::function<void(TupleRef, const Row&)> visitor) const {
+    const auto path = table.dataFilePath();
+    if (!std::filesystem::exists(path)) return;
+    for (std::uint32_t pg = 1; pg <= nextPageId + 1; ++pg) {
+        std::string pageData = FileManager::readPage(path, pg);
+        if (pageData.empty()) break;
+        DataPageHeader hdr;
+        std::memcpy(&hdr, pageData.data(), sizeof(DataPageHeader));
+        if (hdr.pageId == 0) continue;
+        for (std::uint32_t s = 0; s < hdr.slotCount; ++s) {
+            std::uint32_t slotPos = hdr.freeEnd + (hdr.slotCount - 1 - s) * kSlotSize;
+            PageSlot slot;
+            std::memcpy(&slot, pageData.data() + slotPos, sizeof(PageSlot));
+            if (slot.flags != 0) continue;
+            const char* start = pageData.data() + slot.offset;
+            const char* end = static_cast<const char*>(std::memchr(start, '\n', pageData.size() - slot.offset));
+            if (!end) continue;
+            Row row = deserializeRow(std::string(start, static_cast<std::size_t>(end - start)));
+            visitor(TupleRef{pg, s}, row);
+        }
+    }
 }
 
 namespace {
@@ -1234,25 +1308,14 @@ void Table::rebuildIndexFromData() {
     primaryKeyOffsets_.clear();
     primaryKeyOffsetsOrdered_.clear();
 
-    std::ifstream ifs(dataFilePath(), std::ios::binary);
-    if (!ifs.good()) { syncIndexPages(); return; }
-
-    std::string line;
-    while (true) {
-        const std::streampos linePos = ifs.tellg();
-        if (!std::getline(ifs, line)) break;
-        if (linePos == std::streampos(-1)) continue;
-        if (line.empty()) continue;
-        if (line.rfind("DEL|", 0) == 0) continue;
-        if (line.rfind("ROW|", 0) != 0) continue;
-        const std::uint64_t lineStartOffset = static_cast<std::uint64_t>(linePos);
-        Row row = deserializeRow(line.substr(4));
-        if (row.values.empty()) continue;
+    dataPages_.scan([&](TupleRef ref, const Row& row) {
+        if (row.values.empty()) return;
         const std::string key = row.values.front();
         index_.insert(key, Row{{key}});
-        primaryKeyOffsets_[key] = lineStartOffset;
-        primaryKeyOffsetsOrdered_[key] = lineStartOffset;
-    }
+        std::uint64_t packed = ref.pack();
+        primaryKeyOffsets_[key] = packed;
+        primaryKeyOffsetsOrdered_[key] = packed;
+    });
     syncIndexPages();
 }
 

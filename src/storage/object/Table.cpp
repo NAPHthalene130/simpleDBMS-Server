@@ -10,6 +10,8 @@
 #include <sstream>
 #include <unordered_set>
 
+#include "storage/manager/FileManager.h"
+
 namespace storage {
 
 namespace {
@@ -1049,21 +1051,19 @@ void Table::syncIndexPages() {
         }
     }
 
-    std::fstream fs(indexFilePath(), std::ios::in | std::ios::out | std::ios::binary);
-    if (!fs.good()) {
+    std::string header;
+    {
+        std::ostringstream headerOss;
+        headerOss << "TID_PAGED_V3\npage_size=" << kTidPageSize << "\nroot_page=" << rootPageId_
+                  << "\nnext_page=" << nextPageId_ << '\n';
+        header = headerOss.str();
+    }
+    FileManager::writeHeader(indexFilePath(), header);
+    if (!std::filesystem::exists(indexFilePath())) {
         std::ofstream ofs(indexFilePath(), std::ios::trunc | std::ios::binary);
         ensure(ofs.good(), "failed to create table index file: " + indexFilePath().string());
-        writeHeader(ofs);
-        fs.open(indexFilePath(), std::ios::in | std::ios::out | std::ios::binary);
-        ensure(fs.good(), "failed to reopen index file");
+        ofs.write(header.data(), static_cast<std::streamsize>(header.size()));
     }
-
-    std::ostringstream headerOss;
-    headerOss << "TID_PAGED_V3\npage_size=" << kTidPageSize << "\nroot_page=" << rootPageId_
-              << "\nnext_page=" << nextPageId_ << '\n';
-    std::string header = headerOss.str();
-    fs.seekp(0, std::ios::beg);
-    fs.write(header.data(), static_cast<std::streamsize>(header.size()));
 
     for (const auto& dp : dirtyPages) {
         std::ostringstream pageOss;
@@ -1103,9 +1103,7 @@ void Table::syncIndexPages() {
         pageOss << "ENDPAGE\n";
         std::string page = pageOss.str();
         ensure(page.size() <= kTidPageSize, "page content exceeds page size");
-        const std::streamoff pageOffset = static_cast<std::streamoff>(dp.pageId) * kTidPageSize;
-        fs.seekp(pageOffset, std::ios::beg);
-        fs.write(page.data(), static_cast<std::streamsize>(page.size()));
+        FileManager::writePage(indexFilePath(), dp.pageId, page);
     }
 
     index_.clearDirtyFlags();
@@ -1426,76 +1424,79 @@ void Table::rewriteDataRows(const std::vector<Row>& rows) const {
 }
 
 std::vector<std::string> Table::normalizeInputValues(const std::vector<std::string>& values) const {
-    ensure(values.size() <= schema_.columns.size(),
-           "column count mismatch, expected <= " + std::to_string(schema_.columns.size()) +
+    return ConstraintValidator(*this).normalize(values);
+}
+
+bool Table::validateConstraintForExistingRows(const ColumnConstraintSpec& spec) const {
+    return ConstraintValidator(*this).checkNewConstraint(spec);
+}
+
+void Table::enforceRowConstraints(const std::vector<std::string>& values,
+                                   const std::string* skipPrimaryKey) const {
+    ConstraintValidator(*this).check(values, skipPrimaryKey);
+}
+
+std::vector<std::string> Table::ConstraintValidator::normalize(const std::vector<std::string>& values) const {
+    const auto& schema = table.schema_;
+    ensure(values.size() <= schema.columns.size(),
+           "column count mismatch, expected <= " + std::to_string(schema.columns.size()) +
                ", got " + std::to_string(values.size()));
-    std::vector<std::string> normalized(schema_.columns.size(), "");
+    std::vector<std::string> normalized(schema.columns.size(), "");
     for (std::size_t i = 0; i < values.size(); ++i) {
         normalized[i] = values[i];
     }
-    for (std::size_t i = values.size(); i < schema_.columns.size(); ++i) {
-        if (i < schema_.columnMetas.size() && !schema_.columnMetas[i].defaultValue.empty()) {
-            normalized[i] = schema_.columnMetas[i].defaultValue;
+    for (std::size_t i = values.size(); i < schema.columns.size(); ++i) {
+        if (i < schema.columnMetas.size() && !schema.columnMetas[i].defaultValue.empty()) {
+            normalized[i] = schema.columnMetas[i].defaultValue;
             continue;
         }
-        const auto it = constraintsByColumn_.find(schema_.columns[i]);
-        if (it != constraintsByColumn_.end() && it->second.hasDefault) {
+        const auto it = table.constraintsByColumn_.find(schema.columns[i]);
+        if (it != table.constraintsByColumn_.end() && it->second.hasDefault) {
             normalized[i] = it->second.defaultValue;
         }
     }
     return normalized;
 }
 
-bool Table::validateConstraintForExistingRows(const ColumnConstraintSpec& spec) const {
-    const std::size_t idx = columnIndex(spec.column);
-    const auto rows = readAllDataRows();
+void Table::ConstraintValidator::check(const std::vector<std::string>& values,
+                                        const std::string* skipPrimaryKey) const {
+    const auto& schema = table.schema_;
+    const auto& constraints = table.constraintsByColumn_;
+    for (std::size_t i = 0; i < schema.columns.size(); ++i) {
+        const std::string& col = schema.columns[i];
+        const auto it = constraints.find(col);
+        if (it == constraints.end()) continue;
+        const auto& spec = it->second;
+        if (spec.notNull) {
+            ensure(!values[i].empty(), "NOT NULL constraint violation on column: " + col);
+        }
+        if (spec.unique) {
+            const auto rows = table.readAllDataRows();
+            for (const auto& row : rows) {
+                if (i >= row.values.size()) continue;
+                if (skipPrimaryKey != nullptr && !row.values.empty() && row.values.front() == *skipPrimaryKey) continue;
+                ensure(row.values[i] != values[i], "UNIQUE constraint violation on column: " + col);
+            }
+        }
+    }
+}
+
+bool Table::ConstraintValidator::checkNewConstraint(const ColumnConstraintSpec& spec) const {
+    const std::size_t idx = table.columnIndex(spec.column);
+    const auto rows = table.readAllDataRows();
     if (spec.notNull) {
         for (const auto& row : rows) {
-            if (idx >= row.values.size() || row.values[idx].empty()) {
-                return false;
-            }
+            if (idx >= row.values.size() || row.values[idx].empty()) return false;
         }
     }
     if (spec.unique) {
         std::unordered_set<std::string> seen;
         for (const auto& row : rows) {
-            if (idx >= row.values.size()) {
-                continue;
-            }
-            if (!seen.insert(row.values[idx]).second) {
-                return false;
-            }
+            if (idx >= row.values.size()) continue;
+            if (!seen.insert(row.values[idx]).second) return false;
         }
     }
     return true;
-}
-
-void Table::enforceRowConstraints(const std::vector<std::string>& values,
-                                  const std::string* skipPrimaryKey) const {
-    for (std::size_t i = 0; i < schema_.columns.size(); ++i) {
-        const std::string& col = schema_.columns[i];
-        const auto it = constraintsByColumn_.find(col);
-        if (it == constraintsByColumn_.end()) {
-            continue;
-        }
-        const auto& spec = it->second;
-        const std::string& value = values[i];
-        if (spec.notNull) {
-            ensure(!value.empty(), "NOT NULL constraint violation on column: " + col);
-        }
-        if (spec.unique) {
-            const auto rows = readAllDataRows();
-            for (const auto& row : rows) {
-                if (i >= row.values.size()) {
-                    continue;
-                }
-                if (skipPrimaryKey != nullptr && !row.values.empty() && row.values.front() == *skipPrimaryKey) {
-                    continue;
-                }
-                ensure(row.values[i] != value, "UNIQUE constraint violation on column: " + col);
-            }
-        }
-    }
 }
 
 std::unordered_map<std::string, std::unordered_map<std::string, std::size_t>>

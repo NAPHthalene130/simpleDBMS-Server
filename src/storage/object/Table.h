@@ -245,6 +245,16 @@ private:
                     std::vector<std::uint64_t>& offsets) const;
     };
 
+    struct ConstraintValidator {
+        const Table& table;
+
+        explicit ConstraintValidator(const Table& t) : table(t) {}
+
+        std::vector<std::string> normalize(const std::vector<std::string>& values) const;
+        void check(const std::vector<std::string>& values, const std::string* skipPrimaryKey = nullptr) const;
+        bool checkNewConstraint(const ColumnConstraintSpec& spec) const;
+    };
+
     std::filesystem::path dbPath_;
     TableSchema schema_;
     BTree<std::string, Row> index_{2};

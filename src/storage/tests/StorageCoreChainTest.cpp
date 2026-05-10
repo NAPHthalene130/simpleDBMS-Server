@@ -88,14 +88,14 @@ void removeDatabaseFromCatalog(const std::filesystem::path &catalogFile, const s
 
 } // namespace
 
-class Core {
+class TestCore {
 public:
-    Core()
-        : storageManager(new StorageManager(this))
+    TestCore()
+        : storageManager(new StorageManager(reinterpret_cast<Core*>(this)))
     {
     }
 
-    ~Core()
+    ~TestCore()
     {
         delete storageManager;
         storageManager = nullptr;
@@ -139,7 +139,7 @@ int main()
     }
     removeDatabaseFromCatalog(catalogFile, dbName);
 
-    Core core;
+    TestCore core;
 
     auto *systemCatalogManager = core.getStorageManager()->getSystemCatalogManager();
     auto *databaseManager = core.getStorageManager()->getDatabaseManager();
@@ -520,16 +520,60 @@ int main()
     scoreBetween.value = "20";
     scoreBetween.secondValue = "40";
     auto scoreRange = siTable.select({"ID"}, {scoreBetween});
-    std::cout << "[SI] Score BETWEEN 20-40: " << scoreRange.size() << " rows" << std::endl;
+    ensure(scoreRange.size() > 0, "secondary index Score BETWEEN returned empty");
 
     auto scoreGT = siTable.select(
         {"ID"}, {storage::Table::WhereCondition{"Score", storage::Table::CompareOp::GT, "80"}});
-    std::cout << "[SI] Score GT 80: " << scoreGT.size() << " rows" << std::endl;
+    ensure(scoreGT.size() > 0, "secondary index Score GT returned empty");
 
     ensure(std::filesystem::exists(dbDir / (sidxTableName + ".Tag.nidx")),
            ".nidx file for Tag not found");
     ensure(std::filesystem::exists(dbDir / (sidxTableName + ".Score.nidx")),
            ".nidx file for Score not found");
+
+    // ======== Persistence Recovery Test ========
+    const std::string persistTableName = "PersistTB";
+    ensure(databaseManager->createTable(dbName, persistTableName, {"PK", "Val", "Num"}),
+           "createTable persist failed");
+    for (int i = 1; i <= 50; ++i) {
+        std::string pk = std::to_string(i);
+        while (pk.size() < 3) pk = "0" + pk;
+        std::string val = (i % 2 == 0) ? "even" : "odd";
+        std::string num = std::to_string(i * 10);
+        ensure(databaseManager->insertRow(dbName, persistTableName, {pk, val, num}),
+               ("insertRow persist failed i=" + std::to_string(i)).c_str());
+    }
+
+    auto preReload = storage::Table::load(dbDir, persistTableName);
+    auto allPre = preReload.select({"*"});
+    ensure(allPre.size() == 50, "pre-reload count mismatch");
+
+    auto reloaded1 = storage::Table::load(dbDir, persistTableName);
+    auto all1 = reloaded1.select({"*"});
+    ensure(all1.size() == 50, "reload1 row count mismatch (" + std::to_string(all1.size()) + ")");
+
+    auto oddRows = reloaded1.select(
+        {"PK"}, {storage::Table::WhereCondition{"Val", storage::Table::CompareOp::EQ, "odd"}});
+    ensure(oddRows.size() == 25, "reload1 secondary EQ odd mismatch (" + std::to_string(oddRows.size()) + ")");
+
+    storage::Table::WhereCondition numBetween;
+    numBetween.column = "Num";
+    numBetween.op = storage::Table::CompareOp::BETWEEN;
+    numBetween.value = "100";
+    numBetween.secondValue = "200";
+    auto numRange = reloaded1.select({"PK"}, {numBetween});
+    ensure(numRange.size() == 11, "reload1 secondary BETWEEN mismatch (" + std::to_string(numRange.size()) + ")");
+
+    auto reloaded2 = storage::Table::load(dbDir, persistTableName);
+    auto withPK = reloaded2.select(
+        {"Val"}, {storage::Table::WhereCondition{"PK", storage::Table::CompareOp::EQ, "025"}});
+    ensure(withPK.size() == 1 && withPK.front().values.front() == "odd",
+           "reload2 primary EQ mismatch");
+
+    auto withPK2 = reloaded2.select(
+        {"Num"}, {storage::Table::WhereCondition{"PK", storage::Table::CompareOp::EQ, "050"}});
+    ensure(withPK2.size() == 1 && withPK2.front().values.front() == "500",
+           "reload2 primary EQ mismatch");
 
     std::cout << "StorageCoreChainTest passed." << std::endl;
     return 0;
@@ -541,3 +585,4 @@ int main()
         return 1;
     }
 }
+

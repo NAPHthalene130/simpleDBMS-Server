@@ -177,9 +177,9 @@ public:
     bool deleteByPrimaryKey(const std::string& primaryKey);
 
     /**
-     * @brief 压缩 .trd 数据文件，移除 DEL| 标记行并回收空间
+     * @brief 压缩 .trd 数据文件，整理页内碎片并回收空间
      * @author Startale
-     * @return 移除的已删除行数
+     * @return 移除的已删除槽位数
      */
     std::size_t compact();
 
@@ -275,6 +275,8 @@ private:
         bool markDeleted(TupleRef ref);
         std::vector<Row> scanAll() const;
         void scan(std::function<void(TupleRef, const Row&)> visitor) const;
+        bool compactPage(std::uint32_t pageId);
+        std::size_t compactAll();
     };
 
     std::filesystem::path dbPath_;
@@ -332,16 +334,6 @@ private:
     void loadConstraintsFromIntegrityMeta();
 
     /**
-     * @brief 追加一行数据记录到 .trd 文件
-     * @author Startale
-     * @param values 行数据
-     * @return 写入前的字节偏移
-     */
-    std::uint64_t appendDataRow(const std::vector<std::string>& values) const;
-
-    void markRowDeleted(std::uint64_t offset) const;
-
-    /**
      * @brief 将内存 BTree 索引刷盘为页式 .tid 文件
      * @author Startale
      */
@@ -381,12 +373,6 @@ private:
     std::vector<Row> readAllDataRows() const;
     bool readRowByOffset(std::uint64_t offset, Row& row) const;
 
-    /**
-     * @brief 覆盖写回所有行记录到数据文件
-     * @author Startale
-     * @param rows 行记录列表
-     */
-    void rewriteDataRows(const std::vector<Row>& rows) const;
     std::vector<std::string> normalizeInputValues(const std::vector<std::string>& values) const;
     bool validateConstraintForExistingRows(const ColumnConstraintSpec& spec) const;
     void enforceRowConstraints(const std::vector<std::string>& values,

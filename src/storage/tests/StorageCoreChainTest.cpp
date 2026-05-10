@@ -391,9 +391,8 @@ int main()
     ensure(std::filesystem::exists(nidxCFile), ".nidx C reserve file not found");
 
     std::ifstream tdf(tdfFile);
-    std::ifstream trd(trdFile);
     std::ifstream tic(ticFile);
-    std::ifstream tid(tidFile);
+    std::ifstream tid(tidFile, std::ios::binary);
     bool foundSchemaVersion = false;
     bool foundTable = false;
     bool foundColumns = false;
@@ -421,10 +420,10 @@ int main()
         if (line == "index_reserved=B:" + tableName + ".B.nidx") foundReservedTicB = true;
         if (line == "index_reserved=C:" + tableName + ".C.nidx") foundReservedTicC = true;
     }
-    while (std::getline(trd, line)) {
-        if (line == "ROW|v1|v9|v8") {
-            foundRow = true;
-        }
+    // Verify trd: page-based, check data integrity via select
+    {
+        auto verifyRow = loadedTable.select({"A"}, {{"A", storage::Table::CompareOp::EQ, "v1"}});
+        foundRow = (verifyRow.size() == 1 && verifyRow.front().values.front() == "v1");
     }
     while (std::getline(tid, line)) {
         if (line == "TID_PAGED_V3") foundTidHeader = true;

@@ -348,67 +348,22 @@ bool Table::deleteByPrimaryKey(const std::string& primaryKey) {
 }
 
 std::size_t Table::compact() {
-    std::vector<std::pair<std::uint64_t, Row>> activeRows;
-    std::uint64_t oldOffset = 0;
-    std::uint64_t deletedCount = 0;
-    {
-        std::ifstream ifs(dataFilePath());
-        if (!ifs.good()) return 0;
-        std::string line;
-        std::uint64_t pos = 0;
-        while (std::getline(ifs, line)) {
-            std::uint64_t lineLen = static_cast<std::uint64_t>(line.size()) + 1;
-            if (line.rfind("DEL|", 0) == 0) {
-                deletedCount++;
-            } else if (line.rfind("ROW|", 0) == 0) {
-                Row row = deserializeRow(line.substr(4));
-                if (row.values.size() == schema_.columns.size()) {
-                    activeRows.push_back({pos, std::move(row)});
-                }
+    std::size_t removed = dataPages_.compactAll();
+    if (removed > 0) {
+        index_.clear();
+        primaryKeyOffsets_.clear();
+        primaryKeyOffsetsOrdered_.clear();
+        dataPages_.scan([&](TupleRef ref, const Row& row) {
+            if (!row.values.empty()) {
+                std::string pk = row.values.front();
+                primaryKeyOffsets_[pk] = ref.pack();
+                primaryKeyOffsetsOrdered_[pk] = ref.pack();
+                index_.insert(pk, Row{{pk}});
             }
-            pos += lineLen;
-        }
+        });
+        syncIndexPages();
     }
-
-    if (deletedCount == 0) return 0;
-
-    std::unordered_map<std::uint64_t, std::uint64_t> oldToNewOffset;
-    {
-        std::ofstream ofs(dataFilePath(), std::ios::trunc | std::ios::binary);
-        ensure(ofs.good(), "failed to rewrite table data file: " + dataFilePath().string());
-        std::uint64_t newPos = 0;
-        for (auto& kv : activeRows) {
-            oldToNewOffset[kv.first] = newPos;
-            std::string rowStr = "ROW|" + serializeRow(kv.second) + "\n";
-            ofs.write(rowStr.data(), static_cast<std::streamsize>(rowStr.size()));
-            newPos += static_cast<std::uint64_t>(rowStr.size());
-        }
-    }
-
-    for (auto& kv : primaryKeyOffsets_) {
-        auto it = oldToNewOffset.find(kv.second);
-        if (it != oldToNewOffset.end()) kv.second = it->second;
-    }
-    for (auto& kv : primaryKeyOffsetsOrdered_) {
-        auto it = oldToNewOffset.find(kv.second);
-        if (it != oldToNewOffset.end()) kv.second = it->second;
-    }
-
-    for (auto& kv : secondaryIndexes_) {
-        if (!kv.second.active) continue;
-        std::multimap<std::string, std::uint64_t> newEntries;
-        for (const auto& entry : kv.second.entries) {
-            auto it = oldToNewOffset.find(entry.second);
-            if (it != oldToNewOffset.end()) {
-                newEntries.emplace(entry.first, it->second);
-            }
-        }
-        kv.second.entries = std::move(newEntries);
-        kv.second.save(kv.second.filePath);
-    }
-
-    syncIndexPages();
-    return deletedCount;
+    return removed;
 }
 
 std::vector<Row> Table::select(const std::vector<std::string>& targetColumns,
@@ -869,38 +824,12 @@ void Table::ColumnIndex::save(const std::filesystem::path& path) {
     }
 }
 
-std::uint64_t Table::appendDataRow(const std::vector<std::string>& values) const {
-    const std::uint64_t offset = std::filesystem::exists(dataFilePath())
-                                     ? static_cast<std::uint64_t>(std::filesystem::file_size(dataFilePath()))
-                                     : 0;
-    std::ofstream ofs(dataFilePath(), std::ios::app | std::ios::binary);
-    ensure(ofs.good(), "failed to open table data file: " + dataFilePath().string());
-    ofs << "ROW|" << join(values, "|") << '\n';
-    return offset;
-}
-
-void Table::markRowDeleted(std::uint64_t offset) const {
-    std::fstream fs(dataFilePath(), std::ios::in | std::ios::out | std::ios::binary);
-    if (!fs.good()) return;
-    fs.seekp(static_cast<std::streamoff>(offset), std::ios::beg);
-    if (!fs.good()) return;
-    fs.write("DEL|", 4);
-}
-
 bool Table::readRowByOffset(std::uint64_t packed, Row& row) const {
     return dataPages_.read(TupleRef::unpack(packed), row);
 }
 
 std::vector<Row> Table::readAllDataRows() const {
     return dataPages_.scanAll();
-}
-
-void Table::rewriteDataRows(const std::vector<Row>& rows) const {
-    std::ofstream ofs(dataFilePath(), std::ios::trunc | std::ios::binary);
-    ensure(ofs.good(), "failed to rewrite table data file: " + dataFilePath().string());
-    for (const auto& row : rows) {
-        ofs << "ROW|" << serializeRow(row) << '\n';
-    }
 }
 
 void Table::ColumnIndex::load(const std::filesystem::path& path) {
@@ -1084,6 +1013,140 @@ void Table::DataPageManager::scan(std::function<void(TupleRef, const Row&)> visi
             visitor(TupleRef{pg, s}, row);
         }
     }
+}
+
+bool Table::DataPageManager::compactPage(std::uint32_t pageId) {
+    const auto path = table.dataFilePath();
+    std::string pageData = FileManager::readPage(path, pageId);
+    if (pageData.empty()) return false;
+    DataPageHeader hdr;
+    std::memcpy(&hdr, pageData.data(), sizeof(DataPageHeader));
+
+    // Collect active tuples
+    struct ActiveSlot { std::uint32_t slotIndex; std::string data; };
+    std::vector<ActiveSlot> active;
+    for (std::uint32_t s = 0; s < hdr.slotCount; ++s) {
+        std::uint32_t slotPos = hdr.freeEnd + (hdr.slotCount - 1 - s) * kSlotSize;
+        PageSlot slot;
+        std::memcpy(&slot, pageData.data() + slotPos, sizeof(PageSlot));
+        if (slot.flags != 0) continue;
+        const char* start = pageData.data() + slot.offset;
+        const char* end = static_cast<const char*>(std::memchr(start, '\n', pageData.size() - slot.offset));
+        if (!end) continue;
+        active.push_back({s, std::string(start, static_cast<std::size_t>(end - start) + 1)});
+    }
+
+    if (active.empty()) {
+        // Page fully deleted: mark as empty, sizes shrink to 0
+        std::memset(pageData.data(), 0, kDataPageSize);
+        hdr.pageId = 0; hdr.slotCount = 0;
+        hdr.freeStart = kDataPageHeader; hdr.freeEnd = kDataPageSize;
+        std::memcpy(pageData.data(), &hdr, sizeof(DataPageHeader));
+        return FileManager::writePage(path, pageId, pageData);
+    }
+
+    // Rebuild page with packed tuples
+    std::string newPage(kDataPageSize, '\0');
+    DataPageHeader newHdr;
+    newHdr.pageId = pageId;
+    newHdr.freeStart = kDataPageHeader;
+    newHdr.freeEnd = kDataPageSize;
+    newHdr.slotCount = hdr.slotCount;
+
+    std::memcpy(newPage.data(), &newHdr, sizeof(DataPageHeader));
+
+    for (const auto& as : active) {
+        // Keep same slot index, update offset
+        std::uint32_t newOffset = newHdr.freeStart;
+        std::memcpy(newPage.data() + newOffset, as.data.data(), as.data.size());
+
+        std::uint32_t slotPos = newHdr.freeEnd - kSlotSize;
+        PageSlot slot;
+        slot.offset = static_cast<std::uint16_t>(newOffset);
+        slot.flags = 0;
+        std::memcpy(newPage.data() + slotPos, &slot, sizeof(PageSlot));
+
+        newHdr.freeStart += static_cast<std::uint16_t>(as.data.size());
+        newHdr.freeEnd -= kSlotSize;
+    }
+
+    // Mark remaining slots as deleted (unaltered indices)
+    for (std::uint32_t s = 0; s < hdr.slotCount; ++s) {
+        bool isActive = false;
+        for (const auto& as : active) { if (as.slotIndex == s) { isActive = true; break; } }
+        if (isActive) continue;
+        std::uint32_t slotPos = hdr.freeEnd + (hdr.slotCount - 1 - s) * kSlotSize;
+        // Slot was already deleted, rewrite with flags=1, offset=0
+        // In the new page layout, deleted slots still need entries
+        // Actually, in newHdr, freeEnd has moved. The slot positions are different.
+        // We should preserve all slot indices with their flags.
+    }
+
+    // Wait, this approach has a problem: we keep hdr.slotCount the same but
+    // compact only active tuples. Deleted slots still need entries.
+    // Simpler: just rebuild from scratch, keeping same slot indices.
+    
+    // Actually, the simplest correct approach:
+    // For each slot 0..slotCount-1:
+    //   if was active: write tuple, set slot with new offset, flags=0
+    //   if was deleted: write slot with offset=0, flags=1 (no tuple)
+    
+    std::string rebuilt(kDataPageSize, '\0');
+    DataPageHeader rhdr;
+    rhdr.pageId = pageId;
+    rhdr.freeStart = kDataPageHeader;
+    rhdr.freeEnd = kDataPageSize;
+    rhdr.slotCount = hdr.slotCount;
+    
+    for (std::uint32_t s = 0; s < hdr.slotCount; ++s) {
+        std::uint32_t oldSlotPos = hdr.freeEnd + (hdr.slotCount - 1 - s) * kSlotSize;
+        PageSlot oldSlot;
+        std::memcpy(&oldSlot, pageData.data() + oldSlotPos, sizeof(PageSlot));
+        
+        PageSlot newSlot;
+        if (oldSlot.flags == 0) {
+            const char* start = pageData.data() + oldSlot.offset;
+            const char* end = static_cast<const char*>(std::memchr(start, '\n', pageData.size() - oldSlot.offset));
+            if (!end) { newSlot.flags = 1; newSlot.offset = 0; }
+            else {
+                std::size_t len = static_cast<std::size_t>(end - start) + 1;
+                std::memcpy(rebuilt.data() + rhdr.freeStart, start, len);
+                newSlot.offset = static_cast<std::uint16_t>(rhdr.freeStart);
+                newSlot.flags = 0;
+                rhdr.freeStart += static_cast<std::uint16_t>(len);
+            }
+        } else {
+            newSlot.flags = 1;
+            newSlot.offset = 0;
+        }
+        std::uint32_t newSlotPos = rhdr.freeEnd - kSlotSize;
+        std::memcpy(rebuilt.data() + newSlotPos, &newSlot, sizeof(PageSlot));
+        rhdr.freeEnd -= kSlotSize;
+    }
+    
+    std::memcpy(rebuilt.data(), &rhdr, sizeof(DataPageHeader));
+    return FileManager::writePage(path, pageId, rebuilt);
+}
+
+std::size_t Table::DataPageManager::compactAll() {
+    std::size_t totalRemoved = 0;
+    const auto path = table.dataFilePath();
+    if (!std::filesystem::exists(path)) return 0;
+    std::uintmax_t fileSize = std::filesystem::file_size(path);
+    std::uint32_t maxPg = static_cast<std::uint32_t>(fileSize / kDataPageSize);
+    for (std::uint32_t pg = 1; pg <= maxPg; ++pg) {
+        std::string pageData = FileManager::readPage(path, pg);
+        if (pageData.empty()) continue;
+        DataPageHeader hdr;
+        std::memcpy(&hdr, pageData.data(), sizeof(DataPageHeader));
+        std::uint32_t deleted = 0;
+        for (std::uint32_t s = 0; s < hdr.slotCount; ++s) {
+            PageSlot slot; std::memcpy(&slot, pageData.data() + hdr.freeEnd + (hdr.slotCount-1-s)*kSlotSize, sizeof(PageSlot));
+            if (slot.flags != 0) ++deleted;
+        }
+        if (deleted > 0) { compactPage(pg); totalRemoved += deleted; }
+    }
+    return totalRemoved;
 }
 
 namespace {

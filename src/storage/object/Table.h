@@ -179,6 +179,25 @@ public:
     bool deleteByPrimaryKey(const std::string& primaryKey);
 
     /**
+     * @brief 按条件更新，返回受影响行数
+     * @author Startale
+     */
+    std::size_t updateByCondition(const std::vector<WhereCondition>& whereConditions,
+                                  const std::vector<std::string>& newValues);
+
+    /**
+     * @brief 按条件删除，返回受影响行数
+     * @author Startale
+     */
+    std::size_t deleteByCondition(const std::vector<WhereCondition>& whereConditions);
+
+    /**
+     * @brief 快速清空全部数据
+     * @author Startale
+     */
+    void truncate();
+
+    /**
      * @brief 压缩 .trd 数据文件，整理页内碎片并回收空间
      * @author Startale
      * @return 移除的已删除槽位数

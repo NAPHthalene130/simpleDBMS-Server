@@ -658,6 +658,46 @@ int main()
         ensure(t.alterColumnType("Score", storage::DataType::TEXT), "alterColumnType back to TEXT failed");
     }
 
+    // UPDATE BY CONDITION
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        std::size_t n = t.updateByCondition(
+            {storage::Table::WhereCondition{"ID", storage::Table::CompareOp::EQ, "2"}},
+            {"2", "UPDATED_BY_CONDITION"});
+        ensure(n == 1, "updateByCondition count mismatch");
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        auto r = t.select({"*"}, {storage::Table::WhereCondition{"ID", storage::Table::CompareOp::EQ, "2"}});
+        ensure(r.size() == 1 && r[0].values.size() >= 2 && r[0].values[1] == "UPDATED_BY_CONDITION",
+               "updateByCondition value mismatch");
+    }
+
+    // DELETE BY CONDITION
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        std::size_t n = t.deleteByCondition(
+            {storage::Table::WhereCondition{"ID", storage::Table::CompareOp::GT, "2"}});
+        // Originally 3 rows, after deleting rows with ID > 2 (i.e. "3"), 2 rows remain
+        ensure(n == 1, "deleteByCondition count mismatch");
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        auto r = t.select({"*"});
+        ensure(r.size() == 2, "deleteByCondition: expected 2 rows remaining");
+    }
+
+    // TRUNCATE
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        t.truncate();
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        auto r = t.select({"*"});
+        ensure(r.size() == 0, "truncate: expected 0 rows");
+    }
+
     std::cout << "StorageCoreChainTest passed." << std::endl;
     return 0;
     } catch (const std::exception &e) {

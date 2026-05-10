@@ -362,6 +362,38 @@ bool Table::deleteByPrimaryKey(const std::string& primaryKey) {
     return true;
 }
 
+std::size_t Table::updateByCondition(const std::vector<WhereCondition>& whereConditions,
+                                      const std::vector<std::string>& newValues) {
+    if (whereConditions.empty()) return 0;
+    std::vector<Row> matched = select({"*"}, whereConditions);
+    std::size_t count = 0;
+    for (const auto& row : matched) {
+        if (row.values.empty()) continue;
+        if (updateByPrimaryKey(row.values.front(), newValues)) ++count;
+    }
+    return count;
+}
+
+std::size_t Table::deleteByCondition(const std::vector<WhereCondition>& whereConditions) {
+    if (whereConditions.empty()) return 0;
+    std::vector<Row> matched = select({"*"}, whereConditions);
+    std::size_t count = 0;
+    for (const auto& row : matched) {
+        if (row.values.empty()) continue;
+        if (deleteByPrimaryKey(row.values.front())) ++count;
+    }
+    return count;
+}
+
+void Table::truncate() {
+    dataPages_.scan([&](TupleRef ref, const Row&) { dataPages_.markDeleted(ref); });
+    index_.clear();
+    primaryKeyOffsets_.clear();
+    primaryKeyOffsetsOrdered_.clear();
+    std::filesystem::resize_file(dataFilePath(), 0);
+    syncIndexPages();
+}
+
 std::size_t Table::compact() {
     std::size_t removed = dataPages_.compactAll();
     if (removed > 0) {

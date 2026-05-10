@@ -123,6 +123,12 @@ public:
                       const std::string &oldName, const std::string &newName);
     bool alterColumnType(const std::string &dbName, const std::string &tableName,
                          const std::string &column, storage::DataType newType, std::uint16_t varcharLen = 0);
+    std::size_t updateByCondition(const std::string &dbName, const std::string &tableName,
+                                  const std::vector<storage::Table::WhereCondition> &whereConditions,
+                                  const std::vector<std::string> &newValues);
+    std::size_t deleteByCondition(const std::string &dbName, const std::string &tableName,
+                                  const std::vector<storage::Table::WhereCondition> &whereConditions);
+    bool truncateTable(const std::string &dbName, const std::string &tableName);
     std::vector<storage::Row> selectRows(const std::string &dbName,
                                          const std::string &tableName,
                                          const std::vector<std::string> &targetColumns,

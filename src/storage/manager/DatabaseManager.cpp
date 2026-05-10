@@ -810,6 +810,37 @@ bool DatabaseManager::alterColumnType(const std::string &dbName, const std::stri
     } catch (...) { return false; }
 }
 
+std::size_t DatabaseManager::updateByCondition(const std::string &dbName, const std::string &tableName,
+                                                const std::vector<storage::Table::WhereCondition> &whereConditions,
+                                                const std::vector<std::string> &newValues) {
+    if (dbName.empty() || tableName.empty()) return 0;
+    try {
+        auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        auto table = storage::Table::load(dbPath, tableName);
+        return table.updateByCondition(whereConditions, newValues);
+    } catch (...) { return 0; }
+}
+
+std::size_t DatabaseManager::deleteByCondition(const std::string &dbName, const std::string &tableName,
+                                                const std::vector<storage::Table::WhereCondition> &whereConditions) {
+    if (dbName.empty() || tableName.empty()) return 0;
+    try {
+        auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        auto table = storage::Table::load(dbPath, tableName);
+        return table.deleteByCondition(whereConditions);
+    } catch (...) { return 0; }
+}
+
+bool DatabaseManager::truncateTable(const std::string &dbName, const std::string &tableName) {
+    if (dbName.empty() || tableName.empty()) return false;
+    try {
+        auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        auto table = storage::Table::load(dbPath, tableName);
+        table.truncate();
+        return true;
+    } catch (...) { return false; }
+}
+
 std::vector<storage::Row> DatabaseManager::selectRows(
     const std::string &dbName,
     const std::string &tableName,

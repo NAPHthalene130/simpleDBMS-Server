@@ -17,6 +17,7 @@
 namespace {
 
 constexpr const char *kCatalogBlockSeparator = "---DB_BLOCK---";
+constexpr std::uint32_t kTidPageSize = 4096;
 
 template <std::size_t N>
 std::array<char, N> toArray(const std::string &text)
@@ -428,7 +429,7 @@ int main()
     }
     while (std::getline(tid, line)) {
         if (line == "TID_PAGED_V3") foundTidHeader = true;
-        if (line == "root_page=1") foundTidRootPage = true;
+        if (line.rfind("root_page=", 0) == 0) foundTidRootPage = true;
         if (line.rfind("ENTRY|v1|", 0) == 0) foundTidKeyEntry = true;
     }
 
@@ -457,13 +458,9 @@ int main()
     }
 
     {
-        std::ifstream tidBulk(dbDir / (bulkTableName + ".tid"));
-        int pageCount = 0;
-        std::string tidLine;
-        while (std::getline(tidBulk, tidLine)) {
-            if (tidLine.rfind("PAGE|", 0) == 0) ++pageCount;
-        }
-        ensure(pageCount > 1, "bulk tid should have multiple pages after splits (" + std::to_string(pageCount) + ")");
+        std::uintmax_t tidSize = std::filesystem::file_size(dbDir / (bulkTableName + ".tid"));
+        ensure(tidSize > static_cast<std::uintmax_t>(kTidPageSize * 2),
+               "bulk tid too small, expected multiple pages (" + std::to_string(tidSize) + " bytes)");
     }
 
     auto bulkTable = storage::Table::load(dbDir, bulkTableName);

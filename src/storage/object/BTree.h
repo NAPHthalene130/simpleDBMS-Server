@@ -6,8 +6,10 @@
 #include <sstream>
 #include <string>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 #include <vector>
+#include <cstdint>
 
 namespace storage {
 
@@ -43,11 +45,22 @@ public:
 private:
     struct Node {
         bool leaf = true;
+        bool dirty = false;
+        std::uint32_t pageId = 0;
         std::vector<Entry> entries;
         std::vector<std::unique_ptr<Node>> children;
 
         explicit Node(bool isLeaf = true) : leaf(isLeaf) {}
     };
+
+    std::unordered_set<Node*> dirtyNodes_;
+
+    void markDirty(Node* node) {
+        if (!node->dirty) {
+            node->dirty = true;
+            dirtyNodes_.insert(node);
+        }
+    }
 
 public:
     /**
@@ -75,7 +88,11 @@ public:
      */
     void clear() {
         root_ = std::make_unique<Node>(true);
+        root_->pageId = 0;
+        root_->dirty = true;
         size_ = 0;
+        dirtyNodes_.clear();
+        dirtyNodes_.insert(root_.get());
     }
 
     /**
@@ -130,11 +147,13 @@ public:
      * @return true 表示新插入，false 表示更新已有键
      */
     bool insert(const Key& key, const Value& value) {
+        markDirty(root_.get());
         if (root_->entries.size() == maxKeys()) {
             auto newRoot = std::make_unique<Node>(false);
             newRoot->children.push_back(std::move(root_));
             splitChild(newRoot.get(), 0);
             root_ = std::move(newRoot);
+            markDirty(root_.get());
         }
 
         bool inserted = insertNonFull(root_.get(), key, value);
@@ -152,11 +171,13 @@ public:
      * @return true 表示新插入，false 表示更新已有键
      */
     bool insert(Key&& key, Value&& value) {
+        markDirty(root_.get());
         if (root_->entries.size() == maxKeys()) {
             auto newRoot = std::make_unique<Node>(false);
             newRoot->children.push_back(std::move(root_));
             splitChild(newRoot.get(), 0);
             root_ = std::move(newRoot);
+            markDirty(root_.get());
         }
 
         bool inserted = insertNonFull(root_.get(), std::move(key), std::move(value));
@@ -211,6 +232,117 @@ public:
         std::vector<TidNodeRef> nodes;
         dumpNodeRefsRecursive(root_.get(), nodes);
         return nodes;
+    }
+
+    /**
+     * @struct DirtyPage
+     * @brief 增量同步所需的脏页数据
+     * @author Startale
+     */
+    struct DirtyPage {
+        std::uint32_t pageId = 0;
+        bool isLeaf = true;
+        std::vector<Key> keys;
+        std::vector<std::uint32_t> childPageIds;
+    };
+
+    /**
+     * @brief 收集所有脏页并分配新的 pageId
+     * @author Startale
+     * @param rootPageId 输出当前根页ID
+     * @param nextPageId 输入/输出下一个可分配页ID
+     * @return 脏页列表
+     */
+    std::vector<DirtyPage> collectDirtyPages(std::uint32_t& rootPageId, std::uint32_t& nextPageId) {
+        for (auto* node : dirtyNodes_) {
+            if (node->pageId == 0) {
+                node->pageId = nextPageId++;
+            }
+        }
+        std::unordered_set<Node*> allDirty = dirtyNodes_;
+        for (auto* node : allDirty) {
+            if (!node->leaf) {
+                for (auto& child : node->children) {
+                    if (child->pageId == 0) {
+                        child->pageId = nextPageId++;
+                        child->dirty = true;
+                        dirtyNodes_.insert(child.get());
+                    }
+                }
+            }
+        }
+
+        std::vector<DirtyPage> pages;
+        std::unordered_map<Node*, std::uint32_t> childPageMap;
+        for (auto* node : dirtyNodes_) {
+            DirtyPage dp;
+            dp.pageId = node->pageId;
+            dp.isLeaf = node->leaf;
+            for (const auto& entry : node->entries) {
+                dp.keys.push_back(entry.key);
+            }
+            if (!node->leaf) {
+                for (const auto& child : node->children) {
+                    if (child->pageId == 0) {
+                        child->pageId = nextPageId++;
+                    }
+                    dp.childPageIds.push_back(child->pageId);
+                }
+            }
+            pages.push_back(std::move(dp));
+        }
+
+        rootPageId = root_->pageId;
+        return pages;
+    }
+
+    /**
+     * @brief 清除所有脏标记
+     * @author Startale
+     */
+    void clearDirtyFlags() {
+        for (auto* node : dirtyNodes_) {
+            node->dirty = false;
+        }
+        dirtyNodes_.clear();
+    }
+
+    /**
+     * @brief 判断是否已有页ID分配
+     * @author Startale
+     */
+    bool hasPageIds() const { return root_ != nullptr && root_->pageId != 0; }
+
+    /**
+     * @brief 分配页ID到整棵树（全量写入时使用）
+     * @author Startale
+     */
+    void assignAllPageIds(std::uint32_t& nextPageId) {
+        std::function<void(Node*)> assign = [&](Node* node) {
+            node->pageId = nextPageId++;
+            node->dirty = true;
+            dirtyNodes_.insert(node);
+            if (!node->leaf) {
+                for (auto& child : node->children) {
+                    assign(child.get());
+                }
+            }
+        };
+        assign(root_.get());
+    }
+
+    std::vector<std::uint32_t> getNodePageIds() const {
+        std::vector<std::uint32_t> ids;
+        std::function<void(const Node*)> collect = [&](const Node* node) {
+            ids.push_back(node->pageId);
+            if (!node->leaf) {
+                for (const auto& child : node->children) {
+                    collect(child.get());
+                }
+            }
+        };
+        collect(root_.get());
+        return ids;
     }
 
 private:
@@ -284,10 +416,15 @@ private:
 
         parent->entries.insert(parent->entries.begin() + static_cast<std::ptrdiff_t>(childIndex), std::move(mid));
         parent->children.insert(parent->children.begin() + static_cast<std::ptrdiff_t>(childIndex + 1), std::move(right));
+
+        markDirty(parent);
+        markDirty(fullChild);
+        markDirty(parent->children[childIndex + 1].get());
     }
 
     template <typename K, typename V>
     bool insertNonFull(Node* node, K&& key, V&& value) {
+        markDirty(node);
         std::size_t idx = lowerBoundIndex(node, key);
 
         if (node->leaf) {

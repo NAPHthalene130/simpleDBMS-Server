@@ -232,9 +232,7 @@ private:
     std::unordered_map<std::string, ColumnConstraintSpec> constraintsByColumn_;
     std::uint32_t rootPageId_ = 1;
     std::uint32_t nextPageId_ = 2;
-    std::vector<std::uint32_t> pageIds_;
     using TidNodeRef = BTree<std::string, Row>::TidNodeRef;
-    std::vector<TidNodeRef> lastNodeRefs_;
 
     /**
      * @brief 获取表元数据文件路径
@@ -291,11 +289,7 @@ private:
      * @author Startale
      */
     void syncIndexPages();
-    void writePageContent(std::ostream& os,
-                          const std::vector<TidNodeRef>& nodeRefs,
-                          const std::vector<std::uint32_t>& pageIds,
-                          const std::vector<std::uint32_t>& parentPageId,
-                          std::size_t nodeIdx);
+    void writeHeader(std::ostream& os);
 
     /**
      * @brief 从 .tid 恢复内存索引

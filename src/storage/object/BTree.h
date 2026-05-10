@@ -187,6 +187,19 @@ public:
         return inserted;
     }
 
+    bool remove(const Key& key) {
+        if (!contains(key)) return false;
+        markDirty(root_.get());
+        removeFromNode(root_.get(), key);
+        if (root_->entries.empty() && !root_->leaf) {
+            auto oldRoot = std::move(root_);
+            root_ = std::move(oldRoot->children[0]);
+            markDirty(root_.get());
+        }
+        --size_;
+        return true;
+    }
+
     /**
      * @brief 中序遍历
      * @author Startale
@@ -475,6 +488,105 @@ private:
         }
 
         return insertNonFull(node->children[idx].get(), std::forward<K>(key), std::forward<V>(value));
+    }
+
+    void removeFromNode(Node* node, const Key& key) {
+        std::size_t idx = lowerBoundIndex(node, key);
+        if (idx < node->entries.size() && equalKey(node->entries[idx].key, key)) {
+            if (node->leaf) {
+                node->entries.erase(node->entries.begin() + static_cast<std::ptrdiff_t>(idx));
+                return;
+            }
+            removeFromInternal(node, idx);
+            return;
+        }
+        if (node->leaf) return;
+        bool lastChild = (idx == node->entries.size());
+        if (node->children[idx]->entries.size() < t_) {
+            fill(node, idx);
+        }
+        if (lastChild && idx > node->entries.size()) {
+            removeFromNode(node->children[idx - 1].get(), key);
+        } else {
+            removeFromNode(node->children[idx].get(), key);
+        }
+    }
+
+    void removeFromInternal(Node* node, std::size_t idx) {
+        Key k = node->entries[idx].key;
+        if (node->children[idx]->entries.size() >= t_) {
+            Entry pred = getPredecessor(node->children[idx].get());
+            node->entries[idx] = pred;
+            removeFromNode(node->children[idx].get(), pred.key);
+        } else if (node->children[idx + 1]->entries.size() >= t_) {
+            Entry succ = getSuccessor(node->children[idx + 1].get());
+            node->entries[idx] = succ;
+            removeFromNode(node->children[idx + 1].get(), succ.key);
+        } else {
+            merge(node, idx);
+            removeFromNode(node->children[idx].get(), k);
+        }
+    }
+
+    Entry getPredecessor(Node* node) {
+        while (!node->leaf) node = node->children.back().get();
+        return node->entries.back();
+    }
+
+    Entry getSuccessor(Node* node) {
+        while (!node->leaf) node = node->children.front().get();
+        return node->entries.front();
+    }
+
+    void fill(Node* node, std::size_t idx) {
+        if (idx > 0 && node->children[idx - 1]->entries.size() >= t_) {
+            borrowFromPrev(node, idx);
+        } else if (idx + 1 < node->children.size() && node->children[idx + 1]->entries.size() >= t_) {
+            borrowFromNext(node, idx);
+        } else if (idx < node->entries.size()) {
+            merge(node, idx);
+        } else {
+            merge(node, idx - 1);
+        }
+    }
+
+    void borrowFromPrev(Node* node, std::size_t idx) {
+        Node* child = node->children[idx].get();
+        Node* sibling = node->children[idx - 1].get();
+        child->entries.insert(child->entries.begin(), node->entries[idx - 1]);
+        node->entries[idx - 1] = sibling->entries.back();
+        sibling->entries.pop_back();
+        if (!child->leaf) {
+            child->children.insert(child->children.begin(), std::move(sibling->children.back()));
+            sibling->children.pop_back();
+        }
+        markDirty(node); markDirty(child); markDirty(sibling);
+    }
+
+    void borrowFromNext(Node* node, std::size_t idx) {
+        Node* child = node->children[idx].get();
+        Node* sibling = node->children[idx + 1].get();
+        child->entries.push_back(node->entries[idx]);
+        node->entries[idx] = sibling->entries.front();
+        sibling->entries.erase(sibling->entries.begin());
+        if (!child->leaf) {
+            child->children.push_back(std::move(sibling->children.front()));
+            sibling->children.erase(sibling->children.begin());
+        }
+        markDirty(node); markDirty(child); markDirty(sibling);
+    }
+
+    void merge(Node* node, std::size_t idx) {
+        Node* child = node->children[idx].get();
+        Node* sibling = node->children[idx + 1].get();
+        child->entries.push_back(node->entries[idx]);
+        node->entries.erase(node->entries.begin() + static_cast<std::ptrdiff_t>(idx));
+        for (auto& e : sibling->entries) child->entries.push_back(std::move(e));
+        if (!child->leaf) {
+            for (auto& c : sibling->children) child->children.push_back(std::move(c));
+        }
+        node->children.erase(node->children.begin() + static_cast<std::ptrdiff_t>(idx + 1));
+        markDirty(node); markDirty(child);
     }
 
     template <typename Visitor>

@@ -301,6 +301,9 @@ bool Table::updateByPrimaryKey(const std::string& primaryKey,
     primaryKeyOffsets_[newPrimaryKey] = newOffset;
     primaryKeyOffsetsOrdered_[newPrimaryKey] = newOffset;
 
+    if (newPrimaryKey != primaryKey) {
+        index_.remove(primaryKey);
+    }
     index_.insert(newPrimaryKey, Row{{newPrimaryKey}});
 
     for (std::size_t i = 1; i < schema_.columns.size() && i < normalized.size(); ++i) {
@@ -336,11 +339,7 @@ bool Table::deleteByPrimaryKey(const std::string& primaryKey) {
     markRowDeleted(oldOffset);
     primaryKeyOffsets_.erase(primaryKey);
     primaryKeyOffsetsOrdered_.erase(primaryKey);
-    index_.clear();
-    for (const auto& r : readAllDataRows()) {
-        if (!r.values.empty()) index_.insert(r.values.front(), Row{{r.values.front()}});
-    }
-
+    index_.remove(primaryKey);
     syncIndexPages();
     return true;
 }
@@ -1431,11 +1430,31 @@ void Table::ConstraintValidator::check(const std::vector<std::string>& values,
             ensure(!values[i].empty(), "NOT NULL constraint violation on column: " + col);
         }
         if (spec.unique) {
-            const auto rows = table.readAllDataRows();
-            for (const auto& row : rows) {
-                if (i >= row.values.size()) continue;
-                if (skipPrimaryKey != nullptr && !row.values.empty() && row.values.front() == *skipPrimaryKey) continue;
-                ensure(row.values[i] != values[i], "UNIQUE constraint violation on column: " + col);
+            auto si = table.secondaryIndexes_.find(col);
+            if (si != table.secondaryIndexes_.end() && si->second.active && i > 0) {
+                std::vector<std::uint64_t> offsets;
+                si->second.lookup(values[i], Table::CompareOp::EQ, "", {}, offsets);
+                if (!offsets.empty()) {
+                    if (skipPrimaryKey == nullptr) {
+                        ensure(false, "UNIQUE constraint violation on column: " + col);
+                    } else {
+                        auto pkOff = table.primaryKeyOffsets_.find(*skipPrimaryKey);
+                        bool hasOther = false;
+                        for (auto off : offsets) {
+                            if (pkOff == table.primaryKeyOffsets_.end() || off != pkOff->second) {
+                                hasOther = true; break;
+                            }
+                        }
+                        ensure(!hasOther, "UNIQUE constraint violation on column: " + col);
+                    }
+                }
+            } else {
+                const auto rows = table.readAllDataRows();
+                for (const auto& row : rows) {
+                    if (i >= row.values.size()) continue;
+                    if (skipPrimaryKey != nullptr && !row.values.empty() && row.values.front() == *skipPrimaryKey) continue;
+                    ensure(row.values[i] != values[i], "UNIQUE constraint violation on column: " + col);
+                }
             }
         }
     }

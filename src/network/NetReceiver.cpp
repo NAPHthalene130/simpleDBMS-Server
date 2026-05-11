@@ -214,14 +214,143 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
 
     try {
         if (networkTransferData.getType() == NetworkTransferData::LOGIN_REQUEST) {
-            // TODO: 处理登录请求
-            sendFailureResponse("LOGIN_REQUEST is not implemented yet.");
+            /**
+             * @brief 处理登录请求，校验 system.user 表中 id 与密码
+             * @author NAPH130
+             * @details 从 system 库的 user 表中查询 id 对应的记录并比对密码。
+             *          匹配成功返回 LOGIN_RESPONSE 并更新会话上下文中的用户名。
+             */
+            if (core == nullptr || core->getStorageManager() == nullptr) {
+                sendFailureResponse("Storage manager is not initialized.");
+                return;
+            }
+
+            auto *databaseManager = core->getStorageManager()->getDatabaseManager();
+            if (databaseManager == nullptr) {
+                sendFailureResponse("Database manager is not initialized.");
+                return;
+            }
+
+            const std::string userId = networkTransferData.getId();
+            const std::string password = networkTransferData.getPassword();
+
+            if (userId.empty()) {
+                sendFailureResponse("User ID is empty.");
+                return;
+            }
+
+            // 查询 system.user 表
+            // 作者：NAPH130
+            const std::string systemDbName = "system";
+            const std::string userTableName = "user";
+            const auto tables = databaseManager->getAllTablesForDb(systemDbName);
+            const bool userTableExists = std::any_of(tables.begin(), tables.end(),
+                                                     [&](const TableBlock &tb) {
+                                                         const std::string name = fixedArrayToStr(tb.getName());
+                                                         return name == userTableName;
+                                                     });
+
+            if (!userTableExists) {
+                sendFailureResponse("System user table does not exist.");
+                return;
+            }
+
+            try {
+                const std::vector<storage::Table::WhereCondition> conditions = {
+                    {"id", storage::Table::CompareOp::EQ, userId}
+                };
+                const auto rows = databaseManager->selectRows(systemDbName, userTableName, {}, conditions);
+                bool loginSuccess = false;
+                for (const auto &row : rows) {
+                    if (row.values.size() >= 2 && row.values[1] == password) {
+                        loginSuccess = true;
+                        break;
+                    }
+                }
+
+                NetworkTransferData responseData(NetworkTransferData::LOGIN_RESPONSE,
+                                                  networkTransferData.getId());
+                responseData.setSuccess(loginSuccess);
+                if (loginSuccess) {
+                    responseData.setMessage("Login succeeded.");
+                    NetworkExecutionContext *sessionCtx = nullptr;
+                    if (core->getNetworkManager() != nullptr
+                        && core->getNetworkManager()->getClientSessionManager() != nullptr
+                        && clientSocket != nullptr) {
+                        sessionCtx = core->getNetworkManager()->getClientSessionManager()
+                                         ->findSessionContext(clientSocket.get());
+                        if (sessionCtx != nullptr) {
+                            sessionCtx->setCurrentUser(userId);
+                            sessionCtx->setIsAuthorized(true);
+                        }
+                    }
+                    LogWriter::info("network", "NetReceiver", "processMsg",
+                                    std::string("User logged in: ") + userId);
+                } else {
+                    responseData.setMessage("Login failed: invalid user ID or password.");
+                    LogWriter::warning("network", "NetReceiver", "processMsg",
+                                       std::string("Login failed for user: ") + userId);
+                }
+                sendResponse(responseData);
+            } catch (const std::exception &exception) {
+                LogWriter::error("network", "NetReceiver", "processMsg",
+                                 std::string("Login query failed: ") + exception.what());
+                sendFailureResponse("Login query failed: " + std::string(exception.what()));
+            }
             return;
         }
 
         if (networkTransferData.getType() == NetworkTransferData::VERIFY_REQUEST) {
-            // TODO: 处理连接验证请求
-            sendFailureResponse("VERIFY_REQUEST is not implemented yet.");
+            /**
+             * @brief 处理连接验证请求，校验 system.user 表中 id 与密码
+             * @author NAPH130
+             * @details 与登录类似但不创建会话授权，仅返回验证结果。
+             */
+            if (core == nullptr || core->getStorageManager() == nullptr) {
+                sendFailureResponse("Storage manager is not initialized.");
+                return;
+            }
+
+            auto *databaseManager = core->getStorageManager()->getDatabaseManager();
+            if (databaseManager == nullptr) {
+                sendFailureResponse("Database manager is not initialized.");
+                return;
+            }
+
+            const std::string userId = networkTransferData.getId();
+            const std::string password = networkTransferData.getPassword();
+
+            if (userId.empty()) {
+                sendFailureResponse("User ID is empty.");
+                return;
+            }
+
+            const std::string systemDbName = "system";
+            const std::string userTableName = "user";
+
+            try {
+                const std::vector<storage::Table::WhereCondition> conditions = {
+                    {"id", storage::Table::CompareOp::EQ, userId}
+                };
+                const auto rows = databaseManager->selectRows(systemDbName, userTableName, {}, conditions);
+                bool verifySuccess = false;
+                for (const auto &row : rows) {
+                    if (row.values.size() >= 2 && row.values[1] == password) {
+                        verifySuccess = true;
+                        break;
+                    }
+                }
+
+                NetworkTransferData responseData(NetworkTransferData::VERIFY_RESPONSE,
+                                                  networkTransferData.getId());
+                responseData.setSuccess(verifySuccess);
+                responseData.setMessage(verifySuccess ? "Connection verified." : "Verification failed: invalid credentials.");
+                sendResponse(responseData);
+            } catch (const std::exception &exception) {
+                LogWriter::error("network", "NetReceiver", "processMsg",
+                                 std::string("Verify query failed: ") + exception.what());
+                sendFailureResponse("Verify query failed: " + std::string(exception.what()));
+            }
             return;
         }
 

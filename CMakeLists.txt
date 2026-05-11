@@ -91,3 +91,50 @@ foreach(TEST_FILE ${SERVER_TEST_FILES})
             ${SERVER_VCPKG_TARGETS}
     )
 endforeach()
+
+# App 可执行目标：InitSystemUserApp 与 ResetSystemUserApp
+# 作者：NAPH130 — 系统用户管理工具，基于全量服务端源码（排除主入口）编译
+set(SERVER_APP_SOURCE_FILES ${SERVER_SOURCE_FILES})
+list(FILTER SERVER_APP_SOURCE_FILES EXCLUDE REGEX ".*/src/main\\.cpp$")
+
+set(INIT_SYSTEM_USER_APP_SRC "${SERVER_SOURCE_DIR}/app/InitSystemUserApp.cpp")
+add_executable(simpleDBMS-InitSystemUserApp
+    ${SERVER_APP_SOURCE_FILES}
+    ${INIT_SYSTEM_USER_APP_SRC}
+)
+target_include_directories(simpleDBMS-InitSystemUserApp
+    PRIVATE
+        ${SERVER_SOURCE_DIR}
+)
+if(WIN32)
+    target_compile_definitions(simpleDBMS-InitSystemUserApp
+        PRIVATE
+            _WIN32_WINNT=0x0601
+            SERVER_PROJECT_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+endif()
+target_link_libraries(simpleDBMS-InitSystemUserApp
+    PRIVATE
+        ${SERVER_VCPKG_TARGETS}
+)
+
+set(RESET_SYSTEM_USER_APP_SRC "${SERVER_SOURCE_DIR}/app/ResetSystemUserApp.cpp")
+add_executable(simpleDBMS-ResetSystemUserApp
+    ${SERVER_APP_SOURCE_FILES}
+    ${RESET_SYSTEM_USER_APP_SRC}
+)
+target_include_directories(simpleDBMS-ResetSystemUserApp
+    PRIVATE
+        ${SERVER_SOURCE_DIR}
+)
+if(WIN32)
+    target_compile_definitions(simpleDBMS-ResetSystemUserApp
+        PRIVATE
+            _WIN32_WINNT=0x0601
+            SERVER_PROJECT_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+endif()
+target_link_libraries(simpleDBMS-ResetSystemUserApp
+    PRIVATE
+        ${SERVER_VCPKG_TARGETS}
+)

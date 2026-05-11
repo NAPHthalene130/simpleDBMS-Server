@@ -17,6 +17,7 @@
 namespace {
 
 constexpr const char *kCatalogBlockSeparator = "---DB_BLOCK---";
+constexpr std::uint32_t kTidPageSize = 4096;
 
 template <std::size_t N>
 std::array<char, N> toArray(const std::string &text)
@@ -87,14 +88,14 @@ void removeDatabaseFromCatalog(const std::filesystem::path &catalogFile, const s
 
 } // namespace
 
-class Core {
+class TestCore {
 public:
-    Core()
-        : storageManager(new StorageManager(this))
+    TestCore()
+        : storageManager(new StorageManager(reinterpret_cast<Core*>(this)))
     {
     }
 
-    ~Core()
+    ~TestCore()
     {
         delete storageManager;
         storageManager = nullptr;
@@ -121,6 +122,7 @@ int main()
     const std::string tableName = "StartaleTB";
     const std::string aggTableName = "AggTB";
     const std::string constraintTableName = "ConstraintTB";
+    const std::string joinTableName = "JoinTB";
     const std::filesystem::path dbRoot("data");
     const std::filesystem::path dbDir = dbRoot / dbName;
     const std::filesystem::path tbFile = dbDir / (dbName + ".tb");
@@ -137,8 +139,7 @@ int main()
     }
     removeDatabaseFromCatalog(catalogFile, dbName);
 
-    Core core;
-
+    TestCore core;
     auto *systemCatalogManager = core.getStorageManager()->getSystemCatalogManager();
     auto *databaseManager = core.getStorageManager()->getDatabaseManager();
     ensure(systemCatalogManager != nullptr, "systemCatalogManager is null");
@@ -169,6 +170,15 @@ int main()
     ensure(databaseManager->deleteRowByPrimaryKey(dbName, tableName, "v5"), "deleteRowByPrimaryKey failed");
     ensure(databaseManager->insertRow(dbName, tableName, {"v2", "v3", "v4"}), "insertRow failed");
     ensure(databaseManager->insertRow(dbName, tableName, {"v3", "v1", "v5"}), "insertRow failed");
+
+    ensure(databaseManager->createTable(dbName, joinTableName, {"ARef", "Label", "Weight"}),
+           "createTable join failed");
+    ensure(databaseManager->insertRow(dbName, joinTableName, {"v1", "alpha", "10"}),
+           "insertRow join failed");
+    ensure(databaseManager->insertRow(dbName, joinTableName, {"v3", "gamma", "30"}),
+           "insertRow join failed");
+    ensure(databaseManager->insertRow(dbName, joinTableName, {"v4", "delta", "40"}),
+           "insertRow join failed");
 
     ensure(databaseManager->createTable(dbName, aggTableName, {"ID", "Score", "Qty"}),
            "createTable agg failed");
@@ -331,6 +341,47 @@ int main()
         {storage::Table::QueryConstraint{"Name", storage::Table::ConstraintType::UNIQUE, true}});
     ensure(uniqueRows.size() == 2, "query constraint UNIQUE filter mismatch");
 
+    DatabaseManager::JoinQuery joinQuery;
+    joinQuery.baseTable = tableName;
+    joinQuery.baseAlias = "l";
+    DatabaseManager::JoinSpec innerJoin;
+    innerJoin.type = DatabaseManager::JoinType::INNER_JOIN;
+    innerJoin.tableName = joinTableName;
+    innerJoin.alias = "r";
+    innerJoin.onConditions.push_back({{"l", "A"}, {"r", "ARef"}, storage::Table::CompareOp::EQ});
+    joinQuery.joins.push_back(innerJoin);
+    joinQuery.projections = {
+        {{"l", "A"}, "leftA"},
+        {{"l", "B"}, "leftB"},
+        {{"r", "Label"}, "rightLabel"},
+        {{"r", "Weight"}, "weight"}
+    };
+    joinQuery.postFilters.push_back({{"r", "Weight"}, storage::Table::CompareOp::GT, "15", "", {}});
+    joinQuery.options.orderByOutput = "leftA";
+    const auto joinedRows = databaseManager->selectJoinRows(dbName, joinQuery);
+    ensure(joinedRows.columns.size() == 4, "join columns size mismatch");
+    ensure(joinedRows.rows.size() == 1, "inner join row count mismatch");
+    ensure(joinedRows.rows.front().values[0] == "v3", "inner join key mismatch");
+    ensure(joinedRows.rows.front().values[2] == "gamma", "inner join projected value mismatch");
+
+    DatabaseManager::JoinQuery leftJoinQuery;
+    leftJoinQuery.baseTable = tableName;
+    leftJoinQuery.baseAlias = "l";
+    DatabaseManager::JoinSpec leftJoin = innerJoin;
+    leftJoin.type = DatabaseManager::JoinType::LEFT_JOIN;
+    leftJoinQuery.joins.push_back(leftJoin);
+    leftJoinQuery.projections = {
+        {{"l", "A"}, "leftA"},
+        {{"r", "Label"}, "rightLabel"}
+    };
+    leftJoinQuery.options.orderByOutput = "leftA";
+    const auto leftJoined = databaseManager->selectJoinRows(dbName, leftJoinQuery);
+    ensure(leftJoined.rows.size() == 3, "left join row count mismatch");
+    ensure(leftJoined.rows[0].values[0] == "v1", "left join order mismatch");
+    ensure(leftJoined.rows[1].values[0] == "v2", "left join order mismatch");
+    ensure(leftJoined.rows[2].values[0] == "v3", "left join order mismatch");
+    ensure(leftJoined.rows[1].values[1].empty(), "left join unmatched row should be empty");
+
     ensure(std::filesystem::exists(catalogFile), "database.db file not found");
     ensure(std::filesystem::exists(tdfFile), ".tdf file not found");
     ensure(std::filesystem::exists(trdFile), ".trd file not found");
@@ -340,9 +391,8 @@ int main()
     ensure(std::filesystem::exists(nidxCFile), ".nidx C reserve file not found");
 
     std::ifstream tdf(tdfFile);
-    std::ifstream trd(trdFile);
     std::ifstream tic(ticFile);
-    std::ifstream tid(tidFile);
+    std::ifstream tid(tidFile, std::ios::binary);
     bool foundSchemaVersion = false;
     bool foundTable = false;
     bool foundColumns = false;
@@ -370,14 +420,14 @@ int main()
         if (line == "index_reserved=B:" + tableName + ".B.nidx") foundReservedTicB = true;
         if (line == "index_reserved=C:" + tableName + ".C.nidx") foundReservedTicC = true;
     }
-    while (std::getline(trd, line)) {
-        if (line == "ROW|v1|v9|v8") {
-            foundRow = true;
-        }
+    // Verify trd: page-based, check data integrity via select
+    {
+        auto verifyRow = loadedTable.select({"A"}, {{"A", storage::Table::CompareOp::EQ, "v1"}});
+        foundRow = (verifyRow.size() == 1 && verifyRow.front().values.front() == "v1");
     }
     while (std::getline(tid, line)) {
-        if (line == "TID_PAGED_V1") foundTidHeader = true;
-        if (line == "root_page=1") foundTidRootPage = true;
+        if (line == "TID_PAGED_V3") foundTidHeader = true;
+        if (line.rfind("root_page=", 0) == 0) foundTidRootPage = true;
         if (line.rfind("ENTRY|v1|", 0) == 0) foundTidKeyEntry = true;
     }
 
@@ -395,6 +445,366 @@ int main()
     ensure(foundTidRootPage, "tid root page missing");
     ensure(foundTidKeyEntry, "tid key entry missing");
 
+    const std::string bulkTableName = "BulkTB";
+    ensure(databaseManager->createTable(dbName, bulkTableName, {"Key"}), "createTable bulk failed");
+
+    for (int i = 1; i <= 200; ++i) {
+        std::string key = std::to_string(i);
+        while (key.size() < 4) key = "0" + key;
+        ensure(databaseManager->insertRow(dbName, bulkTableName, {key}),
+               ("insertRow bulk failed i=" + std::to_string(i)).c_str());
+    }
+
+    {
+        std::uintmax_t tidSize = std::filesystem::file_size(dbDir / (bulkTableName + ".tid"));
+        ensure(tidSize > static_cast<std::uintmax_t>(kTidPageSize * 2),
+               "bulk tid too small, expected multiple pages (" + std::to_string(tidSize) + " bytes)");
+    }
+
+    auto bulkTable = storage::Table::load(dbDir, bulkTableName);
+    auto allBulkRows = bulkTable.select({"*"});
+    ensure(allBulkRows.size() == 200,
+           "bulk reload row count mismatch (" + std::to_string(allBulkRows.size()) + ")");
+
+    {
+        storage::Table::WhereCondition between;
+        between.column = "Key";
+        between.op = storage::Table::CompareOp::BETWEEN;
+        between.value = "0050";
+        between.secondValue = "0059";
+        auto partialRows = bulkTable.select({"Key"}, {between});
+        ensure(partialRows.size() == 10,
+               "bulk range query mismatch (" + std::to_string(partialRows.size()) + ")");
+    }
+
+    auto firstRow = bulkTable.select(
+        {"Key"}, {storage::Table::WhereCondition{"Key", storage::Table::CompareOp::EQ, "0001"}});
+    ensure(firstRow.size() == 1 && firstRow.front().values.front() == "0001", "bulk EQ query mismatch");
+
+    auto midRow = bulkTable.select(
+        {"Key"}, {storage::Table::WhereCondition{"Key", storage::Table::CompareOp::EQ, "0100"}});
+    ensure(midRow.size() == 1 && midRow.front().values.front() == "0100", "bulk EQ mid query mismatch");
+
+    auto lastRow = bulkTable.select(
+        {"Key"}, {storage::Table::WhereCondition{"Key", storage::Table::CompareOp::EQ, "0200"}});
+    ensure(lastRow.size() == 1 && lastRow.front().values.front() == "0200", "bulk EQ last query mismatch");
+
+    const std::string sidxTableName = "SITB";
+    ensure(databaseManager->createTable(dbName, sidxTableName, {"ID", "Tag", "Score"}),
+           "createTable secondary index failed");
+    for (int i = 1; i <= 100; ++i) {
+        std::string id = std::to_string(i);
+        while (id.size() < 3) id = "0" + id;
+        std::string tag = (i <= 50) ? "alpha" : "beta";
+        std::string score = std::to_string((i * 7) % 100);
+        if (score.size() < 2) score = "0" + score;
+        ensure(databaseManager->insertRow(dbName, sidxTableName, {id, tag, score}),
+               ("insertRow si failed i=" + std::to_string(i)).c_str());
+    }
+
+    auto siTable = storage::Table::load(dbDir, sidxTableName);
+
+    auto tagAlpha = siTable.select(
+        {"ID"}, {storage::Table::WhereCondition{"Tag", storage::Table::CompareOp::EQ, "alpha"}});
+    ensure(tagAlpha.size() == 50, "secondary index EQ Tag=alpha mismatch (" + std::to_string(tagAlpha.size()) + ")");
+
+    auto tagBeta = siTable.select(
+        {"ID"}, {storage::Table::WhereCondition{"Tag", storage::Table::CompareOp::EQ, "beta"}});
+    ensure(tagBeta.size() == 50, "secondary index EQ Tag=beta mismatch (" + std::to_string(tagBeta.size()) + ")");
+
+    storage::Table::WhereCondition scoreBetween;
+    scoreBetween.column = "Score";
+    scoreBetween.op = storage::Table::CompareOp::BETWEEN;
+    scoreBetween.value = "20";
+    scoreBetween.secondValue = "40";
+    auto scoreRange = siTable.select({"ID"}, {scoreBetween});
+    ensure(scoreRange.size() > 0, "secondary index Score BETWEEN returned empty");
+
+    auto scoreGT = siTable.select(
+        {"ID"}, {storage::Table::WhereCondition{"Score", storage::Table::CompareOp::GT, "80"}});
+    ensure(scoreGT.size() > 0, "secondary index Score GT returned empty");
+
+    ensure(std::filesystem::exists(dbDir / (sidxTableName + ".Tag.nidx")),
+           ".nidx file for Tag not found");
+    ensure(std::filesystem::exists(dbDir / (sidxTableName + ".Score.nidx")),
+           ".nidx file for Score not found");
+
+    // ======== Persistence Recovery Test ========
+    const std::string persistTableName = "PersistTB";
+    ensure(databaseManager->createTable(dbName, persistTableName, {"PK", "Val", "Num"}),
+           "createTable persist failed");
+    for (int i = 1; i <= 50; ++i) {
+        std::string pk = std::to_string(i);
+        while (pk.size() < 3) pk = "0" + pk;
+        std::string val = (i % 2 == 0) ? "even" : "odd";
+        std::string num = std::to_string(i * 10);
+        ensure(databaseManager->insertRow(dbName, persistTableName, {pk, val, num}),
+               ("insertRow persist failed i=" + std::to_string(i)).c_str());
+    }
+
+    auto preReload = storage::Table::load(dbDir, persistTableName);
+    auto allPre = preReload.select({"*"});
+    ensure(allPre.size() == 50, "pre-reload count mismatch");
+
+    auto reloaded1 = storage::Table::load(dbDir, persistTableName);
+    auto all1 = reloaded1.select({"*"});
+    ensure(all1.size() == 50, "reload1 row count mismatch (" + std::to_string(all1.size()) + ")");
+
+    auto oddRows = reloaded1.select(
+        {"PK"}, {storage::Table::WhereCondition{"Val", storage::Table::CompareOp::EQ, "odd"}});
+    ensure(oddRows.size() == 25, "reload1 secondary EQ odd mismatch (" + std::to_string(oddRows.size()) + ")");
+
+    storage::Table::WhereCondition numBetween;
+    numBetween.column = "Num";
+    numBetween.op = storage::Table::CompareOp::BETWEEN;
+    numBetween.value = "100";
+    numBetween.secondValue = "200";
+    auto numRange = reloaded1.select({"PK"}, {numBetween});
+    ensure(numRange.size() == 11, "reload1 secondary BETWEEN mismatch (" + std::to_string(numRange.size()) + ")");
+
+    auto reloaded2 = storage::Table::load(dbDir, persistTableName);
+    auto withPK = reloaded2.select(
+        {"Val"}, {storage::Table::WhereCondition{"PK", storage::Table::CompareOp::EQ, "025"}});
+    ensure(withPK.size() == 1 && withPK.front().values.front() == "odd",
+           "reload2 primary EQ mismatch");
+
+    auto withPK2 = reloaded2.select(
+        {"Num"}, {storage::Table::WhereCondition{"PK", storage::Table::CompareOp::EQ, "050"}});
+    ensure(withPK2.size() == 1 && withPK2.front().values.front() == "500",
+           "reload2 primary EQ mismatch");
+
+    // ======== DDL Tests ========
+    const std::string ddlTableName = "DDLTB";
+    ensure(databaseManager->createTable(dbName, ddlTableName, {"ID", "Val"}),
+           "createTable for DDL failed");
+    for (int i = 1; i <= 3; ++i) {
+        ensure(databaseManager->insertRow(dbName, ddlTableName, {std::to_string(i), "v"+std::to_string(i)}),
+               "DDL insert failed");
+    }
+
+    // ADD COLUMN
+    {
+        auto t = storage::Table::load(dbDir, ddlTableName);
+        ensure(t.addColumn("Extra", storage::DataType::TEXT, 0, "def"),
+               "addColumn failed");
+    }
+    {
+        auto t = storage::Table::load(dbDir, ddlTableName);
+        auto rows = t.select({"*"});
+        ensure(rows.size() == 3, "addColumn row count mismatch");
+        for (auto& r : rows) {
+            ensure(r.values.size() == 3 && r.values[2] == "def",
+                   "addColumn default value mismatch: " + storage::join(r.values, ","));
+        }
+    }
+
+    // RENAME
+    const std::string renamedName = "RenamedTB";
+    {
+        auto t = storage::Table::load(dbDir, ddlTableName);
+        ensure(t.rename(renamedName), "rename failed");
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        auto rows = t.select({"*"});
+        ensure(rows.size() == 3, "rename row count mismatch");
+    }
+
+    // DROP CONSTRAINT
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        ensure(t.dropConstraint("Extra", storage::Table::ConstraintType::DEFAULT_VALUE),
+               "dropConstraint failed");
+    }
+
+    // DROP COLUMN
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        // Already has 3 columns (ID, Val, Extra), drop Extra
+        ensure(t.dropColumn("Extra"), "dropColumn failed");
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        auto rows = t.select({"*"});
+        ensure(rows.size() == 3, "dropColumn row count mismatch");
+        ensure(rows.front().values.size() == 2, "dropColumn: expected 2 columns");
+    }
+
+    // RENAME COLUMN
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        ensure(t.renameColumn("Val", "Value"), "renameColumn failed");
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        auto cols = t.schema().columns;
+        ensure(cols.size() >= 2 && cols[1] == "Value", "renameColumn: column name mismatch");
+    }
+
+    // ALTER COLUMN TYPE
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        // Add a column with numeric-like data for type test
+        ensure(t.addColumn("Score", storage::DataType::TEXT, 0, "100"), "addCol for alterType failed");
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        // Values are "100" (default), should convert to INT
+        ensure(t.alterColumnType("Score", storage::DataType::INT), "alterColumnType to INT failed");
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        ensure(t.alterColumnType("Score", storage::DataType::FLOAT), "alterColumnType to FLOAT failed");
+        ensure(t.alterColumnType("Score", storage::DataType::TEXT), "alterColumnType back to TEXT failed");
+    }
+
+    // UPDATE BY CONDITION
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        std::size_t n = t.updateByCondition(
+            {storage::Table::WhereCondition{"ID", storage::Table::CompareOp::EQ, "2"}},
+            {"2", "UPDATED_BY_CONDITION"});
+        ensure(n == 1, "updateByCondition count mismatch");
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        auto r = t.select({"*"}, {storage::Table::WhereCondition{"ID", storage::Table::CompareOp::EQ, "2"}});
+        ensure(r.size() == 1 && r[0].values.size() >= 2 && r[0].values[1] == "UPDATED_BY_CONDITION",
+               "updateByCondition value mismatch");
+    }
+
+    // DELETE BY CONDITION
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        std::size_t n = t.deleteByCondition(
+            {storage::Table::WhereCondition{"ID", storage::Table::CompareOp::GT, "2"}});
+        // Originally 3 rows, after deleting rows with ID > 2 (i.e. "3"), 2 rows remain
+        ensure(n == 1, "deleteByCondition count mismatch");
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        auto r = t.select({"*"});
+        ensure(r.size() == 2, "deleteByCondition: expected 2 rows remaining");
+    }
+
+    // TRUNCATE
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        t.truncate();
+    }
+    {
+        auto t = storage::Table::load(dbDir, renamedName);
+        auto r = t.select({"*"});
+        ensure(r.size() == 0, "truncate: expected 0 rows");
+    }
+
+    // ======== Subquery Tests ========
+    const std::string sqTable1 = "SQT1";
+    const std::string sqTable2 = "SQT2";
+    ensure(databaseManager->createTable(dbName, sqTable1, {"A", "B"}), "create sqt1 failed");
+    ensure(databaseManager->createTable(dbName, sqTable2, {"X", "Y"}), "create sqt2 failed");
+    for (int i = 1; i <= 5; ++i)
+        ensure(databaseManager->insertRow(dbName, sqTable1, {std::to_string(i), "val"+std::to_string(i)}), "insert sqt1 failed");
+    ensure(databaseManager->insertRow(dbName, sqTable2, {"3", "match3"}), "insert sqt2 failed");
+    ensure(databaseManager->insertRow(dbName, sqTable2, {"5", "match5"}), "insert sqt2 failed");
+    ensure(databaseManager->insertRow(dbName, sqTable2, {"7", "match7"}), "insert sqt2 failed");
+
+    // Test: Scalar subquery (SELECT MAX(A) FROM SQT1) used as condition
+    {
+        storage::Table::SubquerySpec spec;
+        spec.dbName = dbName; spec.tableName = sqTable1;
+        spec.targetColumns = {"A"};
+        spec.aggregates = {storage::Table::AggregateExpr{storage::Table::AggregateOp::MAX, "A"}};
+        auto t = storage::Table::load(dbDir, sqTable1);
+        auto result = t.evaluateSubquery(spec);
+        ensure(result.kind == storage::Table::SubqueryKind::Scalar && result.scalarValue == "5",
+               "scalar subquery MAX(A) mismatch: " + result.scalarValue);
+    }
+
+    // Test: IN subquery (A IN (SELECT X FROM SQT2))
+    {
+        storage::Table::SubquerySpec spec;
+        spec.dbName = dbName; spec.tableName = sqTable2;
+        spec.targetColumns = {"X"};
+        auto t = storage::Table::load(dbDir, sqTable1);
+        auto result = t.evaluateSubquery(spec);
+        ensure(result.kind == storage::Table::SubqueryKind::RowSet && result.rows.size() == 3,
+               "IN subquery row count mismatch: " + std::to_string(result.rows.size()));
+
+        // Use IN result in WhereCondition
+        storage::Table::WhereCondition cond;
+        cond.column = "A";
+        cond.op = storage::Table::CompareOp::IN;
+        cond.values = result.rows;
+        auto matched = t.select({"A"}, {cond});
+        ensure(matched.size() == 2, "IN subquery match count: expected 2 (3,5), got " + std::to_string(matched.size()));
+    }
+
+    // Test: NOT IN subquery
+    {
+        storage::Table::SubquerySpec spec;
+        spec.dbName = dbName; spec.tableName = sqTable2;
+        spec.targetColumns = {"X"};
+        auto t = storage::Table::load(dbDir, sqTable1);
+        auto result = t.evaluateSubquery(spec);
+
+        storage::Table::WhereCondition cond;
+        cond.column = "A";
+        cond.op = storage::Table::CompareOp::IN;
+        cond.values = result.rows;
+        cond.isSubqueryNot = true;
+        auto matched = t.select({"A"}, {cond});
+        ensure(matched.size() == 3, "NOT IN subquery: expected 3, got " + std::to_string(matched.size()));
+    }
+
+    // Test: EXISTS subquery
+    {
+        storage::Table::SubquerySpec spec;
+        spec.dbName = dbName; spec.tableName = sqTable2;
+        spec.whereConditions = {storage::Table::WhereCondition{"X", storage::Table::CompareOp::EQ, "3"}};
+        auto t = storage::Table::load(dbDir, sqTable1);
+        auto result = t.evaluateSubquery(spec);
+
+        storage::Table::WhereCondition cond;
+        cond.isExistsCheck = true;
+        cond.values = result.rows.empty() ? std::vector<std::string>{} : std::vector<std::string>{"1"};
+        auto matched = t.select({"A"}, {cond});
+        ensure(matched.size() == 5, "EXISTS: expected 5 rows, got " + std::to_string(matched.size()));
+    }
+
+    // Test: NOT EXISTS subquery (subquery returns empty)
+    {
+        storage::Table::SubquerySpec spec;
+        spec.dbName = dbName; spec.tableName = sqTable2;
+        spec.whereConditions = {storage::Table::WhereCondition{"X", storage::Table::CompareOp::EQ, "99"}};
+        auto t = storage::Table::load(dbDir, sqTable1);
+        auto result = t.evaluateSubquery(spec);
+
+        storage::Table::WhereCondition cond;
+        cond.isExistsCheck = true;
+        cond.isSubqueryNot = true;
+        cond.values = result.rows.empty() ? std::vector<std::string>{} : std::vector<std::string>{"1"};
+        auto matched = t.select({"A"}, {cond});
+        ensure(matched.size() == 5, "NOT EXISTS (empty): expected 5 rows, got " + std::to_string(matched.size()));
+    }
+
+    // Test: Correlated subquery ($outer.col reference)
+    // SELECT * FROM SQT1 WHERE EXISTS (SELECT 1 FROM SQT2 WHERE SQT2.X = SQT1.A)
+    {
+        auto outerTable = storage::Table::load(dbDir, sqTable1);
+        auto outerRows = outerTable.select({"*"});
+        std::size_t matchCount = 0;
+        for (const auto& row : outerRows) {
+            storage::Table::SubquerySpec spec;
+            spec.dbName = dbName; spec.tableName = sqTable2;
+            spec.targetColumns = {"X"};
+            spec.whereConditions = {storage::Table::WhereCondition{"X", storage::Table::CompareOp::EQ, "$outer.A"}};
+            auto result = outerTable.evaluateSubqueryForRow(spec, row);
+            if (!result.rows.empty()) ++matchCount;
+        }
+        ensure(matchCount == 2, "correlated EXISTS: expected 2 matches (A=3,5), got " + std::to_string(matchCount));
+    }
+
     std::cout << "StorageCoreChainTest passed." << std::endl;
     return 0;
     } catch (const std::exception &e) {
@@ -405,3 +815,6 @@ int main()
         return 1;
     }
 }
+
+
+

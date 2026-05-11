@@ -6,8 +6,10 @@
 #include <sstream>
 #include <string>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 #include <vector>
+#include <cstdint>
 
 namespace storage {
 
@@ -43,11 +45,22 @@ public:
 private:
     struct Node {
         bool leaf = true;
+        bool dirty = false;
+        std::uint32_t pageId = 0;
         std::vector<Entry> entries;
         std::vector<std::unique_ptr<Node>> children;
 
         explicit Node(bool isLeaf = true) : leaf(isLeaf) {}
     };
+
+    std::unordered_set<Node*> dirtyNodes_;
+
+    void markDirty(Node* node) {
+        if (!node->dirty) {
+            node->dirty = true;
+            dirtyNodes_.insert(node);
+        }
+    }
 
 public:
     /**
@@ -75,7 +88,11 @@ public:
      */
     void clear() {
         root_ = std::make_unique<Node>(true);
+        root_->pageId = 0;
+        root_->dirty = true;
         size_ = 0;
+        dirtyNodes_.clear();
+        dirtyNodes_.insert(root_.get());
     }
 
     /**
@@ -130,11 +147,13 @@ public:
      * @return true 表示新插入，false 表示更新已有键
      */
     bool insert(const Key& key, const Value& value) {
+        markDirty(root_.get());
         if (root_->entries.size() == maxKeys()) {
             auto newRoot = std::make_unique<Node>(false);
             newRoot->children.push_back(std::move(root_));
             splitChild(newRoot.get(), 0);
             root_ = std::move(newRoot);
+            markDirty(root_.get());
         }
 
         bool inserted = insertNonFull(root_.get(), key, value);
@@ -152,11 +171,13 @@ public:
      * @return true 表示新插入，false 表示更新已有键
      */
     bool insert(Key&& key, Value&& value) {
+        markDirty(root_.get());
         if (root_->entries.size() == maxKeys()) {
             auto newRoot = std::make_unique<Node>(false);
             newRoot->children.push_back(std::move(root_));
             splitChild(newRoot.get(), 0);
             root_ = std::move(newRoot);
+            markDirty(root_.get());
         }
 
         bool inserted = insertNonFull(root_.get(), std::move(key), std::move(value));
@@ -164,6 +185,19 @@ public:
             ++size_;
         }
         return inserted;
+    }
+
+    bool remove(const Key& key) {
+        if (!contains(key)) return false;
+        markDirty(root_.get());
+        removeFromNode(root_.get(), key);
+        if (root_->entries.empty() && !root_->leaf) {
+            auto oldRoot = std::move(root_);
+            root_ = std::move(oldRoot->children[0]);
+            markDirty(root_.get());
+        }
+        --size_;
+        return true;
     }
 
     /**
@@ -189,6 +223,158 @@ public:
         std::vector<std::string> lines;
         dumpNodeLinesInternal(root_.get(), 0, lines, formatter);
         return lines;
+    }
+
+    /**
+     * @struct TidNodeRef
+     * @brief .tid 页序列化所需的节点结构引用
+     * @author Startale
+     */
+    struct TidNodeRef {
+        bool isLeaf = true;
+        std::vector<Key> keys;
+        std::vector<std::size_t> childIndices;
+    };
+
+    /**
+     * @brief 导出 B 树节点结构列表（前序遍历）
+     * @author Startale
+     * @return 节点结构列表，children 引用 indices 为列表下标
+     */
+    std::vector<TidNodeRef> dumpNodeRefs() const {
+        std::vector<TidNodeRef> nodes;
+        dumpNodeRefsRecursive(root_.get(), nodes);
+        return nodes;
+    }
+
+    /**
+     * @struct DirtyPage
+     * @brief 增量同步所需的脏页数据
+     * @author Startale
+     */
+    struct DirtyPage {
+        std::uint32_t pageId = 0;
+        bool isLeaf = true;
+        std::vector<Key> keys;
+        std::vector<std::uint32_t> childPageIds;
+    };
+
+    /**
+     * @brief 收集所有脏页并分配新的 pageId
+     * @author Startale
+     * @param rootPageId 输出当前根页ID
+     * @param nextPageId 输入/输出下一个可分配页ID
+     * @return 脏页列表
+     */
+    std::vector<DirtyPage> collectDirtyPages(std::uint32_t& rootPageId, std::uint32_t& nextPageId) {
+        for (auto* node : dirtyNodes_) {
+            if (node->pageId == 0) {
+                node->pageId = nextPageId++;
+            }
+        }
+        std::unordered_set<Node*> allDirty = dirtyNodes_;
+        for (auto* node : allDirty) {
+            if (!node->leaf) {
+                for (auto& child : node->children) {
+                    if (child->pageId == 0) {
+                        child->pageId = nextPageId++;
+                        child->dirty = true;
+                        dirtyNodes_.insert(child.get());
+                    }
+                }
+            }
+        }
+
+        std::vector<DirtyPage> pages;
+        std::unordered_map<Node*, std::uint32_t> childPageMap;
+        for (auto* node : dirtyNodes_) {
+            DirtyPage dp;
+            dp.pageId = node->pageId;
+            dp.isLeaf = node->leaf;
+            for (const auto& entry : node->entries) {
+                dp.keys.push_back(entry.key);
+            }
+            if (!node->leaf) {
+                for (const auto& child : node->children) {
+                    if (child->pageId == 0) {
+                        child->pageId = nextPageId++;
+                    }
+                    dp.childPageIds.push_back(child->pageId);
+                }
+            }
+            pages.push_back(std::move(dp));
+        }
+
+        rootPageId = root_->pageId;
+        return pages;
+    }
+
+    /**
+     * @brief 清除所有脏标记
+     * @author Startale
+     */
+    void clearDirtyFlags() {
+        for (auto* node : dirtyNodes_) {
+            node->dirty = false;
+        }
+        dirtyNodes_.clear();
+    }
+
+    /**
+     * @brief 从外部向量按前序遍历顺序分配页ID
+     * @author Startale
+     * @param ids 前序排列的页ID列表，长度须等于节点总数
+     */
+    void assignPageIdsFrom(const std::vector<std::uint32_t>& ids) {
+        std::size_t idx = 0;
+        std::function<void(Node*)> assign = [&](Node* node) {
+            if (idx >= ids.size()) return;
+            node->pageId = ids[idx++];
+            if (!node->leaf) {
+                for (auto& child : node->children) {
+                    assign(child.get());
+                }
+            }
+        };
+        assign(root_.get());
+    }
+
+    /**
+     * @brief 判断是否已有页ID分配
+     * @author Startale
+     */
+    bool hasPageIds() const { return root_ != nullptr && root_->pageId != 0; }
+
+    /**
+     * @brief 分配页ID到整棵树（全量写入时使用）
+     * @author Startale
+     */
+    void assignAllPageIds(std::uint32_t& nextPageId) {
+        std::function<void(Node*)> assign = [&](Node* node) {
+            node->pageId = nextPageId++;
+            node->dirty = true;
+            dirtyNodes_.insert(node);
+            if (!node->leaf) {
+                for (auto& child : node->children) {
+                    assign(child.get());
+                }
+            }
+        };
+        assign(root_.get());
+    }
+
+    std::vector<std::uint32_t> getNodePageIds() const {
+        std::vector<std::uint32_t> ids;
+        std::function<void(const Node*)> collect = [&](const Node* node) {
+            ids.push_back(node->pageId);
+            if (!node->leaf) {
+                for (const auto& child : node->children) {
+                    collect(child.get());
+                }
+            }
+        };
+        collect(root_.get());
+        return ids;
     }
 
 private:
@@ -262,10 +448,15 @@ private:
 
         parent->entries.insert(parent->entries.begin() + static_cast<std::ptrdiff_t>(childIndex), std::move(mid));
         parent->children.insert(parent->children.begin() + static_cast<std::ptrdiff_t>(childIndex + 1), std::move(right));
+
+        markDirty(parent);
+        markDirty(fullChild);
+        markDirty(parent->children[childIndex + 1].get());
     }
 
     template <typename K, typename V>
     bool insertNonFull(Node* node, K&& key, V&& value) {
+        markDirty(node);
         std::size_t idx = lowerBoundIndex(node, key);
 
         if (node->leaf) {
@@ -297,6 +488,105 @@ private:
         }
 
         return insertNonFull(node->children[idx].get(), std::forward<K>(key), std::forward<V>(value));
+    }
+
+    void removeFromNode(Node* node, const Key& key) {
+        std::size_t idx = lowerBoundIndex(node, key);
+        if (idx < node->entries.size() && equalKey(node->entries[idx].key, key)) {
+            if (node->leaf) {
+                node->entries.erase(node->entries.begin() + static_cast<std::ptrdiff_t>(idx));
+                return;
+            }
+            removeFromInternal(node, idx);
+            return;
+        }
+        if (node->leaf) return;
+        bool lastChild = (idx == node->entries.size());
+        if (node->children[idx]->entries.size() < t_) {
+            fill(node, idx);
+        }
+        if (lastChild && idx > node->entries.size()) {
+            removeFromNode(node->children[idx - 1].get(), key);
+        } else {
+            removeFromNode(node->children[idx].get(), key);
+        }
+    }
+
+    void removeFromInternal(Node* node, std::size_t idx) {
+        Key k = node->entries[idx].key;
+        if (node->children[idx]->entries.size() >= t_) {
+            Entry pred = getPredecessor(node->children[idx].get());
+            node->entries[idx] = pred;
+            removeFromNode(node->children[idx].get(), pred.key);
+        } else if (node->children[idx + 1]->entries.size() >= t_) {
+            Entry succ = getSuccessor(node->children[idx + 1].get());
+            node->entries[idx] = succ;
+            removeFromNode(node->children[idx + 1].get(), succ.key);
+        } else {
+            merge(node, idx);
+            removeFromNode(node->children[idx].get(), k);
+        }
+    }
+
+    Entry getPredecessor(Node* node) {
+        while (!node->leaf) node = node->children.back().get();
+        return node->entries.back();
+    }
+
+    Entry getSuccessor(Node* node) {
+        while (!node->leaf) node = node->children.front().get();
+        return node->entries.front();
+    }
+
+    void fill(Node* node, std::size_t idx) {
+        if (idx > 0 && node->children[idx - 1]->entries.size() >= t_) {
+            borrowFromPrev(node, idx);
+        } else if (idx + 1 < node->children.size() && node->children[idx + 1]->entries.size() >= t_) {
+            borrowFromNext(node, idx);
+        } else if (idx < node->entries.size()) {
+            merge(node, idx);
+        } else {
+            merge(node, idx - 1);
+        }
+    }
+
+    void borrowFromPrev(Node* node, std::size_t idx) {
+        Node* child = node->children[idx].get();
+        Node* sibling = node->children[idx - 1].get();
+        child->entries.insert(child->entries.begin(), node->entries[idx - 1]);
+        node->entries[idx - 1] = sibling->entries.back();
+        sibling->entries.pop_back();
+        if (!child->leaf) {
+            child->children.insert(child->children.begin(), std::move(sibling->children.back()));
+            sibling->children.pop_back();
+        }
+        markDirty(node); markDirty(child); markDirty(sibling);
+    }
+
+    void borrowFromNext(Node* node, std::size_t idx) {
+        Node* child = node->children[idx].get();
+        Node* sibling = node->children[idx + 1].get();
+        child->entries.push_back(node->entries[idx]);
+        node->entries[idx] = sibling->entries.front();
+        sibling->entries.erase(sibling->entries.begin());
+        if (!child->leaf) {
+            child->children.push_back(std::move(sibling->children.front()));
+            sibling->children.erase(sibling->children.begin());
+        }
+        markDirty(node); markDirty(child); markDirty(sibling);
+    }
+
+    void merge(Node* node, std::size_t idx) {
+        Node* child = node->children[idx].get();
+        Node* sibling = node->children[idx + 1].get();
+        child->entries.push_back(node->entries[idx]);
+        node->entries.erase(node->entries.begin() + static_cast<std::ptrdiff_t>(idx));
+        for (auto& e : sibling->entries) child->entries.push_back(std::move(e));
+        if (!child->leaf) {
+            for (auto& c : sibling->children) child->children.push_back(std::move(c));
+        }
+        node->children.erase(node->children.begin() + static_cast<std::ptrdiff_t>(idx + 1));
+        markDirty(node); markDirty(child);
     }
 
     template <typename Visitor>
@@ -336,6 +626,21 @@ private:
         if (!node->leaf) {
             for (const auto& child : node->children) {
                 dumpNodeLinesInternal(child.get(), depth + 1, lines, formatter);
+            }
+        }
+    }
+
+    void dumpNodeRefsRecursive(const Node* node, std::vector<TidNodeRef>& nodes) const {
+        const std::size_t idx = nodes.size();
+        nodes.emplace_back();
+        nodes[idx].isLeaf = node->leaf;
+        for (const auto& entry : node->entries) {
+            nodes[idx].keys.push_back(entry.key);
+        }
+        if (!node->leaf) {
+            for (const auto& child : node->children) {
+                nodes[idx].childIndices.push_back(nodes.size());
+                dumpNodeRefsRecursive(child.get(), nodes);
             }
         }
     }

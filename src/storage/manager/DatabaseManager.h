@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <cstddef>
 #include <vector>
 
 class Core;
@@ -17,6 +18,65 @@ class Core;
 class DatabaseManager
 {
 public:
+    enum class JoinType {
+        INNER_JOIN,
+        LEFT_JOIN
+    };
+
+    struct JoinColumnRef {
+        std::string source;
+        std::string column;
+    };
+
+    struct JoinCondition {
+        JoinColumnRef left;
+        JoinColumnRef right;
+        storage::Table::CompareOp op = storage::Table::CompareOp::EQ;
+    };
+
+    struct JoinProjection {
+        JoinColumnRef column;
+        std::string outputName;
+    };
+
+    struct JoinFilter {
+        JoinColumnRef column;
+        storage::Table::CompareOp op = storage::Table::CompareOp::EQ;
+        std::string value;
+        std::string secondValue;
+        std::vector<std::string> values;
+    };
+
+    struct JoinSpec {
+        JoinType type = JoinType::INNER_JOIN;
+        std::string tableName;
+        std::string alias;
+        std::vector<JoinCondition> onConditions;
+        std::vector<storage::Table::WhereCondition> preFilters;
+    };
+
+    struct JoinOptions {
+        std::string orderByOutput;
+        bool orderByDesc = false;
+        bool hasLimit = false;
+        std::size_t limit = 0;
+    };
+
+    struct JoinQuery {
+        std::string baseTable;
+        std::string baseAlias;
+        std::vector<storage::Table::WhereCondition> basePreFilters;
+        std::vector<JoinSpec> joins;
+        std::vector<JoinProjection> projections;
+        std::vector<JoinFilter> postFilters;
+        JoinOptions options;
+    };
+
+    struct JoinResult {
+        std::vector<std::string> columns;
+        std::vector<storage::Row> rows;
+    };
+
     /**
      * @brief 构造函数
      * @author NAPH130
@@ -50,14 +110,34 @@ public:
                                const std::string &tableName,
                                const std::string &primaryKey);
     bool addColumnConstraint(const std::string &dbName,
-                             const std::string &tableName,
-                             const storage::Table::ColumnConstraintSpec &constraint);
+                              const std::string &tableName,
+                              const storage::Table::ColumnConstraintSpec &constraint);
+    bool addColumn(const std::string &dbName, const std::string &tableName,
+                   const std::string &colName, storage::DataType type,
+                   std::uint16_t varcharLen = 0, const std::string& defaultValue = "");
+    bool renameTable(const std::string &dbName, const std::string &oldName, const std::string &newName);
+    bool dropConstraint(const std::string &dbName, const std::string &tableName,
+                        const std::string &column, storage::Table::ConstraintType type);
+    bool dropColumn(const std::string &dbName, const std::string &tableName, const std::string &colName);
+    bool renameColumn(const std::string &dbName, const std::string &tableName,
+                      const std::string &oldName, const std::string &newName);
+    bool alterColumnType(const std::string &dbName, const std::string &tableName,
+                         const std::string &column, storage::DataType newType, std::uint16_t varcharLen = 0);
+    std::size_t updateByCondition(const std::string &dbName, const std::string &tableName,
+                                  const std::vector<storage::Table::WhereCondition> &whereConditions,
+                                  const std::vector<std::string> &newValues);
+    std::size_t deleteByCondition(const std::string &dbName, const std::string &tableName,
+                                  const std::vector<storage::Table::WhereCondition> &whereConditions);
+    bool truncateTable(const std::string &dbName, const std::string &tableName);
+    storage::Table::SubqueryResult evaluateSubquery(const std::string &dbName,
+                                                     const storage::Table::SubquerySpec &spec);
     std::vector<storage::Row> selectRows(const std::string &dbName,
                                          const std::string &tableName,
                                          const std::vector<std::string> &targetColumns,
                                          const std::vector<storage::Table::WhereCondition> &whereConditions = {},
                                          const std::vector<storage::Table::QueryConstraint> &queryConstraints = {},
                                          const storage::Table::SelectOptions &options = storage::Table::SelectOptions());
+    JoinResult selectJoinRows(const std::string &dbName, const JoinQuery &query);
 
     /**
      * @brief 删除数据表

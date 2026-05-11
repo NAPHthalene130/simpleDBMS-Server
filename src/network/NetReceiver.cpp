@@ -305,6 +305,11 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
         }
 
         if (networkTransferData.getType() == NetworkTransferData::DIRECTORY_REQUEST) {
+            /**
+             * @brief 处理客户端目录结构请求
+             * @details 遍历所有数据库→表→字段三层结构，构建 DatabaseNode/TableNode 层级响应。
+             * @author NAPH130
+             */
             if (core == nullptr || core->getStorageManager() == nullptr) {
                 sendFailureResponse("Storage manager is not initialized.");
                 return;

@@ -34,6 +34,7 @@ file(GLOB_RECURSE SERVER_SOURCE_FILES CONFIGURE_DEPENDS
 list(FILTER SERVER_SOURCE_FILES EXCLUDE REGEX ".*/src/storage/tests/.*\\.cpp$")
 list(FILTER SERVER_SOURCE_FILES EXCLUDE REGEX ".*/src/test/.*\\.cpp$")
 list(FILTER SERVER_SOURCE_FILES EXCLUDE REGEX ".*/src/storage/object/StorageDemo\\.cpp$")
+list(FILTER SERVER_SOURCE_FILES EXCLUDE REGEX ".*/src/app/.*\\.cpp$")
 
 add_executable(simpleDBMS-Server
     ${SERVER_SOURCE_FILES}

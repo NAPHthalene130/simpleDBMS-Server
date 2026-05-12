@@ -271,6 +271,8 @@ public:
     bool addColumnConstraints(const std::vector<ColumnConstraintSpec>& specs);
     std::vector<ColumnConstraintSpec> getColumnConstraints() const;
 
+    std::uint64_t getVersion() const;
+
     /**
      * @brief 获取表结构
      * @author Startale
@@ -285,6 +287,10 @@ public:
      * @return 是否存在
      */
     bool containsPrimaryKey(const std::string& key) const;
+
+    static bool compareValue(const std::string& left, CompareOp op, const std::string& right);
+    static bool compareValue(const std::string& left,
+                              const WhereCondition& condition);
 
 private:
     struct ColumnIndex {
@@ -372,6 +378,7 @@ private:
      */
     std::filesystem::path indexFilePath() const;
     std::filesystem::path nonPrimaryIndexFilePath(const std::string& column) const;
+    std::filesystem::path versionFilePath() const;
 
     /**
      * @brief 持久化表结构到元数据文件
@@ -479,19 +486,8 @@ private:
     static std::vector<std::uint64_t> mergeOffsetUnion(const std::vector<std::uint64_t>& left,
                                                        const std::vector<std::uint64_t>& right);
     static std::vector<std::uint64_t> mergeOffsetIntersection(const std::vector<std::uint64_t>& left,
-                                                              const std::vector<std::uint64_t>& right);
+                                                               const std::vector<std::uint64_t>& right);
 
-    /**
-     * @brief 比较两个字段值
-     * @author Startale
-     * @param left 左值
-     * @param op 比较操作符
-     * @param right 右值
-     * @return 比较结果
-     */
-    static bool compareValue(const std::string& left, CompareOp op, const std::string& right);
-    static bool compareValue(const std::string& left,
-                              const WhereCondition& condition);
     bool compareTyped(std::size_t colIndex, const std::string& left, CompareOp op, const std::string& right) const;
 
     /**

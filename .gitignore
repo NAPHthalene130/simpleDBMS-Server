@@ -190,3 +190,4 @@ src/storage/plan.md
 vcpkg_installed/
 /build-msvc/
 src/storage/data/*
+src/test/StorageCoreChainTest.cpp

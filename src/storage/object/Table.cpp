@@ -1,4 +1,5 @@
 #include "Table.h"
+#include "TableVersionManager.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -122,6 +123,8 @@ Table Table::create(const std::filesystem::path& dbPath,
 
     table.flushIntegrityMeta();
     table.syncIndexPages();
+
+    TableVersionManager::initialize(dbPath, tableName);
 
     return table;
 }
@@ -274,6 +277,7 @@ void Table::insert(const std::vector<std::string>& values) {
     }
 
     syncIndexPages();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
 }
 
 bool Table::updateByPrimaryKey(const std::string& primaryKey,
@@ -322,6 +326,7 @@ bool Table::updateByPrimaryKey(const std::string& primaryKey,
     }
 
     syncIndexPages();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -348,6 +353,7 @@ bool Table::deleteByPrimaryKey(const std::string& primaryKey) {
     primaryKeyOffsetsOrdered_.erase(primaryKey);
     index_.remove(primaryKey);
     syncIndexPages();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -381,6 +387,7 @@ void Table::truncate() {
     primaryKeyOffsetsOrdered_.clear();
     std::filesystem::resize_file(dataFilePath(), 0);
     syncIndexPages();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
 }
 
 Table::SubqueryResult Table::evaluateSubquery(const SubquerySpec& spec) const {
@@ -454,6 +461,7 @@ std::size_t Table::compact() {
             }
         });
         syncIndexPages();
+        TableVersionManager::incrementVersion(dbPath_, schema_.name);
     }
     return removed;
 }
@@ -495,6 +503,7 @@ bool Table::addColumn(const std::string& name, DataType type, std::uint16_t varc
     flushMeta();
     flushIntegrityMeta();
     syncIndexPages();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -508,7 +517,7 @@ bool Table::rename(const std::string& newName) {
         auto newP = dbPath_ / (newName + ext);
         if (std::filesystem::exists(oldP)) std::filesystem::rename(oldP, newP);
     };
-    renameFile(".tdf"); renameFile(".trd"); renameFile(".tic"); renameFile(".tid");
+    renameFile(".tdf"); renameFile(".trd"); renameFile(".tic"); renameFile(".tid"); renameFile(".ver");
     for (const auto& col : schema_.columns) {
         auto o = dbPath_ / (oldName + "." + col + ".nidx");
         auto n = dbPath_ / (newName + "." + col + ".nidx");
@@ -516,6 +525,7 @@ bool Table::rename(const std::string& newName) {
     }
     schema_.name = newName;
     flushMeta();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -535,6 +545,7 @@ bool Table::dropConstraint(const std::string& column, ConstraintType type) {
         else if (type == ConstraintType::UNIQUE) schema_.columnMetas[idx].integrities &= ~4;
     }
     flushIntegrityMeta();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -580,6 +591,7 @@ bool Table::dropColumn(const std::string& name) {
     flushMeta();
     flushIntegrityMeta();
     syncIndexPages();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -597,6 +609,7 @@ bool Table::renameColumn(const std::string& oldName, const std::string& newName)
         std::filesystem::rename(oldNidx, nonPrimaryIndexFilePath(newName));
     }
     flushMeta();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -632,6 +645,7 @@ bool Table::alterColumnType(const std::string& column, DataType newType, std::ui
     schema_.columnMetas[idx].dataType = newType;
     schema_.columnMetas[idx].varcharLen = varcharLen;
     flushMeta();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -897,6 +911,7 @@ bool Table::addColumnConstraint(const ColumnConstraintSpec& spec) {
     }
     flushMeta();
     flushIntegrityMeta();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -951,6 +966,14 @@ std::filesystem::path Table::indexFilePath() const {
 
 std::filesystem::path Table::nonPrimaryIndexFilePath(const std::string& column) const {
     return dbPath_ / (schema_.name + "." + column + ".nidx");
+}
+
+std::filesystem::path Table::versionFilePath() const {
+    return dbPath_ / (schema_.name + ".ver");
+}
+
+std::uint64_t Table::getVersion() const {
+    return TableVersionManager::getVersion(dbPath_, schema_.name);
 }
 
 void Table::flushMeta() const {

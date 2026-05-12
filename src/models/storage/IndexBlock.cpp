@@ -1,5 +1,19 @@
 #include "IndexBlock.h"
 
+#include <algorithm>
+#include <cstring>
+
+namespace {
+
+template <std::size_t N>
+std::string arrayToString(const std::array<char, N> &value)
+{
+    const auto endIt = std::find(value.begin(), value.end(), '\0');
+    return std::string(value.begin(), endIt);
+}
+
+} // namespace
+
 IndexBlock::IndexBlock()
     : name{},
       isUnique(false),
@@ -79,4 +93,22 @@ const std::array<char, 256> &IndexBlock::getIndexFile() const
 void IndexBlock::setIndexFile(const std::array<char, 256> &indexFile)
 {
     this->indexFile = indexFile;
+}
+
+std::string IndexBlock::toDescriptorLine(const std::string &prefix, const std::string &suffix) const
+{
+    const std::string idxFile = arrayToString(indexFile);
+
+    if (prefix == "index") {
+        const std::string indexName = arrayToString(name);
+        return prefix + "=" + indexName + ":" + idxFile;
+    }
+    if (prefix == "index_definitions") {
+        const std::string indexName = arrayToString(name);
+        const std::string fld = arrayToString(fields[0]);
+        return prefix + "=" + indexName + "(" + fld + "):" + suffix + idxFile;
+    }
+    // index_reserved
+    const std::string fld = arrayToString(fields[0]);
+    return prefix + "=" + fld + ":" + suffix + idxFile;
 }

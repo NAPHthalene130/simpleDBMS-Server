@@ -274,6 +274,14 @@ public:
     std::uint64_t getVersion() const;
 
     /**
+     * @brief 将 ColumnDefinition 转换为 ColumnMeta
+     * @author Startale
+     * @param def 列定义
+     * @return 列元数据
+     */
+    static ColumnMeta toColumnMeta(const ColumnDefinition& def);
+
+    /**
      * @brief 获取表结构
      * @author Startale
      * @return 表结构对象

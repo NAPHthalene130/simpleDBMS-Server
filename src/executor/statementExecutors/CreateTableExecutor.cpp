@@ -166,6 +166,17 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
         storage::ColumnMeta meta;
         meta.integrities = fieldBlock.getIntegrities();
         meta.defaultValue = fieldBlock.getDefaultValue();
+
+        const std::int32_t fieldType = fieldBlock.getType();
+        const std::int32_t fieldParam = fieldBlock.getParam();
+        switch (fieldType) {
+            case 1: meta.dataType = storage::DataType::INT; break;
+            case 2:
+            case 3: meta.dataType = storage::DataType::FLOAT; break;
+            case 5: meta.dataType = storage::DataType::VARCHAR; meta.varcharLen = static_cast<std::uint16_t>(fieldParam); break;
+            default: meta.dataType = storage::DataType::TEXT; break;
+        }
+
         columnMetas.push_back(meta);
     }
 

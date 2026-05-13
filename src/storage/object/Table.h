@@ -308,10 +308,6 @@ public:
      */
     bool containsPrimaryKey(const std::string& key) const;
 
-    static bool compareValue(const std::string& left, CompareOp op, const std::string& right);
-    static bool compareValue(const std::string& left,
-                              const WhereCondition& condition);
-
 private:
     struct ColumnIndex {
         std::multimap<std::string, std::uint64_t> entries;

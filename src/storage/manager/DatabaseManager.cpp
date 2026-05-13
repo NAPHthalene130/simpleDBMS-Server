@@ -480,13 +480,7 @@ bool DatabaseManager::createTable(const std::string &dbName,
         columnMetas.reserve(columns.size());
         for (const auto &column : columns) {
             names.push_back(column.name);
-            storage::ColumnMeta meta;
-            meta.dataType = column.dataType;
-            meta.varcharLen = column.varcharLen;
-            if (column.constraints.notNull)  meta.integrities |= 1;
-            if (column.constraints.unique)   meta.integrities |= 4;
-            if (column.constraints.hasDefault) meta.defaultValue = column.constraints.defaultValue;
-            columnMetas.push_back(std::move(meta));
+            columnMetas.push_back(storage::Table::toColumnMeta(column));
         }
         return createTable(dbName, tableName, names, columnMetas);
     } catch (...) {

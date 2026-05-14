@@ -180,7 +180,7 @@ ExecutionResult UpdateExecutor::executeUpdate(const UpdateStmt *updateStmt,
                 newValues[setColumnIndexes[i]] = setValues[i];
             }
 
-            rowsToUpdate.push_back({row.values.front(), std::move(newValues)});
+            rowsToUpdate.push_back(RowUpdate{row.values.front(), std::move(newValues)});
         }
 
         // 记录更新日志 -- NAPH130

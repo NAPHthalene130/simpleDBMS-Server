@@ -79,9 +79,11 @@ public:
 
     struct SelectOptions {
         std::string orderByColumn;
-        bool orderByDesc = false;
-        bool hasLimit = false;
-        std::size_t limit = 0;
+        bool orderByDesc;
+        bool hasLimit;
+        std::size_t limit;
+
+        SelectOptions() : orderByDesc(false), hasLimit(false), limit(0) {}
     };
 
     enum class SubqueryKind { Scalar, RowSet, Exists };

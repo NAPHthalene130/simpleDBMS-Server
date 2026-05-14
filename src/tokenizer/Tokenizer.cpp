@@ -126,7 +126,24 @@ void Tokenizer::initializeKeywords()
         "DELETE",
         "UPDATE",
         "SET",
-        "DEFAULT"
+        "DEFAULT",
+        "JOIN",
+        "LEFT",
+        "RIGHT",
+        "INNER",
+        "ON",
+        "GROUP",
+        "BY",
+        "HAVING",
+        "ORDER",
+        "AS",
+        "LIMIT",
+        "COUNT",
+        "SUM",
+        "AVG",
+        "MIN",
+        "MAX",
+        "LIKE"
     };
 }
 

@@ -219,6 +219,14 @@ private:
     std::vector<std::string> parseValueList(TokenStream &tokenStream) const;
 
     /**
+     * @brief 解析 JOIN 子句序列
+     * @author NAPH130
+     * @param tokenStream token 游标流
+     * @return JOIN 子句信息列表
+     */
+    std::vector<JoinInfo> parseJoinClauses(TokenStream &tokenStream) const;
+
+    /**
      * @brief 断言语句结束并消费分号与 EndOfFile
      * @author YuzhSong
      * @param tokenStream token 游标流

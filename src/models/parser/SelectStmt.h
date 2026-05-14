@@ -8,9 +8,23 @@
 #include "SQLStatement.h"
 
 /**
+ * @struct JoinInfo
+ * @brief 单条 JOIN 子句的解析结果
+ * @details 包含连接类型、表名、别名与 ON 条件树
+ * @author NAPH130
+ */
+struct JoinInfo {
+    std::string joinType;                              ///< "INNER", "LEFT", "RIGHT"
+    std::string tableName;                             ///< 被连接的表名
+    std::string alias;                                 ///< 表别名（可为空）
+    std::string leftAlias;                             ///< 左侧表别名（可为空）
+    std::shared_ptr<ConditionNode> onCondition;        ///< ON 条件树
+};
+
+/**
  * @class SelectStmt
  * @brief 查询语句数据类
- * @details 封装 SELECT 语句解析后的目标表、目标字段集合与 WHERE 条件树。
+ * @details 封装 SELECT 语句解析后的目标表、目标字段集合、JOIN 信息与 WHERE 条件树。
  * @author NAPH130
  */
 class SelectStmt : public SQLStatement
@@ -36,6 +50,21 @@ public:
     const std::shared_ptr<ConditionNode> &getHavingCondition() const;
     void setHavingCondition(const std::shared_ptr<ConditionNode> &havingCondition);
 
+    /**
+     * @brief 获取 JOIN 子句列表
+     * @author NAPH130
+     * @return JOIN 子句列表
+     */
+    const std::vector<JoinInfo> &getJoinInfoList() const;
+    void addJoinInfo(const JoinInfo &joinInfo);
+
+    /**
+     * @brief 是否存在 JOIN 子句
+     * @author NAPH130
+     * @return 是否存在
+     */
+    bool hasJoin() const;
+
 private:
     std::string tableName;
     std::vector<std::string> targetFields;
@@ -43,4 +72,5 @@ private:
     std::shared_ptr<ConditionNode> whereCondition;
     std::vector<std::string> groupByColumns;
     std::shared_ptr<ConditionNode> havingCondition;
+    std::vector<JoinInfo> joinInfoList;
 };

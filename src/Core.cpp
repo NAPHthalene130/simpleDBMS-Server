@@ -6,12 +6,14 @@
 #include <cstring>
 #include <ctime>
 
+#include "binder/BinderManager.h"
 #include "dbLog/DbLogManager.h"
 #include "executor/ExecutorManager.h"
 #include "log/LogWriter.h"
 #include "models/storage/DatabaseBlock.h"
 #include "network/NetworkManager.h"
 #include "parser/ParserManager.h"
+#include "plan/PlanManager.h"
 #include "storage/manager/DatabaseManager.h"
 #include "storage/manager/StorageManager.h"
 #include "storage/manager/SystemCatalogManager.h"
@@ -174,7 +176,9 @@ Core::Core()
       executorManager(new ExecutorManager(this)),
       tokenizer(new Tokenizer(this)),
       parserManager(new ParserManager(this)),
-      dbLogManager(new DbLogManager(this))
+      dbLogManager(new DbLogManager(this)),
+      binderManager(new BinderManager(this)),
+      planManager(new PlanManager(this))
 {
     LogWriter::info("core", "Core", "Core", "Core modules initialized.");
 }
@@ -183,12 +187,16 @@ Core::~Core()
 {
     LogWriter::info("core", "Core", "~Core", "Core is shutting down.");
     stop();
+    delete planManager;
+    delete binderManager;
     delete parserManager;
     delete tokenizer;
     delete networkManager;
     delete storageManager;
     delete executorManager;
     delete dbLogManager;
+    planManager = nullptr;
+    binderManager = nullptr;
     parserManager = nullptr;
     tokenizer = nullptr;
     networkManager = nullptr;
@@ -241,6 +249,16 @@ Tokenizer *Core::getTokenizer()
 ParserManager *Core::getParserManager()
 {
     return parserManager;
+}
+
+BinderManager *Core::getBinderManager()
+{
+    return binderManager;
+}
+
+PlanManager *Core::getPlanManager()
+{
+    return planManager;
 }
 
 DbLogManager *Core::getDbLogManager()

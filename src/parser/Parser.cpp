@@ -326,6 +326,42 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement(TokenStream &tokenStrea
         SqlTokenType::Identifier,
         "SELECT statement requires a table identifier after FROM.");
 
+    // 表别名（AS alias 或 直接 alias）
+    // 作者：NAPH130
+    std::string mainAlias;
+    if (tokenStream.consumeOptional(SqlTokenType::Keyword, "AS")) {
+        const Token &aliasToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "AS keyword requires an alias identifier.");
+        mainAlias = aliasToken.getValue();
+    } else if (tokenStream.match(SqlTokenType::Identifier)) {
+        // 若下一个 token 是标识符且不是关键字，可能为别名
+        // 作者：NAPH130
+        const auto &nextToken = tokenStream.peek();
+        const std::string nextUpper = nextToken.getValue();
+        // 简单启发式：非关键字标识符当作别名
+        // 作者：NAPH130
+        // 仅在后续为 JOIN/WHERE/GROUP/HAVING/; 或 EOF 时才认作别名
+        if (nextToken.getType() == SqlTokenType::Identifier) {
+            mainAlias = tokenStream.advance().getValue();
+        }
+    }
+
+    const std::shared_ptr<SelectStmt> statement = std::make_shared<SelectStmt>();
+    statement->setTableName(tableNameToken.getValue());
+    if (!mainAlias.empty()) {
+        // 将别名通过 addJoinInfo 间接记录（主表本身不需 joinInfo，但可存储别名）
+        // 实际上主表的别名在 Parser 阶段暂不主动记录，等 Binder 处理
+        // 这里仅做占位
+    }
+
+    // 解析 JOIN 子句
+    // 作者：NAPH130
+    auto joinInfos = parseJoinClauses(tokenStream);
+    for (auto &joinInfo : joinInfos) {
+        statement->addJoinInfo(std::move(joinInfo));
+    }
+
     if (tokenStream.match(SqlTokenType::Keyword, "WHERE")) {
         const Token &currentToken = tokenStream.peek();
         if (currentToken.getType() == SqlTokenType::EndOfFile ||
@@ -355,14 +391,79 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement(TokenStream &tokenStrea
         havingCondition = parseConditionOr(tokenStream);
     }
 
-    const std::shared_ptr<SelectStmt> statement = std::make_shared<SelectStmt>();
-    statement->setTableName(tableNameToken.getValue());
     statement->setSelectAllFields(selectAllFields);
     statement->setTargetFields(targetFields);
     statement->setWhereCondition(whereCondition);
     statement->setGroupByColumns(groupByColumns);
     statement->setHavingCondition(havingCondition);
     return statement;
+}
+
+/**
+ * @brief 解析 JOIN 子句序列
+ * @details 支持 [INNER] JOIN、LEFT [OUTER] JOIN、RIGHT [OUTER] JOIN 带 ON 条件。
+ * @author NAPH130
+ * @param tokenStream token 游标流
+ * @return JOIN 子句信息列表
+ */
+std::vector<JoinInfo> Parser::parseJoinClauses(TokenStream &tokenStream) const
+{
+    std::vector<JoinInfo> result;
+
+    while (true) {
+        std::string joinType = "INNER";
+
+        if (tokenStream.consumeOptional(SqlTokenType::Keyword, "INNER")) {
+            joinType = "INNER";
+        } else if (tokenStream.consumeOptional(SqlTokenType::Keyword, "LEFT")) {
+            joinType = "LEFT";
+            tokenStream.consumeOptional(SqlTokenType::Keyword, "OUTER");
+        } else if (tokenStream.consumeOptional(SqlTokenType::Keyword, "RIGHT")) {
+            joinType = "RIGHT";
+            tokenStream.consumeOptional(SqlTokenType::Keyword, "OUTER");
+        } else if (!tokenStream.match(SqlTokenType::Keyword, "JOIN")) {
+            break;
+        }
+
+        tokenStream.expect(SqlTokenType::Keyword, "JOIN", "JOIN keyword expected.");
+
+        const Token &joinTableToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "JOIN requires a table identifier.");
+
+        // 可选的表别名
+        // 作者：NAPH130
+        std::string alias;
+        if (tokenStream.consumeOptional(SqlTokenType::Keyword, "AS")) {
+            const Token &aliasToken = tokenStream.expect(
+                SqlTokenType::Identifier,
+                "AS keyword requires an alias identifier.");
+            alias = aliasToken.getValue();
+        }
+
+        // ON 条件
+        // 作者：NAPH130
+        std::shared_ptr<ConditionNode> onCondition;
+        if (tokenStream.match(SqlTokenType::Keyword, "ON")) {
+            tokenStream.expect(SqlTokenType::Keyword, "ON", "JOIN requires ON keyword.");
+            const Token &currentToken = tokenStream.peek();
+            if (currentToken.getType() == SqlTokenType::EndOfFile ||
+                (currentToken.getType() == SqlTokenType::Symbol && currentToken.getValue() == ";")) {
+                throw ParserException("ON clause requires a condition expression.",
+                                      tokenStream.position());
+            }
+            onCondition = parseConditionOr(tokenStream);
+        }
+
+        JoinInfo joinInfo;
+        joinInfo.joinType = joinType;
+        joinInfo.tableName = joinTableToken.getValue();
+        joinInfo.alias = alias;
+        joinInfo.onCondition = onCondition;
+        result.push_back(std::move(joinInfo));
+    }
+
+    return result;
 }
 
 /**

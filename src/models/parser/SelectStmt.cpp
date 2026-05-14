@@ -64,3 +64,18 @@ void SelectStmt::setHavingCondition(const std::shared_ptr<ConditionNode> &having
 {
     this->havingCondition = havingCondition;
 }
+
+const std::vector<JoinInfo> &SelectStmt::getJoinInfoList() const
+{
+    return joinInfoList;
+}
+
+void SelectStmt::addJoinInfo(const JoinInfo &joinInfo)
+{
+    joinInfoList.push_back(joinInfo);
+}
+
+bool SelectStmt::hasJoin() const
+{
+    return !joinInfoList.empty();
+}

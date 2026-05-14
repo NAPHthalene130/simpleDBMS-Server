@@ -8,6 +8,8 @@
 
 #include "Core.h"
 #include "NetworkManager.h"
+#include "binder/Binder.h"
+#include "binder/BinderManager.h"
 #include "executor/ExecutorEngine.h"
 #include "executor/ExecutorManager.h"
 #include "log/LogWriter.h"
@@ -22,6 +24,10 @@
 #include "models/storage/TableBlock.h"
 #include "parser/Parser.h"
 #include "parser/ParserManager.h"
+#include "plan/Planner.h"
+#include "plan/PlanManager.h"
+#include "plan/PlanNode.h"
+#include "plan/PlanExecutor.h"
 #include "storage/manager/StorageManager.h"
 #include "storage/manager/SystemCatalogManager.h"
 #include "storage/manager/DatabaseManager.h"
@@ -410,6 +416,46 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             }
             if (!sqlData.getDbName().empty()) {
                 executionContext.setCurrentDbName(sqlData.getDbName());
+            }
+
+            const std::string currentDbName = executionContext.getCurrentDbName();
+
+            // 对 SELECT 语句使用 Binder + Plan 管道以支持 JOIN 和聚合
+            // 作者：NAPH130
+            bool usedBindPlan = false;
+            if (statementType == ExecutionStatementType::Select && !currentDbName.empty()) {
+                const SelectStmt *selectStmt = static_cast<const SelectStmt *>(parseResult.statement.get());
+                if (core->getBinderManager() != nullptr) {
+                    const BindResult bindResult =
+                        core->getBinderManager()->getBinder()->bindSelect(selectStmt, currentDbName);
+
+                    if (bindResult.success && core->getPlanManager() != nullptr) {
+                        auto planRoot = core->getPlanManager()->getPlanner()->planSelect(bindResult, currentDbName);
+
+                        if (planRoot != nullptr) {
+                            // 使用 PlanExecutor 执行计划树
+                            // 作者：NAPH130
+                            PlanExecutor planExecutor(core);
+                            ExecutionResult planExecResult = planExecutor.execute(
+                                planRoot, currentDbName, selectStmt, &executionContext);
+
+                            if (networkExecutionContext != nullptr && !planExecResult.getDbName().empty()) {
+                                networkExecutionContext->setCurrentDbName(planExecResult.getDbName());
+                            }
+
+                            NetworkTransferData responseData = buildExecutionResponse(
+                                planExecResult, networkTransferData, statementType);
+                            responseData.setColumns(planExecResult.getColumns());
+                            responseData.setRows(planExecResult.getResultSet());
+                            sendResponse(responseData);
+                            usedBindPlan = true;
+                        }
+                    }
+                }
+            }
+
+            if (usedBindPlan) {
+                return;
             }
 
             ExecutionResult executionResult =

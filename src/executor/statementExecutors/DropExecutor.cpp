@@ -67,19 +67,23 @@ ExecutionResult DropExecutor::execute(const SQLStatement *statement, ExecutionCo
                                "Database does not exist: " + targetName + ".");
             return buildFailureResult("Database does not exist.", targetName);
         }
-        if (!systemCatalogManager->dropDatabase(targetName)) {
-            LogWriter::error("executor", "DropExecutor", "execute",
-                             "Failed to drop database: " + targetName + ".");
-            return buildFailureResult("Failed to drop database.", targetName);
-        }
 
-        // 记录删除数据库日志
+        // 先记录日志（此时文件夹仍存在），再执行删除
+        // 避免日志系统在文件夹删除后通过 create_directories 重建，
+        // 导致后续 CREATE DATABASE 误判文件夹已存在。
+        // 作者：NAPH130
         if (core != nullptr && core->getDbLogManager() != nullptr) {
             core->getDbLogManager()->logDropDatabase(
                 targetName,
                 "Database metadata snapshot for: " + targetName,
                 "DROP DATABASE " + targetName
             );
+        }
+
+        if (!systemCatalogManager->dropDatabase(targetName)) {
+            LogWriter::error("executor", "DropExecutor", "execute",
+                             "Failed to drop database: " + targetName + ".");
+            return buildFailureResult("Failed to drop database.", targetName);
         }
 
         LogWriter::info("executor", "DropExecutor", "execute",

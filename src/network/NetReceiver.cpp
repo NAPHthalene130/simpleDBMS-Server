@@ -122,6 +122,43 @@ std::vector<std::string> buildQueryColumns(const SQLStatement *statement)
     return {};
 }
 
+/**
+ * @brief 将 token 序列按分号分割为多条独立的 token 子序列
+ * @details 以 Symbol(";") 为分隔符切割 token 序列，
+ *          自动过滤空语句和末尾的 EndOfFile token。
+ *          此方法基于 Tokenizer 已正确解析字符串字面量和注释，
+ *          因此分号在字符串内部时不会误分割。
+ * @author NAPH130
+ * @param tokens 完整的 token 序列
+ * @return 分割后的 token 子序列列表
+ */
+static std::vector<std::vector<Token>> splitTokensBySemicolon(const std::vector<Token> &tokens)
+{
+    std::vector<std::vector<Token>> statementTokensList;
+    std::vector<Token> currentStatement;
+
+    for (const auto &token : tokens) {
+        if (token.getType() == SqlTokenType::EndOfFile) {
+            break;
+        }
+
+        if (token.getType() == SqlTokenType::Symbol && token.getValue() == ";") {
+            if (!currentStatement.empty()) {
+                statementTokensList.push_back(std::move(currentStatement));
+                currentStatement.clear();
+            }
+        } else {
+            currentStatement.push_back(token);
+        }
+    }
+
+    if (!currentStatement.empty()) {
+        statementTokensList.push_back(std::move(currentStatement));
+    }
+
+    return statementTokensList;
+}
+
 } // namespace
 
 NetReceiver::NetReceiver(Core *core, unsigned short listenPort)
@@ -367,6 +404,12 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
         }
 
         if (networkTransferData.getType() == NetworkTransferData::SQL_EXEC_REQUEST) {
+            /**
+             * @brief 处理 SQL 执行请求，支持多语句（按分号分割）
+             * @details 将输入 SQL 按分号分割为多条独立语句，逐条执行并逐个响应。
+             *          执行上下文在语句之间传递（如 USE DATABASE 影响后续语句）。
+             * @author NAPH130
+             */
             if (core == nullptr || core->getParserManager() == nullptr || core->getParserManager()->getParser() == nullptr
                 || core->getExecutorManager() == nullptr || core->getExecutorManager()->getExecutorEngine() == nullptr) {
                 LogWriter::fatal("network", "NetReceiver", "processMsg", "SQL pipeline is not initialized.");
@@ -374,29 +417,30 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 return;
             }
 
-            SqlData sqlData;
-            sqlData.setUserID(networkTransferData.getId());
-            sqlData.setDbName(networkTransferData.getDbName());
-            sqlData.setSql(networkTransferData.getSql());
-
-            if (sqlData.getSql().empty()) {
+            const std::string rawSql = networkTransferData.getSql();
+            if (rawSql.empty()) {
                 LogWriter::warning("network", "NetReceiver", "processMsg", "Rejected empty SQL request.");
                 sendFailureResponse("SQL content is empty.");
                 return;
             }
 
-            Tokenizer tokenizer(core, sqlData.getSql());
-            const std::vector<Token> tokens = tokenizer.tokenize();
-            const ParseResult parseResult = core->getParserManager()->getParser()->parse(tokens);
-            if (!parseResult.success || parseResult.statement == nullptr) {
-                LogWriter::warning("network", "NetReceiver", "processMsg", "SQL parse failed.");
-                sendFailureResponse("Parse failed at token " + std::to_string(parseResult.errorTokenIndex)
-                                    + ": " + parseResult.errorMessage);
+            // 1. 对整个 SQL 文本进行词法分析
+            // 作者：NAPH130
+            Tokenizer tokenizer(core, rawSql);
+            const std::vector<Token> allTokens = tokenizer.tokenize();
+
+            // 2. 按分号分割为多条语句的 token 子序列
+            // 作者：NAPH130
+            const std::vector<std::vector<Token>> statementTokensList = splitTokensBySemicolon(allTokens);
+
+            if (statementTokensList.empty()) {
+                LogWriter::warning("network", "NetReceiver", "processMsg", "No SQL statements found.");
+                sendFailureResponse("No SQL statements found.");
                 return;
             }
 
-            const ExecutionStatementType statementType = parseResult.statement->getStmtType();
-
+            // 3. 构建执行上下文（跨语句共享）
+            // 作者：NAPH130
             ExecutionContext executionContext;
             NetworkExecutionContext *networkExecutionContext = nullptr;
             if (core->getNetworkManager() != nullptr
@@ -411,75 +455,123 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 }
             }
 
-            if (!sqlData.getUserID().empty()) {
-                executionContext.setCurrentUser(sqlData.getUserID());
+            if (!networkTransferData.getId().empty()) {
+                executionContext.setCurrentUser(networkTransferData.getId());
             }
-            if (!sqlData.getDbName().empty()) {
-                executionContext.setCurrentDbName(sqlData.getDbName());
+            if (!networkTransferData.getDbName().empty()) {
+                executionContext.setCurrentDbName(networkTransferData.getDbName());
             }
 
-            const std::string currentDbName = executionContext.getCurrentDbName();
-
-            // 对 SELECT 语句使用 Binder + Plan 管道以支持 JOIN 和聚合
+            // 4. 逐条执行每一条语句
             // 作者：NAPH130
-            bool usedBindPlan = false;
-            if (statementType == ExecutionStatementType::Select && !currentDbName.empty()) {
-                const SelectStmt *selectStmt = static_cast<const SelectStmt *>(parseResult.statement.get());
-                if (core->getBinderManager() != nullptr) {
-                    const BindResult bindResult =
-                        core->getBinderManager()->getBinder()->bindSelect(selectStmt, currentDbName);
+            for (std::size_t stmtIdx = 0; stmtIdx < statementTokensList.size(); ++stmtIdx) {
+                const std::vector<Token> &stmtTokens = statementTokensList[stmtIdx];
+                const std::size_t statementNumber = stmtIdx + 1;
 
-                    if (bindResult.success && core->getPlanManager() != nullptr) {
-                        auto planRoot = core->getPlanManager()->getPlanner()->planSelect(bindResult, currentDbName);
+                try {
+                    // 4a. 语法分析
+                    // 作者：NAPH130
+                    const ParseResult parseResult = core->getParserManager()->getParser()->parse(stmtTokens);
+                    if (!parseResult.success || parseResult.statement == nullptr) {
+                        LogWriter::warning("network", "NetReceiver", "processMsg",
+                                           "Statement " + std::to_string(statementNumber) + " parse failed.");
+                        NetworkTransferData errorResponse = buildFailureResponse(
+                            "Statement " + std::to_string(statementNumber)
+                            + " parse failed at token " + std::to_string(parseResult.errorTokenIndex)
+                            + ": " + parseResult.errorMessage,
+                            &networkTransferData);
+                        sendResponse(errorResponse);
+                        continue;
+                    }
 
-                        if (planRoot != nullptr) {
-                            // 使用 PlanExecutor 执行计划树
-                            // 作者：NAPH130
-                            PlanExecutor planExecutor(core);
-                            ExecutionResult planExecResult = planExecutor.execute(
-                                planRoot, currentDbName, selectStmt, &executionContext);
+                    const ExecutionStatementType statementType = parseResult.statement->getStmtType();
+                    const std::string currentDbName = executionContext.getCurrentDbName();
 
-                            if (networkExecutionContext != nullptr && !planExecResult.getDbName().empty()) {
-                                networkExecutionContext->setCurrentDbName(planExecResult.getDbName());
+                    // 4b. 对 SELECT 语句优先使用 Binder + Plan 管道（支持 JOIN 和聚合）
+                    // 作者：NAPH130
+                    bool usedBindPlan = false;
+                    if (statementType == ExecutionStatementType::Select && !currentDbName.empty()) {
+                        const SelectStmt *selectStmt = static_cast<const SelectStmt *>(parseResult.statement.get());
+                        if (core->getBinderManager() != nullptr) {
+                            const BindResult bindResult =
+                                core->getBinderManager()->getBinder()->bindSelect(selectStmt, currentDbName);
+
+                            if (bindResult.success && core->getPlanManager() != nullptr) {
+                                auto planRoot = core->getPlanManager()->getPlanner()->planSelect(bindResult, currentDbName);
+
+                                if (planRoot != nullptr) {
+                                    PlanExecutor planExecutor(core);
+                                    ExecutionResult planExecResult = planExecutor.execute(
+                                        planRoot, currentDbName, selectStmt, &executionContext);
+
+                                    if (networkExecutionContext != nullptr && !planExecResult.getDbName().empty()) {
+                                        networkExecutionContext->setCurrentDbName(planExecResult.getDbName());
+                                    }
+                                    if (!planExecResult.getDbName().empty()) {
+                                        executionContext.setCurrentDbName(planExecResult.getDbName());
+                                    }
+
+                                    if (planExecResult.getDbName().empty()) {
+                                        planExecResult.setDbName(executionContext.getCurrentDbName());
+                                    }
+
+                                    NetworkTransferData responseData = buildExecutionResponse(
+                                        planExecResult, networkTransferData, statementType);
+                                    responseData.setColumns(planExecResult.getColumns());
+                                    responseData.setRows(planExecResult.getResultSet());
+                                    sendResponse(responseData);
+                                    usedBindPlan = true;
+                                }
                             }
-
-                            NetworkTransferData responseData = buildExecutionResponse(
-                                planExecResult, networkTransferData, statementType);
-                            responseData.setColumns(planExecResult.getColumns());
-                            responseData.setRows(planExecResult.getResultSet());
-                            sendResponse(responseData);
-                            usedBindPlan = true;
                         }
                     }
+
+                    if (usedBindPlan) {
+                        continue;
+                    }
+
+                    // 4c. 普通执行路径（非 SELECT 或 binder/plan 不可用时）
+                    // 作者：NAPH130
+                    ExecutionResult executionResult =
+                        core->getExecutorManager()->getExecutorEngine()->execute(
+                            parseResult.statement.get(), &executionContext);
+
+                    if (executionResult.getStatus() == ExecutionStatus::Success
+                        && networkExecutionContext != nullptr
+                        && !executionResult.getDbName().empty()) {
+                        networkExecutionContext->setCurrentDbName(executionResult.getDbName());
+                    }
+                    if (!executionResult.getDbName().empty()) {
+                        executionContext.setCurrentDbName(executionResult.getDbName());
+                    }
+
+                    if (executionResult.getDbName().empty()) {
+                        executionResult.setDbName(executionContext.getCurrentDbName());
+                    }
+
+                    NetworkTransferData responseData = buildExecutionResponse(
+                        executionResult, networkTransferData, statementType);
+                    if (isQueryStatementType(statementType)) {
+                        std::vector<std::string> resultColumns = executionResult.getColumns();
+                        if (resultColumns.empty()) {
+                            resultColumns = buildQueryColumns(parseResult.statement.get());
+                        }
+                        responseData.setColumns(resultColumns);
+                        responseData.setRows(executionResult.getResultSet());
+                    }
+                    sendResponse(responseData);
+
+                } catch (const std::exception &exception) {
+                    LogWriter::error("network", "NetReceiver", "processMsg",
+                                     "Statement " + std::to_string(statementNumber)
+                                     + " execution failed: " + std::string(exception.what()));
+                    NetworkTransferData errorResponse = buildFailureResponse(
+                        "Statement " + std::to_string(statementNumber)
+                        + " execution failed: " + std::string(exception.what()),
+                        &networkTransferData);
+                    sendResponse(errorResponse);
                 }
             }
-
-            if (usedBindPlan) {
-                return;
-            }
-
-            ExecutionResult executionResult =
-                core->getExecutorManager()->getExecutorEngine()->execute(parseResult.statement.get(), &executionContext);
-            if (executionResult.getStatus() == ExecutionStatus::Success
-                && networkExecutionContext != nullptr
-                && !executionResult.getDbName().empty()) {
-                networkExecutionContext->setCurrentDbName(executionResult.getDbName());
-            }
-
-            if (executionResult.getDbName().empty()) {
-                executionResult.setDbName(executionContext.getCurrentDbName());
-            }
-
-            NetworkTransferData responseData = buildExecutionResponse(executionResult, networkTransferData, statementType);
-            if (isQueryStatementType(statementType)) {
-                std::vector<std::string> resultColumns = executionResult.getColumns();
-                if (resultColumns.empty()) {
-                    resultColumns = buildQueryColumns(parseResult.statement.get());
-                }
-                responseData.setColumns(resultColumns);
-                responseData.setRows(executionResult.getResultSet());
-            }
-            sendResponse(responseData);
             return;
         }
 

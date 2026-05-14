@@ -2,6 +2,8 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 /**
  * @class IntegrityBlock
@@ -13,6 +15,12 @@
 class IntegrityBlock
 {
 public:
+    static constexpr std::int32_t TYPE_NOT_NULL    = 0;
+    static constexpr std::int32_t TYPE_UNIQUE       = 1;
+    static constexpr std::int32_t TYPE_DEFAULT      = 2;
+    static constexpr std::int32_t TYPE_CHECK        = 3;
+    static constexpr std::int32_t TYPE_PRIMARY_KEY  = 4;
+
     IntegrityBlock();
 
     const std::array<char, 128> &getName() const;
@@ -26,6 +34,9 @@ public:
 
     const std::array<char, 256> &getParam() const;
     void setParam(const std::array<char, 256> &param);
+
+    std::string toDescriptorLine() const;
+    static bool fromDescriptorLine(const std::string &line, IntegrityBlock &outBlock);
 
 private:
     std::array<char, 128> name;  ///< 约束名称

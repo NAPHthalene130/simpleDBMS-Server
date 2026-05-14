@@ -1,6 +1,8 @@
 #include "Table.h"
+#include "TableVersionManager.h"
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
@@ -12,6 +14,9 @@
 #include <unordered_set>
 
 #include "storage/manager/FileManager.h"
+
+#include "models/storage/IndexBlock.h"
+#include "models/storage/IntegrityBlock.h"
 
 namespace storage {
 
@@ -57,6 +62,20 @@ std::string decodeConstraintValue(const std::string& value) {
         }
     }
     return out;
+}
+
+template <std::size_t N>
+std::array<char, N> stringToArray(const std::string &value) {
+    std::array<char, N> result{};
+    const auto copyLen = std::min<std::size_t>(value.size(), N - 1);
+    std::memcpy(result.data(), value.data(), copyLen);
+    return result;
+}
+
+template <std::size_t N>
+std::string arrayToString(const std::array<char, N> &value) {
+    const auto endIt = std::find(value.begin(), value.end(), '\0');
+    return std::string(value.begin(), endIt);
 }
 
 } // namespace
@@ -123,6 +142,8 @@ Table Table::create(const std::filesystem::path& dbPath,
     table.flushIntegrityMeta();
     table.syncIndexPages();
 
+    TableVersionManager::initialize(dbPath, tableName);
+
     return table;
 }
 
@@ -136,13 +157,7 @@ Table Table::create(const std::filesystem::path& dbPath,
     for (const auto& col : columns) {
         ensure(!col.name.empty(), "column name cannot be empty");
         names.push_back(col.name);
-        ColumnMeta meta;
-        meta.dataType = col.dataType;
-        meta.varcharLen = col.varcharLen;
-        if (col.constraints.notNull)  meta.integrities |= 1;
-        if (col.constraints.unique)   meta.integrities |= 4;
-        if (col.constraints.hasDefault) meta.defaultValue = col.constraints.defaultValue;
-        metas.push_back(std::move(meta));
+        metas.push_back(toColumnMeta(col));
     }
     return create(dbPath, tableName, names, metas);
 }
@@ -274,6 +289,7 @@ void Table::insert(const std::vector<std::string>& values) {
     }
 
     syncIndexPages();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
 }
 
 bool Table::updateByPrimaryKey(const std::string& primaryKey,
@@ -322,6 +338,7 @@ bool Table::updateByPrimaryKey(const std::string& primaryKey,
     }
 
     syncIndexPages();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -348,6 +365,7 @@ bool Table::deleteByPrimaryKey(const std::string& primaryKey) {
     primaryKeyOffsetsOrdered_.erase(primaryKey);
     index_.remove(primaryKey);
     syncIndexPages();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -381,6 +399,7 @@ void Table::truncate() {
     primaryKeyOffsetsOrdered_.clear();
     std::filesystem::resize_file(dataFilePath(), 0);
     syncIndexPages();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
 }
 
 Table::SubqueryResult Table::evaluateSubquery(const SubquerySpec& spec) const {
@@ -454,6 +473,7 @@ std::size_t Table::compact() {
             }
         });
         syncIndexPages();
+        TableVersionManager::incrementVersion(dbPath_, schema_.name);
     }
     return removed;
 }
@@ -495,6 +515,7 @@ bool Table::addColumn(const std::string& name, DataType type, std::uint16_t varc
     flushMeta();
     flushIntegrityMeta();
     syncIndexPages();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -508,7 +529,7 @@ bool Table::rename(const std::string& newName) {
         auto newP = dbPath_ / (newName + ext);
         if (std::filesystem::exists(oldP)) std::filesystem::rename(oldP, newP);
     };
-    renameFile(".tdf"); renameFile(".trd"); renameFile(".tic"); renameFile(".tid");
+    renameFile(".tdf"); renameFile(".trd"); renameFile(".tic"); renameFile(".tid"); renameFile(".ver");
     for (const auto& col : schema_.columns) {
         auto o = dbPath_ / (oldName + "." + col + ".nidx");
         auto n = dbPath_ / (newName + "." + col + ".nidx");
@@ -516,6 +537,7 @@ bool Table::rename(const std::string& newName) {
     }
     schema_.name = newName;
     flushMeta();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -535,6 +557,7 @@ bool Table::dropConstraint(const std::string& column, ConstraintType type) {
         else if (type == ConstraintType::UNIQUE) schema_.columnMetas[idx].integrities &= ~4;
     }
     flushIntegrityMeta();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -580,6 +603,7 @@ bool Table::dropColumn(const std::string& name) {
     flushMeta();
     flushIntegrityMeta();
     syncIndexPages();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -597,6 +621,7 @@ bool Table::renameColumn(const std::string& oldName, const std::string& newName)
         std::filesystem::rename(oldNidx, nonPrimaryIndexFilePath(newName));
     }
     flushMeta();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -632,6 +657,7 @@ bool Table::alterColumnType(const std::string& column, DataType newType, std::ui
     schema_.columnMetas[idx].dataType = newType;
     schema_.columnMetas[idx].varcharLen = varcharLen;
     flushMeta();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -865,6 +891,16 @@ std::vector<std::string> Table::aggregate(const std::vector<AggregateExpr>& expr
     return out;
 }
 
+ColumnMeta Table::toColumnMeta(const ColumnDefinition& def) {
+    ColumnMeta meta;
+    meta.dataType = def.dataType;
+    meta.varcharLen = def.varcharLen;
+    if (def.constraints.notNull)  meta.integrities |= 1;
+    if (def.constraints.unique)   meta.integrities |= 4;
+    if (def.constraints.hasDefault) meta.defaultValue = def.constraints.defaultValue;
+    return meta;
+}
+
 bool Table::addColumnConstraint(const ColumnConstraintSpec& spec) {
     ensure(!spec.column.empty(), "constraint column cannot be empty");
     (void)columnIndex(spec.column);
@@ -897,6 +933,7 @@ bool Table::addColumnConstraint(const ColumnConstraintSpec& spec) {
     }
     flushMeta();
     flushIntegrityMeta();
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
     return true;
 }
 
@@ -953,6 +990,14 @@ std::filesystem::path Table::nonPrimaryIndexFilePath(const std::string& column) 
     return dbPath_ / (schema_.name + "." + column + ".nidx");
 }
 
+std::filesystem::path Table::versionFilePath() const {
+    return dbPath_ / (schema_.name + ".ver");
+}
+
+std::uint64_t Table::getVersion() const {
+    return TableVersionManager::getVersion(dbPath_, schema_.name);
+}
+
 void Table::flushMeta() const {
     std::ofstream ofs(metaFilePath(), std::ios::trunc);
     ensure(ofs.good(), "failed to write table meta file: " + metaFilePath().string());
@@ -973,10 +1018,25 @@ void Table::flushMeta() const {
     }
     ofs << "columns=" << join(columnMetas, "|") << '\n';
     ofs << "primary_key=" << schema_.columns.front() << '\n';
-    ofs << "index_definitions=PRIMARY(" << schema_.columns.front() << "):BTREE:" << schema_.name << ".tid\n";
+    IndexBlock primaryIdx;
+    primaryIdx.setName(stringToArray<128>("PRIMARY"));
+    {
+        std::array<std::array<char, 128>, 2> fds{};
+        fds[0] = stringToArray<128>(schema_.columns.front());
+        primaryIdx.setFields(fds);
+    }
+    primaryIdx.setIndexFile(stringToArray<256>(schema_.name + ".tid"));
+    ofs << primaryIdx.toDescriptorLine("index_definitions") << '\n';
     for (std::size_t i = 1; i < schema_.columns.size(); ++i) {
-        ofs << "index_reserved=" << schema_.columns[i] << ":BTREE:" << schema_.name << "."
-            << schema_.columns[i] << ".nidx\n";
+        IndexBlock secIdx;
+        secIdx.setName(stringToArray<128>(schema_.columns[i]));
+        {
+            std::array<std::array<char, 128>, 2> fds{};
+            fds[0] = stringToArray<128>(schema_.columns[i]);
+            secIdx.setFields(fds);
+        }
+        secIdx.setIndexFile(stringToArray<256>(schema_.name + "." + schema_.columns[i] + ".nidx"));
+        ofs << secIdx.toDescriptorLine("index_reserved") << '\n';
     }
 
     std::vector<std::string> integList;
@@ -999,11 +1059,27 @@ void Table::flushIntegrityMeta() const {
     ensure(ofs.good(), "failed to write table integrity file: " + integrityFilePath().string());
 
     ofs << "constraints_version=1\n";
-    ofs << "constraint=PRIMARY_KEY(" << schema_.columns.front() << ")\n";
-    ofs << "index=PRIMARY:" << schema_.name << ".tid\n";
+
+    IntegrityBlock pkBlock;
+    pkBlock.setType(IntegrityBlock::TYPE_PRIMARY_KEY);
+    pkBlock.setField(stringToArray<128>(schema_.columns.front()));
+    ofs << pkBlock.toDescriptorLine() << '\n';
+
+    IndexBlock primaryIdx;
+    primaryIdx.setName(stringToArray<128>("PRIMARY"));
+    primaryIdx.setIndexFile(stringToArray<256>(schema_.name + ".tid"));
+    ofs << primaryIdx.toDescriptorLine("index") << '\n';
+
     for (std::size_t i = 1; i < schema_.columns.size(); ++i) {
-        ofs << "index_reserved=" << schema_.columns[i] << ":" << schema_.name << "."
-            << schema_.columns[i] << ".nidx\n";
+        IndexBlock secIdx;
+        secIdx.setName(stringToArray<128>(schema_.columns[i]));
+        {
+            std::array<std::array<char, 128>, 2> fds{};
+            fds[0] = stringToArray<128>(schema_.columns[i]);
+            secIdx.setFields(fds);
+        }
+        secIdx.setIndexFile(stringToArray<256>(schema_.name + "." + schema_.columns[i] + ".nidx"));
+        ofs << secIdx.toDescriptorLine("index_reserved", "") << '\n';
     }
     for (const auto& col : schema_.columns) {
         const auto it = constraintsByColumn_.find(col);
@@ -1012,16 +1088,30 @@ void Table::flushIntegrityMeta() const {
         }
         const auto& spec = it->second;
         if (spec.notNull) {
-            ofs << "constraint=NOT_NULL(" << col << ")\n";
+            IntegrityBlock b;
+            b.setType(IntegrityBlock::TYPE_NOT_NULL);
+            b.setField(stringToArray<128>(col));
+            ofs << b.toDescriptorLine() << '\n';
         }
         if (spec.unique) {
-            ofs << "constraint=UNIQUE(" << col << ")\n";
+            IntegrityBlock b;
+            b.setType(IntegrityBlock::TYPE_UNIQUE);
+            b.setField(stringToArray<128>(col));
+            ofs << b.toDescriptorLine() << '\n';
         }
         if (spec.hasDefault) {
-            ofs << "constraint=DEFAULT(" << col << "|" << encodeConstraintValue(spec.defaultValue) << ")\n";
+            IntegrityBlock b;
+            b.setType(IntegrityBlock::TYPE_DEFAULT);
+            b.setField(stringToArray<128>(col));
+            b.setParam(stringToArray<256>(encodeConstraintValue(spec.defaultValue)));
+            ofs << b.toDescriptorLine() << '\n';
         }
         if (spec.hasCheck) {
-            ofs << "constraint=CHECK(" << col << "|" << encodeConstraintValue(spec.checkExpr) << ")\n";
+            IntegrityBlock b;
+            b.setType(IntegrityBlock::TYPE_CHECK);
+            b.setField(stringToArray<128>(col));
+            b.setParam(stringToArray<256>(encodeConstraintValue(spec.checkExpr)));
+            ofs << b.toDescriptorLine() << '\n';
         }
     }
 }
@@ -1033,37 +1123,31 @@ void Table::loadConstraintsFromIntegrityMeta() {
     }
     std::string line;
     while (std::getline(ifs, line)) {
-        if (line.rfind("constraint=NOT_NULL(", 0) == 0 && !line.empty() && line.back() == ')') {
-            const std::string col = line.substr(20, line.size() - 21);
-            constraintsByColumn_[col].column = col;
-            constraintsByColumn_[col].notNull = true;
+        IntegrityBlock block;
+        if (!IntegrityBlock::fromDescriptorLine(line, block)) {
             continue;
         }
-        if (line.rfind("constraint=UNIQUE(", 0) == 0 && !line.empty() && line.back() == ')') {
-            const std::string col = line.substr(18, line.size() - 19);
-            constraintsByColumn_[col].column = col;
-            constraintsByColumn_[col].unique = true;
-            continue;
-        }
-        if (line.rfind("constraint=DEFAULT(", 0) == 0 && !line.empty() && line.back() == ')') {
-            const std::string body = line.substr(19, line.size() - 20);
-            const auto sep = body.find('|');
-            if (sep == std::string::npos || sep == 0) {
-                continue;
-            }
-            const std::string col = body.substr(0, sep);
-            constraintsByColumn_[col].column = col;
-            constraintsByColumn_[col].hasDefault = true;
-            constraintsByColumn_[col].defaultValue = decodeConstraintValue(body.substr(sep + 1));
-        }
-        if (line.rfind("constraint=CHECK(", 0) == 0 && !line.empty() && line.back() == ')') {
-            const std::string body = line.substr(17, line.size() - 18);
-            const auto sep = body.find('|');
-            if (sep == std::string::npos || sep == 0) continue;
-            const std::string col = body.substr(0, sep);
-            constraintsByColumn_[col].column = col;
-            constraintsByColumn_[col].hasCheck = true;
-            constraintsByColumn_[col].checkExpr = decodeConstraintValue(body.substr(sep + 1));
+        const std::string fieldStr = arrayToString(block.getField());
+        if (fieldStr.empty()) continue;
+        auto& spec = constraintsByColumn_[fieldStr];
+        spec.column = fieldStr;
+        switch (block.getType()) {
+            case IntegrityBlock::TYPE_NOT_NULL:
+                spec.notNull = true;
+                break;
+            case IntegrityBlock::TYPE_UNIQUE:
+                spec.unique = true;
+                break;
+            case IntegrityBlock::TYPE_DEFAULT:
+                spec.hasDefault = true;
+                spec.defaultValue = decodeConstraintValue(arrayToString(block.getParam()));
+                break;
+            case IntegrityBlock::TYPE_CHECK:
+                spec.hasCheck = true;
+                spec.checkExpr = decodeConstraintValue(arrayToString(block.getParam()));
+                break;
+            default:
+                break;
         }
     }
     if (schema_.columnMetas.size() < schema_.columns.size()) {

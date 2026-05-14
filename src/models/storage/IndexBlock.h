@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 
 /**
  * @class IndexBlock
@@ -35,6 +36,15 @@ public:
 
     const std::array<char, 256> &getIndexFile() const;
     void setIndexFile(const std::array<char, 256> &indexFile);
+
+    /**
+     * @brief 生成用于 .tdf / .tic 的索引描述行
+     * @param prefix "index_definitions" / "index_reserved" / "index"
+     * @param suffix 追加在字段后的字符串，如 "BTREE:" 或空串
+     * @return 描述行字符串
+     * @author Startale
+     */
+    std::string toDescriptorLine(const std::string &prefix, const std::string &suffix = "BTREE:") const;
 
 private:
     std::array<char, 128> name;                  ///< 索引名称

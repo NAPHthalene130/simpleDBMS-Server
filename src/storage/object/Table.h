@@ -271,6 +271,16 @@ public:
     bool addColumnConstraints(const std::vector<ColumnConstraintSpec>& specs);
     std::vector<ColumnConstraintSpec> getColumnConstraints() const;
 
+    std::uint64_t getVersion() const;
+
+    /**
+     * @brief 将 ColumnDefinition 转换为 ColumnMeta
+     * @author Startale
+     * @param def 列定义
+     * @return 列元数据
+     */
+    static ColumnMeta toColumnMeta(const ColumnDefinition& def);
+
     /**
      * @brief 比较两个字段值
      * @author Startale
@@ -384,6 +394,7 @@ private:
      */
     std::filesystem::path indexFilePath() const;
     std::filesystem::path nonPrimaryIndexFilePath(const std::string& column) const;
+    std::filesystem::path versionFilePath() const;
 
     /**
      * @brief 持久化表结构到元数据文件
@@ -491,7 +502,7 @@ private:
     static std::vector<std::uint64_t> mergeOffsetUnion(const std::vector<std::uint64_t>& left,
                                                        const std::vector<std::uint64_t>& right);
     static std::vector<std::uint64_t> mergeOffsetIntersection(const std::vector<std::uint64_t>& left,
-                                                              const std::vector<std::uint64_t>& right);
+                                                               const std::vector<std::uint64_t>& right);
 
     bool compareTyped(std::size_t colIndex, const std::string& left, CompareOp op, const std::string& right) const;
 

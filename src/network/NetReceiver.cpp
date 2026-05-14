@@ -103,10 +103,10 @@ std::vector<std::string> buildQueryColumns(const SQLStatement *statement)
 
     if (statement->getStmtType() == ExecutionStatementType::Select) {
         const SelectStmt *selectStmt = static_cast<const SelectStmt *>(statement);
-        if (selectStmt->getSelectAllFields()) {
-            return {"name"};
+        if (!selectStmt->getSelectAllFields()) {
+            return selectStmt->getTargetFields();
         }
-        return selectStmt->getTargetFields();
+        return {};
     }
 
     if (statement->getStmtType() == ExecutionStatementType::Show) {
@@ -426,7 +426,11 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
 
             NetworkTransferData responseData = buildExecutionResponse(executionResult, networkTransferData, statementType);
             if (isQueryStatementType(statementType)) {
-                responseData.setColumns(buildQueryColumns(parseResult.statement.get()));
+                std::vector<std::string> resultColumns = executionResult.getColumns();
+                if (resultColumns.empty()) {
+                    resultColumns = buildQueryColumns(parseResult.statement.get());
+                }
+                responseData.setColumns(resultColumns);
                 responseData.setRows(executionResult.getResultSet());
             }
             sendResponse(responseData);

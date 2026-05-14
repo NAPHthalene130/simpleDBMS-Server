@@ -323,7 +323,14 @@ DatabaseManager::JoinResult PlanExecutor::executeJoinPlan(std::shared_ptr<PlanNo
     }
 
     if (projNode != nullptr && !projNode->projectedColumns.empty()) {
+        std::vector<DatabaseManager::JoinProjection> nonAggProjs;
         for (const auto &colName : projNode->projectedColumns) {
+            // 跳过聚合函数列名（如 COUNT(*)、SUM(col)）
+            // 这些会在后续的聚合步骤中处理
+            // 作者：NAPH130
+            if (colName.find('(') != std::string::npos) {
+                continue;
+            }
             DatabaseManager::JoinProjection proj;
             const auto dotPos = colName.find('.');
             if (dotPos != std::string::npos) {
@@ -334,7 +341,16 @@ DatabaseManager::JoinResult PlanExecutor::executeJoinPlan(std::shared_ptr<PlanNo
                 proj.column.column = colName;
             }
             proj.outputName = colName;
-            query.projections.push_back(std::move(proj));
+            nonAggProjs.push_back(std::move(proj));
+        }
+        // 如果有非聚合投影列，使用它们；否则使用全列选择（让聚合步骤自行处理）
+        // 作者：NAPH130
+        if (!nonAggProjs.empty()) {
+            query.projections = std::move(nonAggProjs);
+        } else {
+            // SELECT 全部列，后续聚合步骤会自行计算
+            // 作者：NAPH130
+            query.projections.clear();
         }
     }
 

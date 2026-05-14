@@ -318,7 +318,9 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement(TokenStream &tokenStrea
         tokenStream.consumeOptional(SqlTokenType::Operator, "*")) {
         selectAllFields = true;
     } else {
-        targetFields = parseIdentifierList(tokenStream);
+        // 解析目标字段列表，支持普通标识符和聚合函数调用
+        // 作者：NAPH130
+        targetFields = parseSelectTargetList(tokenStream);
     }
 
     tokenStream.expect(SqlTokenType::Keyword, "FROM", "SELECT statement requires FROM keyword.");
@@ -328,32 +330,22 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement(TokenStream &tokenStrea
 
     // 表别名（AS alias 或 直接 alias）
     // 作者：NAPH130
-    std::string mainAlias;
     if (tokenStream.consumeOptional(SqlTokenType::Keyword, "AS")) {
-        const Token &aliasToken = tokenStream.expect(
+        tokenStream.expect(
             SqlTokenType::Identifier,
             "AS keyword requires an alias identifier.");
-        mainAlias = aliasToken.getValue();
     } else if (tokenStream.match(SqlTokenType::Identifier)) {
-        // 若下一个 token 是标识符且不是关键字，可能为别名
+        // 简单启发式：下一个标识符可能为别名
+        // 仅在后续为 JOIN/WHERE/GROUP/HAVING/; 或 EOF 时才作为别名消费
         // 作者：NAPH130
         const auto &nextToken = tokenStream.peek();
-        const std::string nextUpper = nextToken.getValue();
-        // 简单启发式：非关键字标识符当作别名
-        // 作者：NAPH130
-        // 仅在后续为 JOIN/WHERE/GROUP/HAVING/; 或 EOF 时才认作别名
         if (nextToken.getType() == SqlTokenType::Identifier) {
-            mainAlias = tokenStream.advance().getValue();
+            tokenStream.advance();
         }
     }
 
     const std::shared_ptr<SelectStmt> statement = std::make_shared<SelectStmt>();
     statement->setTableName(tableNameToken.getValue());
-    if (!mainAlias.empty()) {
-        // 将别名通过 addJoinInfo 间接记录（主表本身不需 joinInfo，但可存储别名）
-        // 实际上主表的别名在 Parser 阶段暂不主动记录，等 Binder 处理
-        // 这里仅做占位
-    }
 
     // 解析 JOIN 子句
     // 作者：NAPH130
@@ -445,7 +437,8 @@ std::vector<JoinInfo> Parser::parseJoinClauses(TokenStream &tokenStream) const
         // 作者：NAPH130
         std::shared_ptr<ConditionNode> onCondition;
         if (tokenStream.match(SqlTokenType::Keyword, "ON")) {
-            tokenStream.expect(SqlTokenType::Keyword, "ON", "JOIN requires ON keyword.");
+            // match 已消费 ON token，直接解析后续条件表达式
+            // 作者：NAPH130
             const Token &currentToken = tokenStream.peek();
             if (currentToken.getType() == SqlTokenType::EndOfFile ||
                 (currentToken.getType() == SqlTokenType::Symbol && currentToken.getValue() == ";")) {
@@ -728,11 +721,27 @@ std::shared_ptr<ConditionNode> Parser::parsePredicate(TokenStream &tokenStream) 
         return groupedCondition;
     }
 
-    const Token &leftToken = tokenStream.peek();
-    if (leftToken.getType() != SqlTokenType::Identifier) {
+    // 解析左操作数：支持标识符或 table.column 形式
+    // 作者：NAPH130
+    std::string leftOperand;
+    const Token &leftFirst = tokenStream.peek();
+    if (leftFirst.getType() != SqlTokenType::Identifier) {
         throw ParserException("Missing left operand in predicate.", tokenStream.position());
     }
+    leftOperand = leftFirst.getValue();
     tokenStream.advance();
+
+    // 处理 table.column 或 alias.column 的 . column 部分
+    // 作者：NAPH130
+    if (tokenStream.peek().getType() == SqlTokenType::Symbol && tokenStream.peek().getValue() == ".") {
+        tokenStream.advance(); // 消费 .
+        const Token &colToken = tokenStream.peek();
+        if (colToken.getType() != SqlTokenType::Identifier) {
+            throw ParserException("Expected column name after '.' in predicate.", tokenStream.position());
+        }
+        leftOperand += "." + colToken.getValue();
+        tokenStream.advance();
+    }
 
     const Token &operatorToken = tokenStream.peek();
     if (operatorToken.getType() != SqlTokenType::Operator) {
@@ -743,16 +752,33 @@ std::shared_ptr<ConditionNode> Parser::parsePredicate(TokenStream &tokenStream) 
     }
     tokenStream.advance();
 
+    // 解析右操作数：支持标识符、table.column 形式、数字、字符串、关键字
+    // 作者：NAPH130
+    std::string rightOperand;
     const Token &rightToken = tokenStream.peek();
     if (!isRightOperandToken(rightToken)) {
         throw ParserException("Missing right operand in predicate.", tokenStream.position());
     }
+    rightOperand = rightToken.getValue();
     tokenStream.advance();
 
+    // 处理右操作数的 table.column 形式
+    // 作者：NAPH130
+    if (tokenStream.peek().getType() == SqlTokenType::Symbol && tokenStream.peek().getValue() == ".") {
+        tokenStream.advance();
+        const Token &rightColToken = tokenStream.peek();
+        if (rightColToken.getType() != SqlTokenType::Identifier) {
+            throw ParserException("Expected column name after '.' in predicate right operand.",
+                                  tokenStream.position());
+        }
+        rightOperand += "." + rightColToken.getValue();
+        tokenStream.advance();
+    }
+
     const std::shared_ptr<ConditionNode> predicateNode = std::make_shared<ConditionNode>();
-    predicateNode->setLeftOperand(leftToken.getValue());
+    predicateNode->setLeftOperand(leftOperand);
     predicateNode->setOperator(operatorToken.getValue());
-    predicateNode->setRightOperand(rightToken.getValue());
+    predicateNode->setRightOperand(rightOperand);
     return predicateNode;
 }
 
@@ -901,6 +927,73 @@ std::vector<std::string> Parser::parseIdentifierList(TokenStream &tokenStream) c
     }
 
     return identifiers;
+}
+
+/**
+ * @brief 解析 SELECT 目标字段列表
+ * @details 支持普通标识符与聚合函数调用（如 COUNT(*)、SUM(col) 等），
+ *          函数调用的完整形式会作为字符串保留。
+ * @author NAPH130
+ * @param tokenStream token 游标流
+ * @return 目标字段字符串列表
+ */
+std::vector<std::string> Parser::parseSelectTargetList(TokenStream &tokenStream) const
+{
+    std::vector<std::string> result;
+    bool first = true;
+
+    while (true) {
+        if (!first) {
+            // 需要逗号分隔
+            // 作者：NAPH130
+            if (!tokenStream.consumeOptional(SqlTokenType::Symbol, ",")) {
+                break;
+            }
+        }
+        first = false;
+
+        const Token &currentToken = tokenStream.peek();
+
+        // 聚合函数调用：FUNC(...)
+        // 作者：NAPH130
+        if (currentToken.getType() == SqlTokenType::Keyword) {
+            const std::string upperVal = currentToken.getValue();
+            // 检查是否为聚合函数关键字
+            // 作者：NAPH130
+            const bool isAggFunc = (upperVal == "COUNT" || upperVal == "SUM"
+                                     || upperVal == "AVG" || upperVal == "MIN"
+                                     || upperVal == "MAX");
+            if (isAggFunc) {
+                std::string functionStr = currentToken.getValue();
+                tokenStream.advance();
+                tokenStream.expect(SqlTokenType::Symbol, "(", "Aggregate function requires '('.");
+                const Token &argToken = tokenStream.peek();
+                if ((argToken.getType() == SqlTokenType::Symbol
+                     || argToken.getType() == SqlTokenType::Operator)
+                    && argToken.getValue() == "*") {
+                    functionStr += "(*)";
+                    tokenStream.advance();
+                } else if (argToken.getType() == SqlTokenType::Identifier) {
+                    functionStr += "(" + argToken.getValue() + ")";
+                    tokenStream.advance();
+                } else {
+                    throw ParserException("Aggregate function requires argument.", tokenStream.position());
+                }
+                tokenStream.expect(SqlTokenType::Symbol, ")", "Aggregate function requires ')'.");
+                result.push_back(functionStr);
+                continue;
+            }
+        }
+
+        // 普通标识符
+        // 作者：NAPH130
+        const Token &identifierToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "SELECT target list requires an identifier or aggregate function.");
+        result.push_back(identifierToken.getValue());
+    }
+
+    return result;
 }
 
 /**

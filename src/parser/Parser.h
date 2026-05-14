@@ -211,6 +211,14 @@ private:
     std::vector<std::string> parseIdentifierList(TokenStream &tokenStream) const;
 
     /**
+     * @brief 解析 SELECT 目标字段列表（支持标识符与聚合函数调用）
+     * @author NAPH130
+     * @param tokenStream token 游标流
+     * @return 目标字段字符串列表
+     */
+    std::vector<std::string> parseSelectTargetList(TokenStream &tokenStream) const;
+
+    /**
      * @brief 解析值列表
      * @author YuzhSong
      * @param tokenStream token 游标流

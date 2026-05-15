@@ -8,6 +8,8 @@
 
 #include "Core.h"
 #include "NetworkManager.h"
+#include "binder/Binder.h"
+#include "binder/BinderManager.h"
 #include "executor/ExecutorEngine.h"
 #include "executor/ExecutorManager.h"
 #include "log/LogWriter.h"
@@ -17,11 +19,16 @@
 #include "models/network/NetworkTransferData.h"
 #include "models/parser/SelectStmt.h"
 #include "models/parser/ShowStmt.h"
+#include "models/parser/UnionStmt.h"
 #include "models/network/SqlData.h"
 #include "models/storage/DatabaseBlock.h"
 #include "models/storage/TableBlock.h"
 #include "parser/Parser.h"
 #include "parser/ParserManager.h"
+#include "plan/Planner.h"
+#include "plan/PlanManager.h"
+#include "plan/PlanNode.h"
+#include "plan/PlanExecutor.h"
 #include "storage/manager/StorageManager.h"
 #include "storage/manager/SystemCatalogManager.h"
 #include "storage/manager/DatabaseManager.h"
@@ -65,6 +72,10 @@ std::string buildResponseType(const std::string &requestType, ExecutionStatement
         return NetworkTransferData::DIRECTORY_RESPONSE;
     }
 
+    if (requestType == NetworkTransferData::DB_VERSION_REQUEST) {
+        return NetworkTransferData::DB_VERSION_RESPONSE;
+    }
+
     return NetworkTransferData::ERROR_RESPONSE;
 }
 
@@ -83,8 +94,9 @@ NetworkTransferData buildFailureResponse(const std::string &message,
 }
 
 NetworkTransferData buildExecutionResponse(const ExecutionResult &executionResult,
-                                           const NetworkTransferData &requestData,
-                                           ExecutionStatementType statementType)
+                                            const NetworkTransferData &requestData,
+                                            ExecutionStatementType statementType,
+                                            std::uint64_t dbVersion = 0)
 {
     NetworkTransferData responseData(buildResponseType(requestData.getType(), statementType), requestData.getId());
     responseData.setSuccess(executionResult.getStatus() == ExecutionStatus::Success);
@@ -92,6 +104,7 @@ NetworkTransferData buildExecutionResponse(const ExecutionResult &executionResul
     responseData.setAffectedRows(executionResult.getAffectedRows());
     responseData.setDbName(executionResult.getDbName());
     responseData.setRows(executionResult.getResultSet());
+    responseData.setDbVersion(dbVersion);
     return responseData;
 }
 
@@ -103,10 +116,10 @@ std::vector<std::string> buildQueryColumns(const SQLStatement *statement)
 
     if (statement->getStmtType() == ExecutionStatementType::Select) {
         const SelectStmt *selectStmt = static_cast<const SelectStmt *>(statement);
-        if (selectStmt->getSelectAllFields()) {
-            return {"name"};
+        if (!selectStmt->getSelectAllFields()) {
+            return selectStmt->getTargetFields();
         }
-        return selectStmt->getTargetFields();
+        return {};
     }
 
     if (statement->getStmtType() == ExecutionStatementType::Show) {
@@ -114,6 +127,43 @@ std::vector<std::string> buildQueryColumns(const SQLStatement *statement)
     }
 
     return {};
+}
+
+/**
+ * @brief 将 token 序列按分号分割为多条独立的 token 子序列
+ * @details 以 Symbol(";") 为分隔符切割 token 序列，
+ *          自动过滤空语句和末尾的 EndOfFile token。
+ *          此方法基于 Tokenizer 已正确解析字符串字面量和注释，
+ *          因此分号在字符串内部时不会误分割。
+ * @author NAPH130
+ * @param tokens 完整的 token 序列
+ * @return 分割后的 token 子序列列表
+ */
+static std::vector<std::vector<Token>> splitTokensBySemicolon(const std::vector<Token> &tokens)
+{
+    std::vector<std::vector<Token>> statementTokensList;
+    std::vector<Token> currentStatement;
+
+    for (const auto &token : tokens) {
+        if (token.getType() == SqlTokenType::EndOfFile) {
+            break;
+        }
+
+        if (token.getType() == SqlTokenType::Symbol && token.getValue() == ";") {
+            if (!currentStatement.empty()) {
+                statementTokensList.push_back(std::move(currentStatement));
+                currentStatement.clear();
+            }
+        } else {
+            currentStatement.push_back(token);
+        }
+    }
+
+    if (!currentStatement.empty()) {
+        statementTokensList.push_back(std::move(currentStatement));
+    }
+
+    return statementTokensList;
 }
 
 } // namespace
@@ -214,14 +264,143 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
 
     try {
         if (networkTransferData.getType() == NetworkTransferData::LOGIN_REQUEST) {
-            // TODO: 处理登录请求
-            sendFailureResponse("LOGIN_REQUEST is not implemented yet.");
+            /**
+             * @brief 处理登录请求，校验 system.user 表中 id 与密码
+             * @author NAPH130
+             * @details 从 system 库的 user 表中查询 id 对应的记录并比对密码。
+             *          匹配成功返回 LOGIN_RESPONSE 并更新会话上下文中的用户名。
+             */
+            if (core == nullptr || core->getStorageManager() == nullptr) {
+                sendFailureResponse("Storage manager is not initialized.");
+                return;
+            }
+
+            auto *databaseManager = core->getStorageManager()->getDatabaseManager();
+            if (databaseManager == nullptr) {
+                sendFailureResponse("Database manager is not initialized.");
+                return;
+            }
+
+            const std::string userId = networkTransferData.getId();
+            const std::string password = networkTransferData.getPassword();
+
+            if (userId.empty()) {
+                sendFailureResponse("User ID is empty.");
+                return;
+            }
+
+            // 查询 system.user 表
+            // 作者：NAPH130
+            const std::string systemDbName = "system";
+            const std::string userTableName = "user";
+            const auto tables = databaseManager->getAllTablesForDb(systemDbName);
+            const bool userTableExists = std::any_of(tables.begin(), tables.end(),
+                                                     [&](const TableBlock &tb) {
+                                                         const std::string name = fixedArrayToStr(tb.getName());
+                                                         return name == userTableName;
+                                                     });
+
+            if (!userTableExists) {
+                sendFailureResponse("System user table does not exist.");
+                return;
+            }
+
+            try {
+                const std::vector<storage::Table::WhereCondition> conditions = {
+                    {"id", storage::Table::CompareOp::EQ, userId}
+                };
+                const auto rows = databaseManager->selectRows(systemDbName, userTableName, {}, conditions);
+                bool loginSuccess = false;
+                for (const auto &row : rows) {
+                    if (row.values.size() >= 2 && row.values[1] == password) {
+                        loginSuccess = true;
+                        break;
+                    }
+                }
+
+                NetworkTransferData responseData(NetworkTransferData::LOGIN_RESPONSE,
+                                                  networkTransferData.getId());
+                responseData.setSuccess(loginSuccess);
+                if (loginSuccess) {
+                    responseData.setMessage("Login succeeded.");
+                    NetworkExecutionContext *sessionCtx = nullptr;
+                    if (core->getNetworkManager() != nullptr
+                        && core->getNetworkManager()->getClientSessionManager() != nullptr
+                        && clientSocket != nullptr) {
+                        sessionCtx = core->getNetworkManager()->getClientSessionManager()
+                                         ->findSessionContext(clientSocket.get());
+                        if (sessionCtx != nullptr) {
+                            sessionCtx->setCurrentUser(userId);
+                            sessionCtx->setIsAuthorized(true);
+                        }
+                    }
+                    LogWriter::info("network", "NetReceiver", "processMsg",
+                                    std::string("User logged in: ") + userId);
+                } else {
+                    responseData.setMessage("Login failed: invalid user ID or password.");
+                    LogWriter::warning("network", "NetReceiver", "processMsg",
+                                       std::string("Login failed for user: ") + userId);
+                }
+                sendResponse(responseData);
+            } catch (const std::exception &exception) {
+                LogWriter::error("network", "NetReceiver", "processMsg",
+                                 std::string("Login query failed: ") + exception.what());
+                sendFailureResponse("Login query failed: " + std::string(exception.what()));
+            }
             return;
         }
 
         if (networkTransferData.getType() == NetworkTransferData::VERIFY_REQUEST) {
-            // TODO: 处理连接验证请求
-            sendFailureResponse("VERIFY_REQUEST is not implemented yet.");
+            /**
+             * @brief 处理连接验证请求，校验 system.user 表中 id 与密码
+             * @author NAPH130
+             * @details 与登录类似但不创建会话授权，仅返回验证结果。
+             */
+            if (core == nullptr || core->getStorageManager() == nullptr) {
+                sendFailureResponse("Storage manager is not initialized.");
+                return;
+            }
+
+            auto *databaseManager = core->getStorageManager()->getDatabaseManager();
+            if (databaseManager == nullptr) {
+                sendFailureResponse("Database manager is not initialized.");
+                return;
+            }
+
+            const std::string userId = networkTransferData.getId();
+            const std::string password = networkTransferData.getPassword();
+
+            if (userId.empty()) {
+                sendFailureResponse("User ID is empty.");
+                return;
+            }
+
+            const std::string systemDbName = "system";
+            const std::string userTableName = "user";
+
+            try {
+                const std::vector<storage::Table::WhereCondition> conditions = {
+                    {"id", storage::Table::CompareOp::EQ, userId}
+                };
+                const auto rows = databaseManager->selectRows(systemDbName, userTableName, {}, conditions);
+                bool verifySuccess = false;
+                for (const auto &row : rows) {
+                    if (row.values.size() >= 2 && row.values[1] == password) {
+                        verifySuccess = true;
+                        break;
+                    }
+                }
+
+                NetworkTransferData responseData(NetworkTransferData::VERIFY_RESPONSE,
+                                                  networkTransferData.getId());
+                responseData.setSuccess(verifySuccess);
+                responseData.setMessage(verifySuccess ? "Connection verified." : "Verification failed: invalid credentials.");
+                sendResponse(responseData);
+            } catch (const std::exception &exception) {
+                LogWriter::error("network", "NetReceiver", "processMsg",
+                                 std::string("Verify query failed: ") + exception.what());
+                sendFailureResponse("Verify query failed: " + std::string(exception.what()));
+            }
             return;
         }
 
@@ -231,7 +410,54 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             return;
         }
 
+        if (networkTransferData.getType() == NetworkTransferData::DB_VERSION_REQUEST) {
+            /**
+             * @brief 处理客户端数据库版本号查询请求
+             * @details 遍历所有数据库，获取每个数据库的当前版本号并返回。
+             * @author NAPH130
+             */
+            if (core == nullptr || core->getStorageManager() == nullptr) {
+                sendFailureResponse("Storage manager is not initialized.");
+                return;
+            }
+
+            auto *systemCatalogManager = core->getStorageManager()->getSystemCatalogManager();
+            if (systemCatalogManager == nullptr) {
+                sendFailureResponse("System catalog manager is not initialized.");
+                return;
+            }
+
+            const auto databaseBlocks = systemCatalogManager->getAllDatabases();
+            NetworkTransferData responseData(NetworkTransferData::DB_VERSION_RESPONSE,
+                                              networkTransferData.getId());
+            responseData.setSuccess(true);
+            responseData.setMessage("Database version enumeration succeeded.");
+
+            std::vector<DatabaseNode> databaseNodes;
+            databaseNodes.reserve(databaseBlocks.size());
+            for (const auto &db : databaseBlocks) {
+                const std::string dbName = fixedArrayToStr(db.getName());
+                const uInt64 version = systemCatalogManager->getDatabaseVersion(dbName);
+                DatabaseNode node;
+                node.setName(dbName);
+                node.setDbVersion(version);
+                databaseNodes.push_back(node);
+            }
+            responseData.setDatabases(databaseNodes);
+            LogWriter::info("network", "NetReceiver", "processMsg",
+                            std::string("DB_VERSION_REQUEST returned ")
+                                + std::to_string(databaseNodes.size()) + " databases.");
+            sendResponse(responseData);
+            return;
+        }
+
         if (networkTransferData.getType() == NetworkTransferData::SQL_EXEC_REQUEST) {
+            /**
+             * @brief 处理 SQL 执行请求，支持多语句（按分号分割）
+             * @details 将输入 SQL 按分号分割为多条独立语句，逐条执行并逐个响应。
+             *          执行上下文在语句之间传递（如 USE DATABASE 影响后续语句）。
+             * @author NAPH130
+             */
             if (core == nullptr || core->getParserManager() == nullptr || core->getParserManager()->getParser() == nullptr
                 || core->getExecutorManager() == nullptr || core->getExecutorManager()->getExecutorEngine() == nullptr) {
                 LogWriter::fatal("network", "NetReceiver", "processMsg", "SQL pipeline is not initialized.");
@@ -239,29 +465,64 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 return;
             }
 
-            SqlData sqlData;
-            sqlData.setUserID(networkTransferData.getId());
-            sqlData.setDbName(networkTransferData.getDbName());
-            sqlData.setSql(networkTransferData.getSql());
-
-            if (sqlData.getSql().empty()) {
+            const std::string rawSql = networkTransferData.getSql();
+            if (rawSql.empty()) {
                 LogWriter::warning("network", "NetReceiver", "processMsg", "Rejected empty SQL request.");
                 sendFailureResponse("SQL content is empty.");
                 return;
             }
 
-            Tokenizer tokenizer(core, sqlData.getSql());
-            const std::vector<Token> tokens = tokenizer.tokenize();
-            const ParseResult parseResult = core->getParserManager()->getParser()->parse(tokens);
-            if (!parseResult.success || parseResult.statement == nullptr) {
-                LogWriter::warning("network", "NetReceiver", "processMsg", "SQL parse failed.");
-                sendFailureResponse("Parse failed at token " + std::to_string(parseResult.errorTokenIndex)
-                                    + ": " + parseResult.errorMessage);
+            // 数据库版本号核验
+            // 作者：NAPH130
+            const std::string requestDbName = networkTransferData.getDbName();
+            const std::uint64_t clientVersion = networkTransferData.getDbVersion();
+            std::uint64_t serverVersion = 0;
+            bool versionChecked = false;
+            if (!requestDbName.empty() && core->getStorageManager() != nullptr
+                && core->getStorageManager()->getSystemCatalogManager() != nullptr) {
+                serverVersion = core->getStorageManager()->getSystemCatalogManager()
+                                    ->getDatabaseVersion(requestDbName);
+                if (clientVersion != serverVersion) {
+                    NetworkTransferData versionError(NetworkTransferData::SQL_EXEC_RESPONSE,
+                                                      networkTransferData.getId());
+                    versionError.setSuccess(false);
+                    versionError.setDbName(requestDbName);
+                    versionError.setDbVersion(serverVersion);
+                    versionError.setMessage("Database version mismatch: client="
+                        + std::to_string(clientVersion) + ", server=" + std::to_string(serverVersion)
+                        + ". Please refresh the directory.");
+                    LogWriter::warning("network", "NetReceiver", "processMsg",
+                                       std::string("Database version mismatch for ") + requestDbName
+                                           + ": client=" + std::to_string(clientVersion)
+                                           + ", server=" + std::to_string(serverVersion));
+                    sendResponse(versionError);
+                    return;
+                }
+                versionChecked = true;
+                // 核验通过后递增版本号
+                // 作者：NAPH130
+                core->getStorageManager()->getSystemCatalogManager()->addDatabaseVersion(requestDbName);
+                serverVersion = core->getStorageManager()->getSystemCatalogManager()
+                                    ->getDatabaseVersion(requestDbName);
+            }
+
+            // 1. 对整个 SQL 文本进行词法分析
+            // 作者：NAPH130
+            Tokenizer tokenizer(core, rawSql);
+            const std::vector<Token> allTokens = tokenizer.tokenize();
+
+            // 2. 按分号分割为多条语句的 token 子序列
+            // 作者：NAPH130
+            const std::vector<std::vector<Token>> statementTokensList = splitTokensBySemicolon(allTokens);
+
+            if (statementTokensList.empty()) {
+                LogWriter::warning("network", "NetReceiver", "processMsg", "No SQL statements found.");
+                sendFailureResponse("No SQL statements found.");
                 return;
             }
 
-            const ExecutionStatementType statementType = parseResult.statement->getStmtType();
-
+            // 3. 构建执行上下文（跨语句共享）
+            // 作者：NAPH130
             ExecutionContext executionContext;
             NetworkExecutionContext *networkExecutionContext = nullptr;
             if (core->getNetworkManager() != nullptr
@@ -276,35 +537,225 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 }
             }
 
-            if (!sqlData.getUserID().empty()) {
-                executionContext.setCurrentUser(sqlData.getUserID());
+            if (!networkTransferData.getId().empty()) {
+                executionContext.setCurrentUser(networkTransferData.getId());
             }
-            if (!sqlData.getDbName().empty()) {
-                executionContext.setCurrentDbName(sqlData.getDbName());
-            }
-
-            ExecutionResult executionResult =
-                core->getExecutorManager()->getExecutorEngine()->execute(parseResult.statement.get(), &executionContext);
-            if (executionResult.getStatus() == ExecutionStatus::Success
-                && networkExecutionContext != nullptr
-                && !executionResult.getDbName().empty()) {
-                networkExecutionContext->setCurrentDbName(executionResult.getDbName());
+            if (!networkTransferData.getDbName().empty()) {
+                executionContext.setCurrentDbName(networkTransferData.getDbName());
             }
 
-            if (executionResult.getDbName().empty()) {
-                executionResult.setDbName(executionContext.getCurrentDbName());
-            }
+            // 4. 逐条执行每一条语句
+            // 作者：NAPH130
+            for (std::size_t stmtIdx = 0; stmtIdx < statementTokensList.size(); ++stmtIdx) {
+                const std::vector<Token> &stmtTokens = statementTokensList[stmtIdx];
+                const std::size_t statementNumber = stmtIdx + 1;
 
-            NetworkTransferData responseData = buildExecutionResponse(executionResult, networkTransferData, statementType);
-            if (isQueryStatementType(statementType)) {
-                responseData.setColumns(buildQueryColumns(parseResult.statement.get()));
-                responseData.setRows(executionResult.getResultSet());
+                try {
+                    // 4a. 语法分析
+                    // 作者：NAPH130
+                    const ParseResult parseResult = core->getParserManager()->getParser()->parse(stmtTokens);
+                    if (!parseResult.success || parseResult.statement == nullptr) {
+                        LogWriter::warning("network", "NetReceiver", "processMsg",
+                                           "Statement " + std::to_string(statementNumber) + " parse failed.");
+                        NetworkTransferData errorResponse = buildFailureResponse(
+                            "Statement " + std::to_string(statementNumber)
+                            + " parse failed at token " + std::to_string(parseResult.errorTokenIndex)
+                            + ": " + parseResult.errorMessage,
+                            &networkTransferData);
+                        sendResponse(errorResponse);
+                        continue;
+                    }
+
+                    const ExecutionStatementType statementType = parseResult.statement->getStmtType();
+                    const std::string currentDbName = executionContext.getCurrentDbName();
+
+                    // 4b. 对 SELECT 语句优先使用 Binder + Plan 管道（支持 JOIN 和聚合）
+                    // 作者：NAPH130
+                    bool usedBindPlan = false;
+                    if (statementType == ExecutionStatementType::Select && !currentDbName.empty()) {
+                        const SelectStmt *selectStmt = static_cast<const SelectStmt *>(parseResult.statement.get());
+                        if (core->getBinderManager() != nullptr) {
+                            const BindResult bindResult =
+                                core->getBinderManager()->getBinder()->bindSelect(selectStmt, currentDbName);
+
+                            if (bindResult.success && core->getPlanManager() != nullptr) {
+                                auto planRoot = core->getPlanManager()->getPlanner()->planSelect(bindResult, currentDbName);
+
+                                if (planRoot != nullptr) {
+                                    PlanExecutor planExecutor(core);
+                                    ExecutionResult planExecResult = planExecutor.execute(
+                                        planRoot, currentDbName, selectStmt, &executionContext);
+
+                                    if (networkExecutionContext != nullptr && !planExecResult.getDbName().empty()) {
+                                        networkExecutionContext->setCurrentDbName(planExecResult.getDbName());
+                                    }
+                                    if (!planExecResult.getDbName().empty()) {
+                                        executionContext.setCurrentDbName(planExecResult.getDbName());
+                                    }
+
+                                    if (planExecResult.getDbName().empty()) {
+                                        planExecResult.setDbName(executionContext.getCurrentDbName());
+                                    }
+
+                                    NetworkTransferData responseData = buildExecutionResponse(
+                                        planExecResult, networkTransferData, statementType, serverVersion);
+                                    responseData.setColumns(planExecResult.getColumns());
+                                    responseData.setRows(planExecResult.getResultSet());
+                                    sendResponse(responseData);
+                                    usedBindPlan = true;
+                                }
+                            }
+                        }
+                    }
+
+                    // 4b2. UNION 查询处理
+                    // 作者：NAPH130
+                    if (statementType == ExecutionStatementType::UnionSelect) {
+                        const UnionStmt *unionStmt = static_cast<const UnionStmt *>(parseResult.statement.get());
+                        // 递归执行左右两侧子查询
+                        // 作者：NAPH130
+                        auto execSingleSelect = [&](const std::shared_ptr<SQLStatement> &subStmt) -> ExecutionResult {
+                            if (subStmt == nullptr) {
+                                ExecutionResult r;
+                                r.setStatus(ExecutionStatus::Failure);
+                                r.setMessage("union sub-statement is null");
+                                return r;
+                            }
+                            // 复用 Binder+Plan 管道
+                            // 作者：NAPH130
+                            if (subStmt->getStmtType() == ExecutionStatementType::Select) {
+                                const SelectStmt *sel = static_cast<const SelectStmt *>(subStmt.get());
+                                const BindResult bindResult =
+                                    core->getBinderManager()->getBinder()->bindSelect(sel, currentDbName);
+                                if (bindResult.success) {
+                                    auto planRoot = core->getPlanManager()->getPlanner()->planSelect(
+                                        bindResult, currentDbName);
+                                    if (planRoot) {
+                                        PlanExecutor pe(core);
+                                        return pe.execute(planRoot, currentDbName, sel, &executionContext);
+                                    }
+                                }
+                            }
+                            // 回退到旧执行器
+                            // 作者：NAPH130
+                            return core->getExecutorManager()->getExecutorEngine()->execute(
+                                subStmt.get(), &executionContext);
+                        };
+
+                        ExecutionResult leftResult = execSingleSelect(unionStmt->getLeftStmt());
+                        ExecutionResult rightResult = execSingleSelect(unionStmt->getRightStmt());
+
+                        // 合并结果
+                        // 作者：NAPH130
+                        std::vector<std::string> unionColumns;
+                        std::vector<std::vector<std::string>> unionRows;
+
+                        if (leftResult.getStatus() == ExecutionStatus::Success
+                            && rightResult.getStatus() == ExecutionStatus::Success) {
+                            unionColumns = leftResult.getColumns();
+                            // 左侧结果
+                            // 作者：NAPH130
+                            for (const auto &row : leftResult.getResultSet()) {
+                                unionRows.push_back(row);
+                            }
+                            // 右侧结果（UNION 去重，UNION ALL 不去重）
+                            // 作者：NAPH130
+                            for (const auto &row : rightResult.getResultSet()) {
+                                if (unionStmt->isUnionAll()) {
+                                    unionRows.push_back(row);
+                                } else {
+                                    // 简单去重：检查是否已存在
+                                    // 作者：NAPH130
+                                    bool duplicate = false;
+                                    for (const auto &existing : unionRows) {
+                                        if (existing == row) {
+                                            duplicate = true;
+                                            break;
+                                        }
+                                    }
+                                    if (!duplicate) {
+                                        unionRows.push_back(row);
+                                    }
+                                }
+                            }
+                            ExecutionResult unionResult;
+                            unionResult.setStatus(ExecutionStatus::Success);
+                            unionResult.setMessage("UNION succeeded.");
+                            unionResult.setColumns(unionColumns);
+                            unionResult.setResultSet(unionRows);
+                            unionResult.setAffectedRows(static_cast<std::int32_t>(unionRows.size()));
+                            unionResult.setDbName(currentDbName);
+
+                            NetworkTransferData responseData =
+                                buildExecutionResponse(unionResult, networkTransferData, ExecutionStatementType::Select,
+                                                       serverVersion);
+                            responseData.setColumns(unionColumns);
+                            responseData.setRows(unionRows);
+                            sendResponse(responseData);
+                        } else {
+                            NetworkTransferData errorResponse = buildFailureResponse(
+                                "UNION failed: " + leftResult.getMessage() + " / " + rightResult.getMessage(),
+                                &networkTransferData);
+                            sendResponse(errorResponse);
+                        }
+                        continue;
+                    }
+
+                    if (usedBindPlan) {
+                        continue;
+                    }
+
+                    // 4c. 普通执行路径（非 SELECT 或 binder/plan 不可用时）
+                    // 作者：NAPH130
+                    ExecutionResult executionResult =
+                        core->getExecutorManager()->getExecutorEngine()->execute(
+                            parseResult.statement.get(), &executionContext);
+
+                    if (executionResult.getStatus() == ExecutionStatus::Success
+                        && networkExecutionContext != nullptr
+                        && !executionResult.getDbName().empty()) {
+                        networkExecutionContext->setCurrentDbName(executionResult.getDbName());
+                    }
+                    if (!executionResult.getDbName().empty()) {
+                        executionContext.setCurrentDbName(executionResult.getDbName());
+                    }
+
+                    if (executionResult.getDbName().empty()) {
+                        executionResult.setDbName(executionContext.getCurrentDbName());
+                    }
+
+                    NetworkTransferData responseData = buildExecutionResponse(
+                        executionResult, networkTransferData, statementType, serverVersion);
+                    if (isQueryStatementType(statementType)) {
+                        std::vector<std::string> resultColumns = executionResult.getColumns();
+                        if (resultColumns.empty()) {
+                            resultColumns = buildQueryColumns(parseResult.statement.get());
+                        }
+                        responseData.setColumns(resultColumns);
+                        responseData.setRows(executionResult.getResultSet());
+                    }
+                    sendResponse(responseData);
+
+                } catch (const std::exception &exception) {
+                    LogWriter::error("network", "NetReceiver", "processMsg",
+                                     "Statement " + std::to_string(statementNumber)
+                                     + " execution failed: " + std::string(exception.what()));
+                    NetworkTransferData errorResponse = buildFailureResponse(
+                        "Statement " + std::to_string(statementNumber)
+                        + " execution failed: " + std::string(exception.what()),
+                        &networkTransferData);
+                    sendResponse(errorResponse);
+                }
             }
-            sendResponse(responseData);
             return;
         }
 
         if (networkTransferData.getType() == NetworkTransferData::DIRECTORY_REQUEST) {
+            /**
+             * @brief 处理客户端目录结构请求
+             * @details 遍历所有数据库→表→字段三层结构，构建 DatabaseNode/TableNode 层级响应。
+             * @author NAPH130
+             */
             if (core == nullptr || core->getStorageManager() == nullptr) {
                 sendFailureResponse("Storage manager is not initialized.");
                 return;
@@ -341,7 +792,9 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                     tableNodes.emplace_back(tableName, columns);
                 }
 
-                databaseNodes.emplace_back(dbName, tableNodes);
+                DatabaseNode dbNode(dbName, tableNodes);
+                dbNode.setDbVersion(systemCatalogManager->getDatabaseVersion(dbName));
+                databaseNodes.push_back(dbNode);
             }
 
             responseData.setDatabases(databaseNodes);

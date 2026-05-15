@@ -20,7 +20,8 @@ class DatabaseManager
 public:
     enum class JoinType {
         INNER_JOIN,
-        LEFT_JOIN
+        LEFT_JOIN,
+        RIGHT_JOIN
     };
 
     struct JoinColumnRef {

@@ -69,5 +69,6 @@ ExecutionResult UseDbExecutor::executeUseDb(const UseDbStmt *useDbStmt, Executio
     executionResult.setStatus(ExecutionStatus::Success);
     executionResult.setMessage("Database switched successfully: " + dbName + ".");
     executionResult.setAffectedRows(0);
+    executionResult.setDbName(dbName);
     return executionResult;
 }

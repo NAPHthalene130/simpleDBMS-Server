@@ -1,5 +1,7 @@
 ﻿#include "ConditionNode.h"
 
+#include "SQLStatement.h"
+
 ConditionNode::ConditionNode() = default;
 
 const std::string &ConditionNode::getLeftOperand() const
@@ -50,4 +52,29 @@ const std::shared_ptr<ConditionNode> &ConditionNode::getRightNode() const
 void ConditionNode::setRightNode(const std::shared_ptr<ConditionNode> &rightNode)
 {
     this->rightNode = rightNode;
+}
+
+bool ConditionNode::hasSubquery() const
+{
+    return subquery != nullptr;
+}
+
+const std::shared_ptr<SQLStatement> &ConditionNode::getSubquery() const
+{
+    return subquery;
+}
+
+void ConditionNode::setSubquery(const std::shared_ptr<SQLStatement> &subquery)
+{
+    this->subquery = subquery;
+}
+
+bool ConditionNode::isNegated() const
+{
+    return negated;
+}
+
+void ConditionNode::setNegated(bool negated)
+{
+    this->negated = negated;
 }

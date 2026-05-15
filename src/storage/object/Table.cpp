@@ -174,6 +174,7 @@ Table Table::load(const std::filesystem::path& dbPath,
     std::string columnsLine;
     std::string integritiesLine;
     std::string defaultsLine;
+    std::map<std::string, std::int64_t> autoIncMap;
     std::string line;
     while (std::getline(ifs, line)) {
         if (line.rfind("table=", 0) == 0) {
@@ -184,6 +185,14 @@ Table Table::load(const std::filesystem::path& dbPath,
             integritiesLine = line;
         } else if (line.rfind("defaults=", 0) == 0) {
             defaultsLine = line;
+        } else if (line.rfind("autoInc:", 0) == 0) {
+            const auto eqPos = line.find('=', 8);
+            if (eqPos != std::string::npos) {
+                const std::string col = line.substr(8, eqPos - 8);
+                try {
+                    autoIncMap[col] = std::stoll(line.substr(eqPos + 1));
+                } catch (...) {}
+            }
         }
     }
 
@@ -243,6 +252,8 @@ Table Table::load(const std::filesystem::path& dbPath,
         spec.defaultValue = table.schema_.columnMetas[i].defaultValue;
         table.constraintsByColumn_[parsedColumns[i]] = spec;
     }
+
+    table.autoIncCounters_ = std::move(autoIncMap);
 
     table.loadIndexFromTid();
     for (std::size_t i = 1; i < table.schema_.columns.size(); ++i) {
@@ -472,9 +483,10 @@ std::size_t Table::compact() {
                 index_.insert(pk, Row{{pk}});
             }
         });
-        syncIndexPages();
-        TableVersionManager::incrementVersion(dbPath_, schema_.name);
-    }
+    syncIndexPages();
+    flushMeta();  // 持久化自增计数器
+    TableVersionManager::incrementVersion(dbPath_, schema_.name);
+}
     return removed;
 }
 
@@ -1052,6 +1064,10 @@ void Table::flushMeta() const {
         defaultList.push_back(meta.defaultValue);
     }
     ofs << "defaults=" << join(defaultList, "|") << '\n';
+
+    for (const auto& [col, nextVal] : autoIncCounters_) {
+        ofs << "autoInc:" << col << "=" << nextVal << '\n';
+    }
 }
 
 void Table::flushIntegrityMeta() const {
@@ -1977,14 +1993,43 @@ std::vector<std::string> Table::ConstraintValidator::normalize(const std::vector
     for (std::size_t i = values.size(); i < schema.columns.size(); ++i) {
         if (i < schema.columnMetas.size() && !schema.columnMetas[i].defaultValue.empty()) {
             normalized[i] = schema.columnMetas[i].defaultValue;
-            continue;
-        }
-        const auto it = table.constraintsByColumn_.find(schema.columns[i]);
-        if (it != table.constraintsByColumn_.end() && it->second.hasDefault) {
-            normalized[i] = it->second.defaultValue;
         }
     }
+
+    // AUTO_INCREMENT 值自动生成
+    // 作者：NAPH130
+    for (std::size_t i = 0; i < normalized.size(); ++i) {
+        if (normalized[i].empty() && i < schema.columnMetas.size()
+            && (schema.columnMetas[i].integrities & 8) != 0) {
+            normalized[i] = std::to_string(table.nextAutoIncValue(schema.columns[i]));
+        }
+    }
+
     return normalized;
+}
+
+std::int64_t Table::nextAutoIncValue(const std::string& columnName) const {
+    auto it = autoIncCounters_.find(columnName);
+    if (it == autoIncCounters_.end()) {
+        autoIncCounters_[columnName] = 2;
+        return 1;
+    }
+    return it->second++;
+}
+
+void Table::initAutoIncValue(const std::string& columnName, std::int64_t startValue) {
+    autoIncCounters_[columnName] = startValue;
+}
+
+bool Table::isAutoIncColumn(const std::string& columnName) const {
+    for (std::size_t i = 0; i < schema_.columns.size(); ++i) {
+        if (schema_.columns[i] == columnName
+            && i < schema_.columnMetas.size()
+            && (schema_.columnMetas[i].integrities & 8) != 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void Table::ConstraintValidator::check(const std::vector<std::string>& values,

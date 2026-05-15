@@ -71,7 +71,7 @@ void DatabaseNode::setTables(const std::vector<TableNode> &tables)
     this->tables = tables;
 }
 
-const std::uint64_t &DatabaseNode::getDbVersion() const
+std::uint64_t DatabaseNode::getDbVersion() const
 {
     return dbVersion;
 }

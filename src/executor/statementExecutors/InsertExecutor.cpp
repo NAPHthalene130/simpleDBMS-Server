@@ -56,6 +56,10 @@ std::vector<std::string> buildFullValues(const storage::TableSchema &schema,
         if (it != specifiedColumns.end()) {
             const std::size_t idx = static_cast<std::size_t>(std::distance(specifiedColumns.begin(), it));
             fullValues[i] = specifiedValues[idx];
+        } else if (i < schema.columnMetas.size()
+                   && (schema.columnMetas[i].integrities & 8) != 0) {
+            // AUTO_INCREMENT 列且未指定值 → 留空，由 Table::normalize 自动生成
+            // 作者：NAPH130
         } else if (i < schema.columnMetas.size() && !schema.columnMetas[i].defaultValue.empty()) {
             fullValues[i] = schema.columnMetas[i].defaultValue;
         }

@@ -303,6 +303,28 @@ public:
     const TableSchema& schema() const { return schema_; }
 
     /**
+     * @brief 获取指定列的下一自增值并递增计数器
+     * @author NAPH130
+     * @param columnName 列名
+     * @return 下一自增值（首次调用从1开始）
+     */
+    std::int64_t nextAutoIncValue(const std::string& columnName) const;
+
+    /**
+     * @brief 初始化自增计数器起始值
+     * @author NAPH130
+     * @param columnName 列名
+     * @param startValue 起始值
+     */
+    void initAutoIncValue(const std::string& columnName, std::int64_t startValue);
+
+    /**
+     * @brief 检查指定列是否有自增标记
+     * @author NAPH130
+     */
+    bool isAutoIncColumn(const std::string& columnName) const;
+
+    /**
      * @brief 检查主键是否已存在
      * @author Startale
      * @param key 主键值
@@ -363,6 +385,7 @@ private:
     std::map<std::string, std::uint64_t> primaryKeyOffsetsOrdered_;
     std::unordered_map<std::string, ColumnConstraintSpec> constraintsByColumn_;
     std::unordered_map<std::string, ColumnIndex> secondaryIndexes_;
+    mutable std::map<std::string, std::int64_t> autoIncCounters_;
     DataPageManager dataPages_{*this};
     std::uint32_t rootPageId_ = 1;
     std::uint32_t nextPageId_ = 2;

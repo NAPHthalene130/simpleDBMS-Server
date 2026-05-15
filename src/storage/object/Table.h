@@ -127,6 +127,7 @@ public:
         ColumnConstraintSpec constraints;
         DataType dataType = DataType::TEXT;
         std::uint16_t varcharLen = 0;
+        bool isPrimaryKey = false;
     };
 
     struct QueryConstraint {
@@ -230,6 +231,8 @@ public:
     bool renameColumn(const std::string& oldName, const std::string& newName);
     bool alterColumnType(const std::string& column, DataType newType, std::uint16_t varcharLen = 0);
 
+    bool setPrimaryKey(const std::string& column);
+
     SubqueryResult evaluateSubquery(const SubquerySpec& spec) const;
 
     /**
@@ -283,33 +286,6 @@ public:
      */
     static ColumnMeta toColumnMeta(const ColumnDefinition& def);
 
-    std::uint64_t getVersion() const;
-
-    /**
-     * @brief 将 ColumnDefinition 转换为 ColumnMeta
-     * @author Startale
-     * @param def 列定义
-     * @return 列元数据
-     */
-    static ColumnMeta toColumnMeta(const ColumnDefinition& def);
-
-    /**
-     * @brief 比较两个字段值
-     * @author Startale
-     * @param left 左值
-     * @param op 比较操作符
-     * @param right 右值
-     * @return 比较结果
-     */
-    static bool compareValue(const std::string& left, CompareOp op, const std::string& right);
-    static bool compareValue(const std::string& left,
-                             const WhereCondition& condition);
-
-    /**
-     * @brief 获取表结构
-     * @author Startale
-     * @return 表结构对象
-     */
     const TableSchema& schema() const { return schema_; }
 
     /**

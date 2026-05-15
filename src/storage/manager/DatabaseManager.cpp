@@ -474,13 +474,24 @@ bool DatabaseManager::createTable(const std::string &dbName,
         return false;
     }
     try {
+        std::vector<storage::Table::ColumnDefinition> cols = columns;
+        // Reorder PK column to front if any column has isPrimaryKey=true
+        std::size_t pkIdx = cols.size();
+        for (std::size_t i = 0; i < cols.size(); ++i)
+            if (cols[i].isPrimaryKey) { pkIdx = i; break; }
+        if (pkIdx < cols.size() && pkIdx > 0) {
+            auto pk = std::move(cols[pkIdx]);
+            cols.erase(cols.begin() + static_cast<std::ptrdiff_t>(pkIdx));
+            cols.insert(cols.begin(), std::move(pk));
+        }
+
         std::vector<std::string> names;
         std::vector<storage::ColumnMeta> columnMetas;
-        names.reserve(columns.size());
-        columnMetas.reserve(columns.size());
-        for (const auto &column : columns) {
-            names.push_back(column.name);
-            columnMetas.push_back(storage::Table::toColumnMeta(column));
+        names.reserve(cols.size());
+        columnMetas.reserve(cols.size());
+        for (const auto &col : cols) {
+            names.push_back(col.name);
+            columnMetas.push_back(storage::Table::toColumnMeta(col));
         }
         return createTable(dbName, tableName, names, columnMetas);
     } catch (...) {

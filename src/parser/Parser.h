@@ -170,12 +170,22 @@ private:
 
     /**
      * @brief 解析 WHERE 条件中的基础谓词
-     * @details 支持括号表达式与比较表达式（如 col = 1）。
-     * @author YuzhSong
+     * @details 支持括号表达式、比较表达式、IN/EXISTS 子查询。
+     * @author YuzhSong / NAPH130
      * @param tokenStream token 游标流
      * @return 基础谓词条件节点
      */
     std::shared_ptr<ConditionNode> parsePredicate(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 IN / EXISTS / NOT IN / NOT EXISTS 子查询或值列表
+     * @author NAPH130
+     * @param tokenStream token 游标流
+     * @param leftOperand 已解析的左操作数
+     * @return 条件节点
+     */
+    std::shared_ptr<ConditionNode> parseInOrExists(TokenStream &tokenStream,
+                                                     const std::string &leftOperand) const;
 
     /**
      * @brief 解析字段定义并构造 FieldBlock

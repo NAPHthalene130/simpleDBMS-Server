@@ -85,9 +85,32 @@ private:
                                const std::vector<std::string> &row,
                                const std::vector<std::string> &columns) const;
 
+    /**
+     * @brief 评估条件树（带数据库名，用于子查询）
+     * @author NAPH130
+     */
+    bool evaluateConditionTreeWithDb(const ConditionNode *node,
+                                      const std::vector<std::string> &row,
+                                      const std::vector<std::string> &columns,
+                                      const std::string &dbName) const;
+
     bool evaluateLeafCondition(const ConditionNode *node,
                                const std::vector<std::string> &row,
                                const std::vector<std::string> &columns) const;
+
+    /**
+     * @brief 评估叶子条件（含子查询支持）
+     * @author NAPH130
+     * @param node 条件节点
+     * @param row 当前行数据
+     * @param columns 列名列表
+     * @param dbName 当前数据库名
+     * @return 是否满足条件
+     */
+    bool evaluateLeafCondition(const ConditionNode *node,
+                               const std::vector<std::string> &row,
+                               const std::vector<std::string> &columns,
+                               const std::string &dbName) const;
 
     static bool compareValues(const std::string &left, storage::Table::CompareOp op, const std::string &right);
     static bool likeMatch(const std::string &text, const std::string &pattern);
@@ -98,11 +121,19 @@ private:
      * @param resultSet 结果集（会被原地修改）
      * @param columns 当前输出的列名列表
      * @param selectStmt 原始 SELECT 语句
-     * @return 最终列名列表（聚合或投影后可能与 columns 不同）
      */
     static void applyOrderByAndLimit(std::vector<std::vector<std::string>> &resultSet,
                                       std::vector<std::string> &columns,
                                       const SelectStmt *selectStmt);
+
+    /**
+     * @brief 执行子查询并返回结果集
+     * @author NAPH130
+     * @param subquery 子查询 AST
+     * @param dbName 当前数据库名
+     * @return 子查询结果行集（每行为单列值的向量）
+     */
+    std::vector<std::string> evaluateSubquery(const SQLStatement *subquery, const std::string &dbName) const;
 
     Core *core;
     DatabaseManager *databaseManager;

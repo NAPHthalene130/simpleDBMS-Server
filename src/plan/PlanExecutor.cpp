@@ -622,26 +622,74 @@ ExecutionResult PlanExecutor::executeAggregation(const std::vector<storage::Row>
 bool PlanExecutor::evaluateConditionTree(const ConditionNode *node,
                                            const std::vector<std::string> &row,
                                            const std::vector<std::string> &columns) const {
+    return evaluateConditionTreeWithDb(node, row, columns, "");
+}
+
+bool PlanExecutor::evaluateConditionTreeWithDb(const ConditionNode *node,
+                                                const std::vector<std::string> &row,
+                                                const std::vector<std::string> &columns,
+                                                const std::string &dbName) const {
     if (node == nullptr) return true;
+
+    // 子查询条件节点
+    // 作者：NAPH130
+    if (node->hasSubquery()) {
+        return evaluateLeafCondition(node, row, columns, dbName);
+    }
 
     const auto &leftNode = node->getLeftNode();
     const auto &rightNode = node->getRightNode();
 
     if (leftNode != nullptr || rightNode != nullptr) {
-        const bool leftResult = evaluateConditionTree(leftNode.get(), row, columns);
-        const bool rightResult = evaluateConditionTree(rightNode.get(), row, columns);
-        const std::string opUpper = toUpperString(node->getOperator());
-        if (opUpper == "AND") return leftResult && rightResult;
+        const bool leftResult = evaluateConditionTreeWithDb(leftNode.get(), row, columns, dbName);
+        const bool rightResult = evaluateConditionTreeWithDb(rightNode.get(), row, columns, dbName);
+        const std::string opUpper = node->getOperator();
+        std::string upper(opUpper.size(), '\0');
+        std::transform(opUpper.begin(), opUpper.end(), upper.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+        if (upper == "AND") return leftResult && rightResult;
         return leftResult || rightResult;
     }
 
-    return evaluateLeafCondition(node, row, columns);
+    return evaluateLeafCondition(node, row, columns, dbName);
 }
 
 bool PlanExecutor::evaluateLeafCondition(const ConditionNode *node,
                                            const std::vector<std::string> &row,
                                            const std::vector<std::string> &columns) const {
+    return evaluateLeafCondition(node, row, columns, "");
+}
+
+bool PlanExecutor::evaluateLeafCondition(const ConditionNode *node,
+                                           const std::vector<std::string> &row,
+                                           const std::vector<std::string> &columns,
+                                           const std::string &dbName) const {
     if (node == nullptr) return true;
+
+    // 子查询条件
+    // 作者：NAPH130
+    if (node->hasSubquery()) {
+        const auto subResult = evaluateSubquery(node->getSubquery().get(), dbName);
+        const std::string opUpper = toUpperString(node->getOperator());
+        const std::string &colName = node->getLeftOperand();
+        auto it = std::find(columns.begin(), columns.end(), colName);
+        std::string leftValue;
+        if (it != columns.end()) {
+            const std::size_t colIdx = static_cast<std::size_t>(std::distance(columns.begin(), it));
+            if (colIdx < row.size()) {
+                leftValue = row[colIdx];
+            }
+        }
+
+        if (opUpper == "IN" || opUpper == "=") {
+            bool found = std::find(subResult.begin(), subResult.end(), leftValue) != subResult.end();
+            return node->isNegated() ? !found : found;
+        }
+        if (opUpper == "EXISTS") {
+            return node->isNegated() ? subResult.empty() : !subResult.empty();
+        }
+        return false;
+    }
 
     const std::string &columnName = node->getLeftOperand();
     const std::string &opStr = node->getOperator();
@@ -654,6 +702,41 @@ bool PlanExecutor::evaluateLeafCondition(const ConditionNode *node,
     if (colIdx >= row.size()) return false;
 
     return compareValues(row[colIdx], mapCompare(opStr), value);
+}
+
+std::vector<std::string> PlanExecutor::evaluateSubquery(const SQLStatement *subquery,
+                                                          const std::string &dbName) const {
+    if (subquery == nullptr || databaseManager == nullptr) return {};
+
+    // 仅支持简单 SELECT 子查询
+    // 作者：NAPH130
+    if (subquery->getStmtType() != ExecutionStatementType::Select) return {};
+
+    const auto *selStmt = static_cast<const SelectStmt *>(subquery);
+    const std::string tableName = selStmt->getTableName();
+
+    try {
+        const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        auto table = storage::Table::load(dbPath, tableName);
+        const auto &schema = table.schema();
+
+        std::vector<storage::Table::WhereCondition> whereConditions;
+        const auto whereCond = selStmt->getWhereCondition();
+        // 子查询 WHERE 条件暂按简单单层叶子处理
+        // 作者：NAPH130
+
+        auto rows = table.select({}, whereConditions);
+        std::vector<std::string> result;
+        result.reserve(rows.size());
+        for (const auto &row : rows) {
+            if (!row.values.empty()) {
+                result.push_back(row.values[0]); // 取第一列
+            }
+        }
+        return result;
+    } catch (...) {
+        return {};
+    }
 }
 
 bool PlanExecutor::compareValues(const std::string &left,

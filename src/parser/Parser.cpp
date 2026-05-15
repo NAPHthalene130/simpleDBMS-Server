@@ -92,6 +92,16 @@ bool isRightOperandToken(const Token &token)
            token.getType() == SqlTokenType::String ||
            token.getType() == SqlTokenType::Keyword;
 }
+
+std::string joinValues(const std::vector<std::string> &values)
+{
+    std::string result;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) result += ",";
+        result += values[i];
+    }
+    return result;
+}
 } // namespace
 
 /**
@@ -803,6 +813,16 @@ std::shared_ptr<ConditionNode> Parser::parsePredicate(TokenStream &tokenStream) 
         tokenStream.advance();
     }
 
+    // 处理 IN / EXISTS / NOT IN / NOT EXISTS
+    // 作者：NAPH130
+    const Token &nextToken = tokenStream.peek();
+    if (nextToken.getType() == SqlTokenType::Keyword) {
+        const std::string upperNext = nextToken.getValue();
+        if (upperNext == "IN" || upperNext == "EXISTS" || upperNext == "NOT") {
+            return parseInOrExists(tokenStream, leftOperand);
+        }
+    }
+
     const Token &operatorToken = tokenStream.peek();
     if (operatorToken.getType() != SqlTokenType::Operator) {
         throw ParserException("Illegal or missing comparison operator in predicate.", tokenStream.position());
@@ -812,14 +832,34 @@ std::shared_ptr<ConditionNode> Parser::parsePredicate(TokenStream &tokenStream) 
     }
     tokenStream.advance();
 
-    // 解析右操作数：支持标识符、table.column 形式、数字、字符串、关键字
+    // 解析右操作数：支持标识符、table.column 形式、数字、字符串、关键字、子查询
     // 作者：NAPH130
+    const Token &rightFirst = tokenStream.peek();
+
+    // 检查子查询：(SELECT ...)
+    // 作者：NAPH130
+    if (rightFirst.getType() == SqlTokenType::Symbol && rightFirst.getValue() == "(") {
+        // Peek ahead for SELECT keyword
+        // 作者：NAPH130
+        if (tokenStream.peek(1).getType() == SqlTokenType::Keyword
+            && tokenStream.peek(1).getValue() == "SELECT") {
+            tokenStream.advance(); // consume (
+            auto subSelect = parseSelectStatement(tokenStream);
+            tokenStream.expect(SqlTokenType::Symbol, ")", "Subquery requires closing parenthesis.");
+
+            const std::shared_ptr<ConditionNode> predicateNode = std::make_shared<ConditionNode>();
+            predicateNode->setLeftOperand(leftOperand);
+            predicateNode->setOperator(operatorToken.getValue());
+            predicateNode->setSubquery(subSelect);
+            return predicateNode;
+        }
+    }
+
     std::string rightOperand;
-    const Token &rightToken = tokenStream.peek();
-    if (!isRightOperandToken(rightToken)) {
+    if (!isRightOperandToken(rightFirst)) {
         throw ParserException("Missing right operand in predicate.", tokenStream.position());
     }
-    rightOperand = rightToken.getValue();
+    rightOperand = rightFirst.getValue();
     tokenStream.advance();
 
     // 处理右操作数的 table.column 形式
@@ -840,6 +880,55 @@ std::shared_ptr<ConditionNode> Parser::parsePredicate(TokenStream &tokenStream) 
     predicateNode->setOperator(operatorToken.getValue());
     predicateNode->setRightOperand(rightOperand);
     return predicateNode;
+}
+
+/**
+ * @brief 解析 IN / EXISTS / NOT IN / NOT EXISTS 子查询或值列表
+ * @details 支持 col IN (SELECT ...)、col IN (v1, v2, ...)、EXISTS (SELECT ...)、NOT EXISTS (SELECT ...)。
+ * @author NAPH130
+ * @param tokenStream token 游标流
+ * @return 条件树节点
+ */
+std::shared_ptr<ConditionNode> Parser::parseInOrExists(TokenStream &tokenStream,
+                                                         const std::string &leftOperand) const
+{
+    const std::shared_ptr<ConditionNode> node = std::make_shared<ConditionNode>();
+    node->setLeftOperand(leftOperand);
+
+    const std::string keyword = tokenStream.peek().getValue();
+    node->setOperator(keyword);
+
+    if (tokenStream.match(SqlTokenType::Keyword, "NOT")) {
+        node->setNegated(true);
+    }
+
+    if (tokenStream.match(SqlTokenType::Keyword, "EXISTS")) {
+        tokenStream.expect(SqlTokenType::Symbol, "(", "EXISTS requires '('.");
+        auto subSelect = parseSelectStatement(tokenStream);
+        tokenStream.expect(SqlTokenType::Symbol, ")", "EXISTS subquery requires ')'.");
+        node->setSubquery(subSelect);
+        return node;
+    }
+
+    // IN ( ... )
+    // 作者：NAPH130
+    tokenStream.expect(SqlTokenType::Keyword, "IN", "Expected IN or EXISTS.");
+    tokenStream.expect(SqlTokenType::Symbol, "(", "IN requires '('.");
+
+    // 检查是子查询还是值列表
+    // 作者：NAPH130
+    if (tokenStream.match(SqlTokenType::Keyword, "SELECT")) {
+        auto subSelect = parseSelectStatement(tokenStream);
+        tokenStream.expect(SqlTokenType::Symbol, ")", "IN subquery requires ')'.");
+        node->setSubquery(subSelect);
+    } else {
+        // 值列表：IN (v1, v2, ...)
+        // 作者：NAPH130
+        const auto values = parseValueList(tokenStream);
+        node->setRightOperand("(" + joinValues(values) + ")");
+        tokenStream.expect(SqlTokenType::Symbol, ")", "IN value list requires ')'.");
+    }
+    return node;
 }
 
 /**

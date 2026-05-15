@@ -383,11 +383,48 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement(TokenStream &tokenStrea
         havingCondition = parseConditionOr(tokenStream);
     }
 
+    // ORDER BY 子句
+    // 作者：NAPH130
+    std::string orderByColumn;
+    bool orderByDesc = false;
+    if (tokenStream.match(SqlTokenType::Keyword, "ORDER")) {
+        tokenStream.expect(SqlTokenType::Keyword, "BY", "ORDER must be followed by BY keyword.");
+        const Token &orderColToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "ORDER BY requires a column identifier.");
+        orderByColumn = orderColToken.getValue();
+        if (tokenStream.match(SqlTokenType::Keyword, "DESC")) {
+            orderByDesc = true;
+        } else {
+            tokenStream.consumeOptional(SqlTokenType::Keyword, "ASC");
+        }
+    }
+
+    // LIMIT 子句
+    // 作者：NAPH130
+    bool hasLimit = false;
+    std::size_t limitCount = 0;
+    if (tokenStream.match(SqlTokenType::Keyword, "LIMIT")) {
+        const Token &limitToken = tokenStream.expect(
+            SqlTokenType::Number,
+            "LIMIT requires a number.");
+        hasLimit = true;
+        try {
+            limitCount = static_cast<std::size_t>(std::stoull(limitToken.getValue()));
+        } catch (...) {
+            throw ParserException("LIMIT value must be a valid positive integer.", tokenStream.position());
+        }
+    }
+
     statement->setSelectAllFields(selectAllFields);
     statement->setTargetFields(targetFields);
     statement->setWhereCondition(whereCondition);
     statement->setGroupByColumns(groupByColumns);
     statement->setHavingCondition(havingCondition);
+    statement->setOrderByColumn(orderByColumn);
+    statement->setOrderByDesc(orderByDesc);
+    statement->setHasLimit(hasLimit);
+    statement->setLimitCount(limitCount);
     return statement;
 }
 

@@ -95,6 +95,11 @@ ExecutionResult PlanExecutor::execute(std::shared_ptr<PlanNode> root,
     }
 
     try {
+        std::vector<std::vector<std::string>> resultSet;
+        std::vector<std::string> columns;
+        std::string resultMessage;
+        std::string tableName;
+
         // 检测是否有 JOIN 节点
         // 作者：NAPH130
         bool hasJoin = false;
@@ -120,11 +125,11 @@ ExecutionResult PlanExecutor::execute(std::shared_ptr<PlanNode> root,
                 return buildFailure("join query returned empty result schema", dbName);
             }
 
-            std::vector<std::vector<std::string>> resultSet;
             resultSet.reserve(joinResult.rows.size());
             for (const auto &row : joinResult.rows) {
                 resultSet.push_back(row.values);
             }
+            columns = joinResult.columns;
 
             // 检测是否有聚合节点
             // 作者：NAPH130
@@ -146,89 +151,103 @@ ExecutionResult PlanExecutor::execute(std::shared_ptr<PlanNode> root,
             }
 
             if (aggNode != nullptr) {
-                return executeAggregation(joinResult.rows, joinResult.columns, aggNode);
+                ExecutionResult aggResult = executeAggregation(joinResult.rows, joinResult.columns, aggNode);
+                if (aggResult.getStatus() != ExecutionStatus::Success) {
+                    return aggResult;
+                }
+                resultSet = aggResult.getResultSet();
+                columns = aggResult.getColumns();
+                resultMessage = "Join aggregation succeeded.";
+            } else {
+                resultMessage = "Join query succeeded.";
+            }
+        } else {
+            // 单表查询：提取 SeqScan 节点信息执行
+            // 作者：NAPH130
+            const SeqScanPlanNode *scanNode = nullptr;
+            {
+                std::function<const SeqScanPlanNode *(const PlanNode *)> findScan;
+                findScan = [&](const PlanNode *node) -> const SeqScanPlanNode * {
+                    if (node == nullptr) return nullptr;
+                    if (node->getNodeType() == PlanNodeType::SeqScan) {
+                        return static_cast<const SeqScanPlanNode *>(node);
+                    }
+                    for (const auto &child : node->getChildren()) {
+                        const auto *found = findScan(child.get());
+                        if (found) return found;
+                    }
+                    return nullptr;
+                };
+                scanNode = findScan(root.get());
             }
 
-            return buildSuccess("Join query succeeded.", resultSet, joinResult.columns, dbName);
-        }
-
-        // 单表查询：提取 SeqScan 节点信息执行
-        // 作者：NAPH130
-        const SeqScanPlanNode *scanNode = nullptr;
-        {
-            std::function<const SeqScanPlanNode *(const PlanNode *)> findScan;
-            findScan = [&](const PlanNode *node) -> const SeqScanPlanNode * {
-                if (node == nullptr) return nullptr;
-                if (node->getNodeType() == PlanNodeType::SeqScan) {
-                    return static_cast<const SeqScanPlanNode *>(node);
-                }
-                for (const auto &child : node->getChildren()) {
-                    const auto *found = findScan(child.get());
-                    if (found) return found;
-                }
-                return nullptr;
-            };
-            scanNode = findScan(root.get());
-        }
-
-        if (scanNode == nullptr) {
-            return buildFailure("no SeqScan node found in plan tree", dbName);
-        }
-
-        const std::string tableName = scanNode->tableName;
-
-        // 简单单表查询通过 DatabaseManager 执行
-        // 作者：NAPH130
-        auto table = storage::Table::load(SystemCatalogManager::getDataRootPath() / dbName, tableName);
-        const auto &schema = table.schema();
-
-        std::vector<storage::Table::WhereCondition> whereConditions;
-        const auto whereCond = selectStmt != nullptr ? selectStmt->getWhereCondition() : nullptr;
-        if (whereCond != nullptr) {
-            // 条件转换留在后续细化（简单查询走原有 SelectExecutor 即可）
-            // 作者：NAPH130
-        }
-
-        auto rows = table.select({}, whereConditions);
-        std::vector<std::vector<std::string>> resultSet;
-        resultSet.reserve(rows.size());
-        for (const auto &row : rows) {
-            resultSet.push_back(row.values);
-        }
-
-        std::vector<std::string> columns = schema.columns;
-
-        // 检测聚合节点
-        // 作者：NAPH130
-        const AggregationPlanNode *aggNode = nullptr;
-        {
-            std::function<const AggregationPlanNode *(const PlanNode *)> findAgg;
-            findAgg = [&](const PlanNode *node) -> const AggregationPlanNode * {
-                if (node == nullptr) return nullptr;
-                if (node->getNodeType() == PlanNodeType::Aggregation) {
-                    return static_cast<const AggregationPlanNode *>(node);
-                }
-                for (const auto &child : node->getChildren()) {
-                    const auto *found = findAgg(child.get());
-                    if (found) return found;
-                }
-                return nullptr;
-            };
-            aggNode = findAgg(root.get());
-        }
-
-        if (aggNode != nullptr) {
-            // 转成 Row 格式
-            // 作者：NAPH130
-            std::vector<storage::Row> rowObjs;
-            rowObjs.reserve(resultSet.size());
-            for (const auto &r : resultSet) {
-                rowObjs.push_back({r});
+            if (scanNode == nullptr) {
+                return buildFailure("no SeqScan node found in plan tree", dbName);
             }
-            return executeAggregation(rowObjs, columns, aggNode);
+
+            tableName = scanNode->tableName;
+
+            auto table = storage::Table::load(SystemCatalogManager::getDataRootPath() / dbName, tableName);
+            const auto &schema = table.schema();
+
+            std::vector<storage::Table::WhereCondition> whereConditions;
+            const auto whereCond = selectStmt != nullptr ? selectStmt->getWhereCondition() : nullptr;
+            if (whereCond != nullptr) {
+                // 条件转换留在后续细化
+                // 作者：NAPH130
+            }
+
+            auto rows = table.select({}, whereConditions);
+            resultSet.reserve(rows.size());
+            for (const auto &row : rows) {
+                resultSet.push_back(row.values);
+            }
+            columns = schema.columns;
+
+            // 检测聚合节点
+            // 作者：NAPH130
+            const AggregationPlanNode *aggNode = nullptr;
+            {
+                std::function<const AggregationPlanNode *(const PlanNode *)> findAgg;
+                findAgg = [&](const PlanNode *node) -> const AggregationPlanNode * {
+                    if (node == nullptr) return nullptr;
+                    if (node->getNodeType() == PlanNodeType::Aggregation) {
+                        return static_cast<const AggregationPlanNode *>(node);
+                    }
+                    for (const auto &child : node->getChildren()) {
+                        const auto *found = findAgg(child.get());
+                        if (found) return found;
+                    }
+                    return nullptr;
+                };
+                aggNode = findAgg(root.get());
+            }
+
+            if (aggNode != nullptr) {
+                std::vector<storage::Row> rowObjs;
+                rowObjs.reserve(resultSet.size());
+                for (const auto &r : resultSet) {
+                    rowObjs.push_back({r});
+                }
+                ExecutionResult aggResult = executeAggregation(rowObjs, columns, aggNode);
+                if (aggResult.getStatus() != ExecutionStatus::Success) {
+                    return aggResult;
+                }
+                resultSet = aggResult.getResultSet();
+                columns = aggResult.getColumns();
+                resultMessage = "Aggregation succeeded.";
+            } else {
+                resultMessage = "Select succeeded.";
+            }
         }
 
-        return buildSuccess("Select succeeded.", resultSet, columns, dbName, tableName);
+        // 统一后处理：ORDER BY 和 LIMIT
+        // 作者：NAPH130
+        if (selectStmt != nullptr) {
+            applyOrderByAndLimit(resultSet, columns, selectStmt);
+        }
+
+        return buildSuccess(resultMessage, resultSet, columns, dbName, tableName);
     } catch (const std::exception &e) {
         LogWriter::error("plan", "PlanExecutor", "execute", std::string("Plan execution failed: ") + e.what());
         return buildFailure(std::string("Plan execution failed: ") + e.what(), dbName);
@@ -680,4 +699,46 @@ bool PlanExecutor::likeMatch(const std::string &text, const std::string &pattern
     }
     while (p < pattern.size() && pattern[p] == '%') ++p;
     return p == pattern.size();
+}
+
+void PlanExecutor::applyOrderByAndLimit(std::vector<std::vector<std::string>> &resultSet,
+                                          std::vector<std::string> &columns,
+                                          const SelectStmt *selectStmt) {
+    if (selectStmt == nullptr || resultSet.empty()) {
+        return;
+    }
+
+    // ORDER BY 排序
+    // 作者：NAPH130
+    const std::string &orderByColumn = selectStmt->getOrderByColumn();
+    if (!orderByColumn.empty() && !columns.empty()) {
+        auto it = std::find(columns.begin(), columns.end(), orderByColumn);
+        if (it != columns.end()) {
+            const std::size_t orderIdx = static_cast<std::size_t>(std::distance(columns.begin(), it));
+            const bool desc = selectStmt->getOrderByDesc();
+            std::stable_sort(resultSet.begin(), resultSet.end(),
+                             [orderIdx, desc](const std::vector<std::string> &a,
+                                              const std::vector<std::string> &b) {
+                                 if (orderIdx >= a.size() || orderIdx >= b.size()) return false;
+                                 const std::string &av = a[orderIdx];
+                                 const std::string &bv = b[orderIdx];
+                                 double an = 0.0, bn = 0.0;
+                                 const bool aNum = storage::tryParseNumber(av, an);
+                                 const bool bNum = storage::tryParseNumber(bv, bn);
+                                 if (aNum && bNum) {
+                                     return desc ? (an > bn) : (an < bn);
+                                 }
+                                 return desc ? (av > bv) : (av < bv);
+                             });
+        }
+    }
+
+    // LIMIT 截断
+    // 作者：NAPH130
+    if (selectStmt->getHasLimit()) {
+        const std::size_t limit = selectStmt->getLimitCount();
+        if (limit < resultSet.size()) {
+            resultSet.resize(limit);
+        }
+    }
 }

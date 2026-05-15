@@ -92,6 +92,18 @@ private:
     static bool compareValues(const std::string &left, storage::Table::CompareOp op, const std::string &right);
     static bool likeMatch(const std::string &text, const std::string &pattern);
 
+    /**
+     * @brief 对结果集应用 ORDER BY 排序和 LIMIT 截断
+     * @author NAPH130
+     * @param resultSet 结果集（会被原地修改）
+     * @param columns 当前输出的列名列表
+     * @param selectStmt 原始 SELECT 语句
+     * @return 最终列名列表（聚合或投影后可能与 columns 不同）
+     */
+    static void applyOrderByAndLimit(std::vector<std::vector<std::string>> &resultSet,
+                                      std::vector<std::string> &columns,
+                                      const SelectStmt *selectStmt);
+
     Core *core;
     DatabaseManager *databaseManager;
 };

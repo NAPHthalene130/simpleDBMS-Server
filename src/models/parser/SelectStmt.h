@@ -65,6 +65,18 @@ public:
      */
     bool hasJoin() const;
 
+    const std::string &getOrderByColumn() const;
+    void setOrderByColumn(const std::string &orderByColumn);
+
+    bool getOrderByDesc() const;
+    void setOrderByDesc(bool orderByDesc);
+
+    bool getHasLimit() const;
+    void setHasLimit(bool hasLimit);
+
+    std::size_t getLimitCount() const;
+    void setLimitCount(std::size_t limitCount);
+
 private:
     std::string tableName;
     std::vector<std::string> targetFields;
@@ -73,4 +85,8 @@ private:
     std::vector<std::string> groupByColumns;
     std::shared_ptr<ConditionNode> havingCondition;
     std::vector<JoinInfo> joinInfoList;
+    std::string orderByColumn;
+    bool orderByDesc = false;
+    bool hasLimit = false;
+    std::size_t limitCount = 0;
 };

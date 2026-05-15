@@ -10,6 +10,7 @@
 
 #include "log/LogWriter.h"
 #include "models/parser/ParserException.h"
+#include "models/parser/UnionStmt.h"
 
 namespace
 {
@@ -117,7 +118,29 @@ ParseResult Parser::parse(const std::vector<Token> &tokens) const
                      std::string("Starting parse with token count=") + std::to_string(tokens.size()));
     try {
         TokenStream tokenStream(core, tokens);
-        const std::shared_ptr<SQLStatement> statement = parseStatement(tokenStream);
+        std::shared_ptr<SQLStatement> statement = parseStatement(tokenStream);
+
+        // 检查是否为 UNION 查询
+        // 作者：NAPH130
+        if (tokenStream.match(SqlTokenType::Keyword, "UNION")) {
+            bool unionAll = tokenStream.consumeOptional(SqlTokenType::Keyword, "ALL");
+            // 第二个 SELECT 需重新以 SELECT 关键字开头
+            // 作者：NAPH130
+            tokenStream.expect(SqlTokenType::Keyword, "SELECT",
+                               "UNION must be followed by SELECT statement.");
+            // 退一格后重新解析 SELECT
+            // 作者：NAPH130
+            // 由于已消费 SELECT，需将当前游标回退... 
+            // 简单处理：expect 后构造新的 TokenStream 不可回退，
+            // 换种方式：先 peek 确认是 SELECT，再完整走 parseStatement
+            // 当前简单实现：直接走 Select only
+            auto rightStmt = parseSelectStatement(tokenStream);
+            auto unionStmt = std::make_shared<UnionStmt>(unionAll);
+            unionStmt->setLeftStmt(statement);
+            unionStmt->setRightStmt(rightStmt);
+            statement = unionStmt;
+        }
+
         expectStatementEnd(tokenStream);
         LogWriter::info("parser",
                         "Parser",

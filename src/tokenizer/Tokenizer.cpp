@@ -143,7 +143,13 @@ void Tokenizer::initializeKeywords()
         "AVG",
         "MIN",
         "MAX",
-        "LIKE"
+        "LIKE",
+        "UNION",
+        "ALL",
+        "ASC",
+        "DESC",
+        "EXISTS",
+        "IN"
     };
 }
 

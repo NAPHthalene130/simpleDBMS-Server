@@ -19,6 +19,7 @@
 #include "models/network/NetworkTransferData.h"
 #include "models/parser/SelectStmt.h"
 #include "models/parser/ShowStmt.h"
+#include "models/parser/UnionStmt.h"
 #include "models/network/SqlData.h"
 #include "models/storage/DatabaseBlock.h"
 #include "models/storage/TableBlock.h"
@@ -524,6 +525,98 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                                 }
                             }
                         }
+                    }
+
+                    // 4b2. UNION 查询处理
+                    // 作者：NAPH130
+                    if (statementType == ExecutionStatementType::UnionSelect) {
+                        const UnionStmt *unionStmt = static_cast<const UnionStmt *>(parseResult.statement.get());
+                        // 递归执行左右两侧子查询
+                        // 作者：NAPH130
+                        auto execSingleSelect = [&](const std::shared_ptr<SQLStatement> &subStmt) -> ExecutionResult {
+                            if (subStmt == nullptr) {
+                                ExecutionResult r;
+                                r.setStatus(ExecutionStatus::Failure);
+                                r.setMessage("union sub-statement is null");
+                                return r;
+                            }
+                            // 复用 Binder+Plan 管道
+                            // 作者：NAPH130
+                            if (subStmt->getStmtType() == ExecutionStatementType::Select) {
+                                const SelectStmt *sel = static_cast<const SelectStmt *>(subStmt.get());
+                                const BindResult bindResult =
+                                    core->getBinderManager()->getBinder()->bindSelect(sel, currentDbName);
+                                if (bindResult.success) {
+                                    auto planRoot = core->getPlanManager()->getPlanner()->planSelect(
+                                        bindResult, currentDbName);
+                                    if (planRoot) {
+                                        PlanExecutor pe(core);
+                                        return pe.execute(planRoot, currentDbName, sel, &executionContext);
+                                    }
+                                }
+                            }
+                            // 回退到旧执行器
+                            // 作者：NAPH130
+                            return core->getExecutorManager()->getExecutorEngine()->execute(
+                                subStmt.get(), &executionContext);
+                        };
+
+                        ExecutionResult leftResult = execSingleSelect(unionStmt->getLeftStmt());
+                        ExecutionResult rightResult = execSingleSelect(unionStmt->getRightStmt());
+
+                        // 合并结果
+                        // 作者：NAPH130
+                        std::vector<std::string> unionColumns;
+                        std::vector<std::vector<std::string>> unionRows;
+
+                        if (leftResult.getStatus() == ExecutionStatus::Success
+                            && rightResult.getStatus() == ExecutionStatus::Success) {
+                            unionColumns = leftResult.getColumns();
+                            // 左侧结果
+                            // 作者：NAPH130
+                            for (const auto &row : leftResult.getResultSet()) {
+                                unionRows.push_back(row);
+                            }
+                            // 右侧结果（UNION 去重，UNION ALL 不去重）
+                            // 作者：NAPH130
+                            for (const auto &row : rightResult.getResultSet()) {
+                                if (unionStmt->isUnionAll()) {
+                                    unionRows.push_back(row);
+                                } else {
+                                    // 简单去重：检查是否已存在
+                                    // 作者：NAPH130
+                                    bool duplicate = false;
+                                    for (const auto &existing : unionRows) {
+                                        if (existing == row) {
+                                            duplicate = true;
+                                            break;
+                                        }
+                                    }
+                                    if (!duplicate) {
+                                        unionRows.push_back(row);
+                                    }
+                                }
+                            }
+                            ExecutionResult unionResult;
+                            unionResult.setStatus(ExecutionStatus::Success);
+                            unionResult.setMessage("UNION succeeded.");
+                            unionResult.setColumns(unionColumns);
+                            unionResult.setResultSet(unionRows);
+                            unionResult.setAffectedRows(static_cast<std::int32_t>(unionRows.size()));
+                            unionResult.setDbName(currentDbName);
+
+                            NetworkTransferData responseData =
+                                buildExecutionResponse(unionResult, networkTransferData, ExecutionStatementType::Select);
+                            responseData.setColumns(unionColumns);
+                            responseData.setRows(unionRows);
+                            sendResponse(responseData);
+                        } else {
+                            NetworkTransferData errorResponse = buildFailureResponse(
+                                "UNION failed: " + leftResult.getMessage() + " / " + rightResult.getMessage(),
+                                &networkTransferData);
+                            sendResponse(errorResponse);
+                        }
+                        continue;
                     }
 
                     if (usedBindPlan) {

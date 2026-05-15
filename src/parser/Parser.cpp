@@ -791,26 +791,53 @@ std::shared_ptr<ConditionNode> Parser::parsePredicate(TokenStream &tokenStream) 
         return groupedCondition;
     }
 
-    // 解析左操作数：支持标识符或 table.column 形式
+    // 解析左操作数：支持标识符、table.column 形式、聚合函数
     // 作者：NAPH130
     std::string leftOperand;
     const Token &leftFirst = tokenStream.peek();
-    if (leftFirst.getType() != SqlTokenType::Identifier) {
-        throw ParserException("Missing left operand in predicate.", tokenStream.position());
-    }
-    leftOperand = leftFirst.getValue();
-    tokenStream.advance();
 
-    // 处理 table.column 或 alias.column 的 . column 部分
+    // 聚合函数作为左操作数（如 HAVING COUNT(*) > 1）
     // 作者：NAPH130
-    if (tokenStream.peek().getType() == SqlTokenType::Symbol && tokenStream.peek().getValue() == ".") {
-        tokenStream.advance(); // 消费 .
-        const Token &colToken = tokenStream.peek();
-        if (colToken.getType() != SqlTokenType::Identifier) {
-            throw ParserException("Expected column name after '.' in predicate.", tokenStream.position());
-        }
-        leftOperand += "." + colToken.getValue();
+    bool isAggFuncFirst = false;
+    if (leftFirst.getType() == SqlTokenType::Keyword) {
+        const std::string upperVal = leftFirst.getValue();
+        isAggFuncFirst = (upperVal == "COUNT" || upperVal == "SUM"
+                          || upperVal == "AVG" || upperVal == "MIN" || upperVal == "MAX");
+    }
+
+    if (isAggFuncFirst) {
+        leftOperand = leftFirst.getValue();
         tokenStream.advance();
+        tokenStream.expect(SqlTokenType::Symbol, "(", "Aggregate function requires '('.");
+        const Token &argToken = tokenStream.peek();
+        if ((argToken.getType() == SqlTokenType::Symbol || argToken.getType() == SqlTokenType::Operator)
+            && argToken.getValue() == "*") {
+            leftOperand += "(*)";
+            tokenStream.advance();
+        } else if (argToken.getType() == SqlTokenType::Identifier) {
+            leftOperand += "(" + argToken.getValue() + ")";
+            tokenStream.advance();
+        } else {
+            throw ParserException("Aggregate function requires argument.", tokenStream.position());
+        }
+        tokenStream.expect(SqlTokenType::Symbol, ")", "Aggregate function requires ')'.");
+    } else if (leftFirst.getType() != SqlTokenType::Identifier) {
+        throw ParserException("Missing left operand in predicate.", tokenStream.position());
+    } else {
+        leftOperand = leftFirst.getValue();
+        tokenStream.advance();
+
+        // 处理 table.column 或 alias.column 的 . column 部分
+        // 作者：NAPH130
+        if (tokenStream.peek().getType() == SqlTokenType::Symbol && tokenStream.peek().getValue() == ".") {
+            tokenStream.advance();
+            const Token &colToken = tokenStream.peek();
+            if (colToken.getType() != SqlTokenType::Identifier) {
+                throw ParserException("Expected column name after '.' in predicate.", tokenStream.position());
+            }
+            leftOperand += "." + colToken.getValue();
+            tokenStream.advance();
+        }
     }
 
     // 处理 IN / EXISTS / NOT IN / NOT EXISTS

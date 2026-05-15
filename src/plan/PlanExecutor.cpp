@@ -204,6 +204,53 @@ ExecutionResult PlanExecutor::execute(std::shared_ptr<PlanNode> root,
             }
             columns = schema.columns;
 
+            // 应用列投影（单表路径）
+            // 作者：NAPH130
+            const ProjectionPlanNode *projNode = nullptr;
+            {
+                std::function<const ProjectionPlanNode *(const PlanNode *)> findProj;
+                findProj = [&](const PlanNode *node) -> const ProjectionPlanNode * {
+                    if (node == nullptr) return nullptr;
+                    if (node->getNodeType() == PlanNodeType::Projection) {
+                        return static_cast<const ProjectionPlanNode *>(node);
+                    }
+                    for (const auto &child : node->getChildren()) {
+                        const auto *found = findProj(child.get());
+                        if (found) return found;
+                    }
+                    return nullptr;
+                };
+                projNode = findProj(root.get());
+            }
+
+            if (projNode != nullptr && !projNode->projectedColumns.empty() && !selectStmt->getSelectAllFields()) {
+                std::vector<std::size_t> projIndexes;
+                std::vector<std::string> projCols;
+                for (const auto &colName : projNode->projectedColumns) {
+                    // 跳过聚合函数名（已由聚合步骤处理）
+                    if (colName.find('(') != std::string::npos) continue;
+                    auto it = std::find(columns.begin(), columns.end(), colName);
+                    if (it != columns.end()) {
+                        projIndexes.push_back(static_cast<std::size_t>(std::distance(columns.begin(), it)));
+                        projCols.push_back(colName);
+                    }
+                }
+                if (!projIndexes.empty()) {
+                    std::vector<std::vector<std::string>> projectedRows;
+                    projectedRows.reserve(resultSet.size());
+                    for (const auto &row : resultSet) {
+                        std::vector<std::string> projectedRow;
+                        projectedRow.reserve(projIndexes.size());
+                        for (auto idx : projIndexes) {
+                            projectedRow.push_back(idx < row.size() ? row[idx] : "");
+                        }
+                        projectedRows.push_back(std::move(projectedRow));
+                    }
+                    resultSet = std::move(projectedRows);
+                    columns = std::move(projCols);
+                }
+            }
+
             // 检测聚合节点
             // 作者：NAPH130
             const AggregationPlanNode *aggNode = nullptr;
@@ -643,9 +690,8 @@ bool PlanExecutor::evaluateConditionTreeWithDb(const ConditionNode *node,
     if (leftNode != nullptr || rightNode != nullptr) {
         const bool leftResult = evaluateConditionTreeWithDb(leftNode.get(), row, columns, dbName);
         const bool rightResult = evaluateConditionTreeWithDb(rightNode.get(), row, columns, dbName);
-        const std::string opUpper = node->getOperator();
-        std::string upper(opUpper.size(), '\0');
-        std::transform(opUpper.begin(), opUpper.end(), upper.begin(),
+        std::string upper = node->getOperator();
+        std::transform(upper.begin(), upper.end(), upper.begin(),
                        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
         if (upper == "AND") return leftResult && rightResult;
         return leftResult || rightResult;

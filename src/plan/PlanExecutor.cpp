@@ -604,6 +604,18 @@ ExecutionResult PlanExecutor::executeAggregation(const std::vector<storage::Row>
         resultSet.push_back(std::move(resultRow));
     }
 
+    // HAVING 过滤
+    // 作者：NAPH130
+    if (aggregationNode->havingCondition != nullptr) {
+        std::vector<std::vector<std::string>> filteredSet;
+        for (const auto &row : resultSet) {
+            if (evaluateConditionTree(aggregationNode->havingCondition.get(), row, resultColumns)) {
+                filteredSet.push_back(row);
+            }
+        }
+        resultSet = std::move(filteredSet);
+    }
+
     return buildSuccess("Aggregation succeeded.", resultSet, resultColumns);
 }
 

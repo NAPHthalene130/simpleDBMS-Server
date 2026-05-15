@@ -72,6 +72,10 @@ std::string buildResponseType(const std::string &requestType, ExecutionStatement
         return NetworkTransferData::DIRECTORY_RESPONSE;
     }
 
+    if (requestType == NetworkTransferData::DB_VERSION_REQUEST) {
+        return NetworkTransferData::DB_VERSION_RESPONSE;
+    }
+
     return NetworkTransferData::ERROR_RESPONSE;
 }
 
@@ -90,8 +94,9 @@ NetworkTransferData buildFailureResponse(const std::string &message,
 }
 
 NetworkTransferData buildExecutionResponse(const ExecutionResult &executionResult,
-                                           const NetworkTransferData &requestData,
-                                           ExecutionStatementType statementType)
+                                            const NetworkTransferData &requestData,
+                                            ExecutionStatementType statementType,
+                                            std::uint64_t dbVersion = 0)
 {
     NetworkTransferData responseData(buildResponseType(requestData.getType(), statementType), requestData.getId());
     responseData.setSuccess(executionResult.getStatus() == ExecutionStatus::Success);
@@ -99,6 +104,7 @@ NetworkTransferData buildExecutionResponse(const ExecutionResult &executionResul
     responseData.setAffectedRows(executionResult.getAffectedRows());
     responseData.setDbName(executionResult.getDbName());
     responseData.setRows(executionResult.getResultSet());
+    responseData.setDbVersion(dbVersion);
     return responseData;
 }
 
@@ -404,6 +410,47 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             return;
         }
 
+        if (networkTransferData.getType() == NetworkTransferData::DB_VERSION_REQUEST) {
+            /**
+             * @brief 处理客户端数据库版本号查询请求
+             * @details 遍历所有数据库，获取每个数据库的当前版本号并返回。
+             * @author NAPH130
+             */
+            if (core == nullptr || core->getStorageManager() == nullptr) {
+                sendFailureResponse("Storage manager is not initialized.");
+                return;
+            }
+
+            auto *systemCatalogManager = core->getStorageManager()->getSystemCatalogManager();
+            if (systemCatalogManager == nullptr) {
+                sendFailureResponse("System catalog manager is not initialized.");
+                return;
+            }
+
+            const auto databaseBlocks = systemCatalogManager->getAllDatabases();
+            NetworkTransferData responseData(NetworkTransferData::DB_VERSION_RESPONSE,
+                                              networkTransferData.getId());
+            responseData.setSuccess(true);
+            responseData.setMessage("Database version enumeration succeeded.");
+
+            std::vector<DatabaseNode> databaseNodes;
+            databaseNodes.reserve(databaseBlocks.size());
+            for (const auto &db : databaseBlocks) {
+                const std::string dbName = fixedArrayToStr(db.getName());
+                const uInt64 version = systemCatalogManager->getDatabaseVersion(dbName);
+                DatabaseNode node;
+                node.setName(dbName);
+                node.setDbVersion(version);
+                databaseNodes.push_back(node);
+            }
+            responseData.setDatabases(databaseNodes);
+            LogWriter::info("network", "NetReceiver", "processMsg",
+                            std::string("DB_VERSION_REQUEST returned ")
+                                + std::to_string(databaseNodes.size()) + " databases.");
+            sendResponse(responseData);
+            return;
+        }
+
         if (networkTransferData.getType() == NetworkTransferData::SQL_EXEC_REQUEST) {
             /**
              * @brief 处理 SQL 执行请求，支持多语句（按分号分割）
@@ -423,6 +470,40 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 LogWriter::warning("network", "NetReceiver", "processMsg", "Rejected empty SQL request.");
                 sendFailureResponse("SQL content is empty.");
                 return;
+            }
+
+            // 数据库版本号核验
+            // 作者：NAPH130
+            const std::string requestDbName = networkTransferData.getDbName();
+            const std::uint64_t clientVersion = networkTransferData.getDbVersion();
+            std::uint64_t serverVersion = 0;
+            bool versionChecked = false;
+            if (!requestDbName.empty() && core->getStorageManager() != nullptr
+                && core->getStorageManager()->getSystemCatalogManager() != nullptr) {
+                serverVersion = core->getStorageManager()->getSystemCatalogManager()
+                                    ->getDatabaseVersion(requestDbName);
+                if (clientVersion != serverVersion) {
+                    NetworkTransferData versionError(NetworkTransferData::SQL_EXEC_RESPONSE,
+                                                      networkTransferData.getId());
+                    versionError.setSuccess(false);
+                    versionError.setDbName(requestDbName);
+                    versionError.setDbVersion(serverVersion);
+                    versionError.setMessage("Database version mismatch: client="
+                        + std::to_string(clientVersion) + ", server=" + std::to_string(serverVersion)
+                        + ". Please refresh the directory.");
+                    LogWriter::warning("network", "NetReceiver", "processMsg",
+                                       std::string("Database version mismatch for ") + requestDbName
+                                           + ": client=" + std::to_string(clientVersion)
+                                           + ", server=" + std::to_string(serverVersion));
+                    sendResponse(versionError);
+                    return;
+                }
+                versionChecked = true;
+                // 核验通过后递增版本号
+                // 作者：NAPH130
+                core->getStorageManager()->getSystemCatalogManager()->addDatabaseVersion(requestDbName);
+                serverVersion = core->getStorageManager()->getSystemCatalogManager()
+                                    ->getDatabaseVersion(requestDbName);
             }
 
             // 1. 对整个 SQL 文本进行词法分析
@@ -517,7 +598,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                                     }
 
                                     NetworkTransferData responseData = buildExecutionResponse(
-                                        planExecResult, networkTransferData, statementType);
+                                        planExecResult, networkTransferData, statementType, serverVersion);
                                     responseData.setColumns(planExecResult.getColumns());
                                     responseData.setRows(planExecResult.getResultSet());
                                     sendResponse(responseData);
@@ -606,7 +687,8 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                             unionResult.setDbName(currentDbName);
 
                             NetworkTransferData responseData =
-                                buildExecutionResponse(unionResult, networkTransferData, ExecutionStatementType::Select);
+                                buildExecutionResponse(unionResult, networkTransferData, ExecutionStatementType::Select,
+                                                       serverVersion);
                             responseData.setColumns(unionColumns);
                             responseData.setRows(unionRows);
                             sendResponse(responseData);
@@ -643,7 +725,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                     }
 
                     NetworkTransferData responseData = buildExecutionResponse(
-                        executionResult, networkTransferData, statementType);
+                        executionResult, networkTransferData, statementType, serverVersion);
                     if (isQueryStatementType(statementType)) {
                         std::vector<std::string> resultColumns = executionResult.getColumns();
                         if (resultColumns.empty()) {
@@ -710,7 +792,9 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                     tableNodes.emplace_back(tableName, columns);
                 }
 
-                databaseNodes.emplace_back(dbName, tableNodes);
+                DatabaseNode dbNode(dbName, tableNodes);
+                dbNode.setDbVersion(systemCatalogManager->getDatabaseVersion(dbName));
+                databaseNodes.push_back(dbNode);
             }
 
             responseData.setDatabases(databaseNodes);

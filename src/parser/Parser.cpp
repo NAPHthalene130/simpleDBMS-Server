@@ -24,6 +24,7 @@ constexpr std::int32_t FIELD_TYPE_FLOAT = 2;
 constexpr std::int32_t FIELD_TYPE_DOUBLE = 3;
 constexpr std::int32_t FIELD_TYPE_CHAR = 4;
 constexpr std::int32_t FIELD_TYPE_VARCHAR = 5;
+constexpr std::int32_t FIELD_TYPE_DATE = 6;
 
 /**
  * @brief 支持的比较运算符集合
@@ -275,9 +276,64 @@ std::shared_ptr<CreateTableStmt> Parser::parseCreateTableStatement(TokenStream &
         "CREATE TABLE statement requires '(' before field definitions.");
 
     std::vector<FieldBlock> fields;
-    fields.push_back(parseFieldDefinition(tokenStream, 0));
-    while (tokenStream.consumeOptional(SqlTokenType::Symbol, ",")) {
-        fields.push_back(parseFieldDefinition(tokenStream, static_cast<std::int32_t>(fields.size())));
+
+    // 解析列定义（以逗号分隔）
+    // 作者：NAPH130
+    bool firstItem = true;
+    while (true) {
+        if (!firstItem) {
+            if (!tokenStream.consumeOptional(SqlTokenType::Symbol, ",")) {
+                break;
+            }
+        }
+        firstItem = false;
+
+        // 检查是否为表级约束 FOREIGN KEY (...) REFERENCES ...(...)
+        // 作者：NAPH130
+        if (tokenStream.match(SqlTokenType::Keyword, "FOREIGN")) {
+            tokenStream.expect(SqlTokenType::Keyword, "KEY", "FOREIGN must be followed by KEY.");
+            tokenStream.expect(SqlTokenType::Symbol, "(", "FOREIGN KEY requires '('.");
+            // 外键列名（目前仅支持单列，解析后存储到约束字段）
+            // 作者：NAPH130
+            const Token &fkColumnToken = tokenStream.expect(
+                SqlTokenType::Identifier,
+                "FOREIGN KEY requires a column identifier.");
+            tokenStream.expect(SqlTokenType::Symbol, ")", "FOREIGN KEY column requires ')'.");
+
+            tokenStream.expect(SqlTokenType::Keyword, "REFERENCES",
+                               "FOREIGN KEY requires REFERENCES keyword.");
+            const Token &refTableToken = tokenStream.expect(
+                SqlTokenType::Identifier,
+                "REFERENCES requires a table identifier.");
+            tokenStream.expect(SqlTokenType::Symbol, "(", "REFERENCES requires '('.");
+            const Token &refColumnToken = tokenStream.expect(
+                SqlTokenType::Identifier,
+                "REFERENCES requires a column identifier.");
+            tokenStream.expect(SqlTokenType::Symbol, ")", "REFERENCES column requires ')'.");
+
+            // 找到对应列并设置外键标记
+            // 作者：NAPH130
+            const std::string fkColName = fkColumnToken.getValue();
+            const std::string refTable = refTableToken.getValue();
+            const std::string refCol = refColumnToken.getValue();
+            for (auto &field : fields) {
+                const auto endIt = std::find(field.getName().begin(), field.getName().end(), '\0');
+                const std::string existingName(field.getName().begin(), endIt);
+                if (existingName == fkColName) {
+                    field.addIntegrityFlag(FieldBlock::INTEGRITY_FOREIGN_KEY);
+                    // 外键引用信息存入 default 字段（格式：table.column）
+                    // 作者：NAPH130
+                    field.setDefaultValue(refTable + "." + refCol);
+                    break;
+                }
+            }
+            continue;
+        }
+
+        // 普通列定义
+        // 作者：NAPH130
+        const std::int32_t fieldOrder = static_cast<std::int32_t>(fields.size());
+        fields.push_back(parseFieldDefinition(tokenStream, fieldOrder));
     }
 
     tokenStream.expect(
@@ -314,24 +370,44 @@ std::shared_ptr<InsertStmt> Parser::parseInsertStatement(TokenStream &tokenStrea
     }
 
     tokenStream.expect(SqlTokenType::Keyword, "VALUES", "INSERT statement requires VALUES keyword.");
-    tokenStream.expect(
-        SqlTokenType::Symbol,
-        "(",
-        "INSERT statement requires '(' before value list.");
-    const std::vector<std::string> values = parseValueList(tokenStream);
-    tokenStream.expect(
-        SqlTokenType::Symbol,
-        ")",
-        "INSERT statement requires ')' after value list.");
-
-    if (!columnNames.empty() && columnNames.size() != values.size()) {
-        throw ParserException("INSERT column count does not match value count.", tokenStream.position());
-    }
 
     const std::shared_ptr<InsertStmt> statement = std::make_shared<InsertStmt>();
     statement->setTableName(tableNameToken.getValue());
     statement->setColumnNames(columnNames);
-    statement->setValues(values);
+
+    // 解析多组 VALUES
+    // 作者：NAPH130
+    bool firstValueGroup = true;
+    while (true) {
+        if (!firstValueGroup) {
+            if (!tokenStream.consumeOptional(SqlTokenType::Symbol, ",")) {
+                break;
+            }
+        }
+        firstValueGroup = false;
+
+        tokenStream.expect(
+            SqlTokenType::Symbol,
+            "(",
+            "INSERT statement requires '(' before value list.");
+        const std::vector<std::string> values = parseValueList(tokenStream);
+        tokenStream.expect(
+            SqlTokenType::Symbol,
+            ")",
+            "INSERT statement requires ')' after value list.");
+
+        if (!columnNames.empty() && columnNames.size() != values.size()) {
+            throw ParserException("INSERT column count does not match value count.", tokenStream.position());
+        }
+
+        if (statement->getMultiValues().empty()) {
+            // 第一组值也存到 values 字段兼容旧代码
+            // 作者：NAPH130
+            statement->setValues(values);
+        }
+        statement->addValuesRow(values);
+    }
+
     return statement;
 }
 
@@ -1024,6 +1100,20 @@ void Parser::parseFieldType(TokenStream &tokenStream, FieldBlock &fieldBlock) co
         return;
     }
 
+    if (tokenStream.match(SqlTokenType::Keyword, "DATE")) {
+        fieldBlock.setType(FIELD_TYPE_DATE);
+        fieldBlock.setParam(0);
+        return;
+    }
+
+    if (tokenStream.match(SqlTokenType::Keyword, "DATETIME")) {
+        // DATETIME 暂按 DATE 类型处理
+        // 作者：NAPH130
+        fieldBlock.setType(FIELD_TYPE_DATE);
+        fieldBlock.setParam(0);
+        return;
+    }
+
     throw ParserException("Unsupported field type in CREATE TABLE statement.", tokenStream.position());
 }
 
@@ -1075,6 +1165,27 @@ void Parser::parseFieldConstraints(TokenStream &tokenStream, FieldBlock &fieldBl
         if (tokenStream.match(SqlTokenType::Keyword, "NULL")) {
             fieldBlock.addIntegrityFlag(0);
             continue;
+        }
+
+        // AUTO_INCREMENT 约束
+        // 作者：NAPH130
+        if (tokenStream.match(SqlTokenType::Keyword, "AUTO_INCREMENT")
+            || tokenStream.match(SqlTokenType::Keyword, "AUTOINCREMENT")) {
+            fieldBlock.addIntegrityFlag(FieldBlock::INTEGRITY_AUTO_INCREMENT);
+            continue;
+        }
+
+        // 跳过未识别的约束关键字（如 CHECK、AUTO_INCREMENT 等）
+        // 作者：NAPH130
+        const Token &nextToken = tokenStream.peek();
+        if (nextToken.getType() == SqlTokenType::Identifier) {
+            tokenStream.advance();
+            continue;
+        }
+        if (nextToken.getType() == SqlTokenType::Keyword) {
+            // 关键字但不属于约束 → 可能是 FOREIGN KEY 等表级约束，由上层处理
+            // 作者：NAPH130
+            break;
         }
 
         break;

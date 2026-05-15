@@ -149,7 +149,11 @@ void Tokenizer::initializeKeywords()
         "ASC",
         "DESC",
         "EXISTS",
-        "IN"
+        "IN",
+        "AUTO_INCREMENT",
+        "AUTOINCREMENT",
+        "REFERENCES",
+        "FOREIGN"
     };
 }
 

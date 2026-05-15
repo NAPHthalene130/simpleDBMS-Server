@@ -127,39 +127,53 @@ ExecutionResult InsertExecutor::executeInsert(const InsertStmt *insertStmt, Exec
     }
 
     const std::vector<std::string> &columnNames = insertStmt->getColumnNames();
-    const std::vector<std::string> &values = insertStmt->getValues();
 
-    if (columnNames.empty()) {
-        if (!databaseManager->insertRow(dbName, tableName, values)) {
-            LogWriter::error("executor", "InsertExecutor", "executeInsert",
-                             "Failed to insert row into " + dbName + "." + tableName + ".");
-            return buildFailureResult("Insert failed.", dbName, tableName);
-        }
+    // 获取所有待插入的值行
+    // 作者：NAPH130
+    std::vector<std::vector<std::string>> allValueRows;
+    const auto &multiValues = insertStmt->getMultiValues();
+    if (!multiValues.empty()) {
+        allValueRows = multiValues;
     } else {
-        try {
-            const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
-            const auto dbPath = dbRootPath / dbName;
+        allValueRows.push_back(insertStmt->getValues());
+    }
 
-            if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
-                return buildFailureResult("Database does not exist.", dbName, tableName);
+    std::int32_t totalInserted = 0;
+
+    for (const auto &values : allValueRows) {
+        if (columnNames.empty()) {
+            if (!databaseManager->insertRow(dbName, tableName, values)) {
+                LogWriter::error("executor", "InsertExecutor", "executeInsert",
+                                 "Failed to insert row into " + dbName + "." + tableName + ".");
+                return buildFailureResult("Insert failed at row " + std::to_string(totalInserted + 1) + ".", dbName, tableName);
             }
+        } else {
+            try {
+                const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
+                const auto dbPath = dbRootPath / dbName;
 
-            auto table = storage::Table::load(dbPath, tableName);
-            const auto &schema = table.schema();
+                if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
+                    return buildFailureResult("Database does not exist.", dbName, tableName);
+                }
 
-            const std::vector<std::string> fullValues = buildFullValues(schema, columnNames, values);
+                auto table = storage::Table::load(dbPath, tableName);
+                const auto &schema = table.schema();
 
-            const std::string notNullError = validateNotNull(schema, fullValues);
-            if (!notNullError.empty()) {
-                return buildFailureResult(notNullError, dbName, tableName);
+                const std::vector<std::string> fullValues = buildFullValues(schema, columnNames, values);
+
+                const std::string notNullError = validateNotNull(schema, fullValues);
+                if (!notNullError.empty()) {
+                    return buildFailureResult(notNullError, dbName, tableName);
+                }
+
+                table.insert(fullValues);
+            } catch (const std::exception &exception) {
+                LogWriter::error("executor", "InsertExecutor", "executeInsert",
+                                 std::string("Insert into ") + dbName + "." + tableName + " failed: " + exception.what());
+                return buildFailureResult(std::string("Insert failed: ") + exception.what(), dbName, tableName);
             }
-
-            table.insert(fullValues);
-        } catch (const std::exception &exception) {
-            LogWriter::error("executor", "InsertExecutor", "executeInsert",
-                             std::string("Insert into ") + dbName + "." + tableName + " failed: " + exception.what());
-            return buildFailureResult(std::string("Insert failed: ") + exception.what(), dbName, tableName);
         }
+        ++totalInserted;
     }
 
     // 记录插入日志
@@ -178,8 +192,10 @@ ExecutionResult InsertExecutor::executeInsert(const InsertStmt *insertStmt, Exec
     }
 
     LogWriter::info("executor", "InsertExecutor", "executeInsert",
-                    "Inserted row into " + dbName + "." + tableName + ".");
-    return buildSuccessResult("Insert succeeded.", dbName, tableName);
+                    "Inserted " + std::to_string(totalInserted) + " row(s) into " + dbName + "." + tableName + ".");
+    ExecutionResult result = buildSuccessResult("Insert succeeded.", dbName, tableName);
+    result.setAffectedRows(totalInserted);
+    return result;
 }
 
 bool InsertExecutor::validateInsertStmt(const InsertStmt *insertStmt) const

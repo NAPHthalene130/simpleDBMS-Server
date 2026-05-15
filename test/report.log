@@ -1,0 +1,276 @@
+====================
+TokenizerTest
+2026-05-16 01:21:57
+75/75
+[YES]TK-1 SELECT
+[YES]TK-2 FROM
+[YES]TK-3 WHERE
+[YES]TK-4 INSERT
+[YES]TK-5 INTO
+[YES]TK-6 VALUES
+[YES]TK-7 DELETE
+[YES]TK-8 UPDATE
+[YES]TK-9 SET
+[YES]TK-10 CREATE
+[YES]TK-11 TABLE
+[YES]TK-12 DATABASE
+[YES]TK-13 DROP
+[YES]TK-14 SHOW
+[YES]TK-15 USE
+[YES]TK-16 INT
+[YES]TK-17 VARCHAR
+[YES]TK-18 PRIMARY
+[YES]TK-19 KEY
+[YES]TK-20 NOT
+[YES]TK-21 NULL
+[YES]TK-22 DEFAULT
+[YES]TK-23 ORDER
+[YES]TK-24 BY
+[YES]TK-25 GROUP
+[YES]TK-26 HAVING
+[YES]TK-27 JOIN
+[YES]TK-28 INNER
+[YES]TK-29 LEFT
+[YES]TK-30 RIGHT
+[YES]TK-31 ON
+[YES]TK-32 AS
+[YES]TK-33 myTable
+[YES]TK-34 user_name
+[YES]TK-35 _private
+[YES]TK-36 id123
+[YES]TK-37 123
+[YES]TK-38 0
+[YES]TK-39 123.456
+[YES]TK-40 'hello'
+[YES]TK-41 "world"
+[YES]TK-42 ''
+[YES]TK-43 'it''s'
+[YES]TK-44 =
+[YES]TK-45 <>
+[YES]TK-46 <=
+[YES]TK-47 >=
+[YES]TK-48 !=
+[YES]TK-49 ||
+[YES]TK-50 &&
+[YES]TK-51 +
+[YES]TK-52 -
+[YES]TK-53 *
+[YES]TK-54 /
+[YES]TK-55 <
+[YES]TK-56 >
+[YES]TK-57 ,
+[YES]TK-58 ;
+[YES]TK-59 (
+[YES]TK-60 )
+[YES]TK-61 .
+[YES]TK-62 -- comment
+[YES]TK-63 /* comment */
+[YES]TK-64 SELECT /* inline */ 1
+[YES]TK-65 SELECT -- inline
+1
+[YES]TK-66 /* multi
+line */SELECT
+[YES]TK-67 
+[YES]TK-68    
+[YES]TK-69 	
+
+[YES]TK-70 SELECT * FROM t;
+[YES]TK-71 CREATE TABLE t (id INT);
+[YES]TK-72 INSERT INTO t VALUES (1, 'a');
+[YES]TK-73 SELECT * FROM t WHERE id >= 1;
+[YES]TK-74 SELECT COUNT(*) FROM t GROUP BY name HAV
+[YES]TK-75 USE DATABASE mydb;
+====================
+ParserTest
+2026-05-16 01:22:01
+27/31
+[YES]Parse CREATE DATABASE
+[YES]Parse CREATE DATABASE with numbers in name
+[YES]Reject CREATE DATABASE without name
+[YES]Parse CREATE TABLE with columns
+[YES]Parse CREATE TABLE with constraints
+[NO]Parse CREATE TABLE with TEXT type
+[YES]Parse CREATE TABLE with FLOAT type
+[YES]Parse CREATE TABLE with DOUBLE type
+[YES]Parse INSERT INTO VALUES
+[YES]Parse INSERT with column list
+[YES]Parse INSERT with mixed types
+[YES]Parse SELECT *
+[YES]Parse SELECT specific columns
+[YES]Parse SELECT with WHERE
+[YES]Parse SELECT with AND condition
+[NO]Parse SELECT with BETWEEN
+[NO]Parse SELECT with LIKE
+[YES]Parse SELECT with IN
+[YES]Parse SELECT with ORDER BY ASC
+[YES]Parse SELECT with ORDER BY DESC
+[YES]Parse SELECT with LIMIT
+[NO]Parse DROP TABLE
+[YES]Parse DROP DATABASE
+[YES]Parse SHOW DATABASES
+[YES]Parse SHOW TABLES
+[YES]Parse USE DATABASE
+[YES]Parse DELETE with WHERE
+[YES]Parse UPDATE with SET and WHERE
+[YES]Parse UPDATE with multiple SET columns
+[YES]Reject invalid SQL
+[YES]Reject incomplete SELECT
+====================
+ExecutorCRUDTest
+2026-05-16 01:22:16
+8/22
+[YES]CREATE DATABASE
+[YES]USE DATABASE
+[YES]CREATE TABLE with PK/NOT NULL/DEFAULT
+[YES]INSERT full columns
+[YES]INSERT with DEFAULT
+[YES]Reject INSERT with NOT NULL violation
+[YES]Reject INSERT with duplicate PK
+[NO]SELECT * returns 2 rows
+[NO]SELECT with WHERE = filter
+[NO]SELECT with WHERE >
+[NO]SELECT specific columns with WHERE
+[NO]SELECT with ORDER BY DESC
+[NO]SELECT with LIMIT 1
+[NO]UPDATE with WHERE
+[NO]Verify UPDATE result
+[NO]DELETE with WHERE
+[NO]Verify DELETE (1 row remains)
+[NO]INSERT new row after DELETE
+[NO]ORDER BY + LIMIT
+[NO]SELECT non-existent row returns empty
+[NO]DROP TABLE
+[YES]DROP DATABASE
+====================
+ExecutorCRUDTest
+2026-05-16 01:24:27
+17/22
+[YES]CREATE DATABASE
+[YES]USE DATABASE
+[YES]CREATE TABLE with PK/NOT NULL/DEFAULT
+[NO]INSERT full columns
+[YES]INSERT with DEFAULT
+[YES]Reject INSERT with NOT NULL violation
+[NO]Reject INSERT with duplicate PK
+[YES]SELECT * returns 2 rows
+[NO]SELECT with WHERE = filter
+[YES]SELECT with WHERE >
+[YES]SELECT specific columns with WHERE
+[YES]SELECT with ORDER BY DESC
+[YES]SELECT with LIMIT 1
+[YES]UPDATE with WHERE
+[NO]Verify UPDATE result
+[YES]DELETE with WHERE
+[YES]Verify DELETE (1 row remains)
+[YES]INSERT new row after DELETE
+[YES]ORDER BY + LIMIT
+[NO]SELECT non-existent row returns empty
+[YES]DROP TABLE
+[YES]DROP DATABASE
+====================
+ExecutorCRUDTest
+2026-05-16 01:25:15
+19/22
+[YES]CREATE DATABASE
+[YES]USE DATABASE
+[YES]CREATE TABLE with PK/NOT NULL/DEFAULT
+[YES]INSERT full columns
+[YES]INSERT with DEFAULT
+[YES]Reject INSERT with NOT NULL violation
+[YES]Reject INSERT with duplicate PK
+[YES]SELECT * returns 2 rows
+[NO]SELECT with WHERE = filter
+[YES]SELECT with WHERE >
+[YES]SELECT specific columns with WHERE
+[YES]SELECT with ORDER BY DESC
+[YES]SELECT with LIMIT 1
+[YES]UPDATE with WHERE
+[NO]Verify UPDATE result
+[YES]DELETE with WHERE
+[YES]Verify DELETE (1 row remains)
+[YES]INSERT new row after DELETE
+[YES]ORDER BY + LIMIT
+[NO]SELECT non-existent row returns empty
+[YES]DROP TABLE
+[YES]DROP DATABASE
+====================
+ExecutorJoinAggTest
+2026-05-16 01:25:27
+10/20
+[YES]CREATE DATABASE
+[YES]USE DATABASE
+[YES]CREATE TABLE orders
+[YES]CREATE TABLE customers
+[YES]INSERT customer 1
+[YES]INSERT customer 2
+[YES]INSERT order 1
+[YES]INSERT order 2
+[YES]INSERT order 3
+[NO]INNER JOIN returns 3 rows
+[NO]LEFT JOIN returns >=2 rows
+[NO]COUNT(*) aggregation
+[NO]SUM aggregation
+[NO]AVG aggregation
+[NO]MIN/MAX aggregation
+[NO]GROUP BY with COUNT
+[NO]GROUP BY + HAVING
+[NO]JOIN + GROUP BY
+[NO]Aggregation with WHERE filter
+[YES]DROP TABLE/DATABASE cleanup
+====================
+ExecutorDDLTest
+2026-05-16 01:25:29
+8/17
+[YES]CREATE DATABASE
+[YES]USE DATABASE
+[YES]CREATE TABLE with INT/VARCHAR/FLOAT
+[YES]CREATE TABLE with PRIMARY KEY
+[YES]CREATE TABLE with AUTO_INCREMENT
+[NO]INSERT into AUTO_INCREMENT table
+[NO]INSERT second row AUTO_INCREMENT
+[NO]AUTO_INCREMENT generated 2 unique ids
+[NO]DROP TABLE t1
+[NO]CREATE TABLE t1 (single column)
+[NO]CREATE TABLE with UNIQUE constraint
+[NO]INSERT unique value
+[YES]Reject INSERT duplicate UNIQUE
+[YES]SHOW DATABASES includes ddl_test
+[NO]SHOW TABLES in database
+[NO]DROP multiple tables
+[YES]DROP DATABASE
+====================
+ExecutorErrorTest
+2026-05-16 01:25:33
+16/16
+[YES]Setup CREATE DATABASE
+[YES]Setup USE DATABASE
+[YES]Setup CREATE TABLE
+[YES]Reject CREATE DATABASE already exists
+[YES]Reject CREATE TABLE already exists
+[YES]Reject SELECT from nonexistent table
+[YES]Reject INSERT into nonexistent table
+[YES]Reject DROP nonexistent table
+[YES]Reject garbage SQL
+[YES]Reject empty SQL
+[YES]Reject INSERT with wrong column count
+[YES]Reject UPDATE nonexistent table
+[YES]Reject DELETE from nonexistent table
+[YES]Reject USE nonexistent database
+[YES]Reject SELECT with unknown column
+[YES]Cleanup
+====================
+NetworkAuthTest
+2026-05-16 01:25:37
+12/12
+[YES]VERIFY with correct credentials
+[YES]VERIFY with wrong password rejected
+[YES]VERIFY with empty user rejected
+[YES]LOGIN with correct credentials
+[YES]LOGIN with wrong password rejected
+[YES]LOGIN with non-existent user rejected
+[YES]Execute SQL after login succeeds
+[YES]Second connection VERIFY succeeds
+[YES]Second connection LOGIN succeeds
+[YES]DB_VERSION_REQUEST succeeds
+[YES]DIRECTORY_REQUEST succeeds
+[YES]Unknown request type rejected

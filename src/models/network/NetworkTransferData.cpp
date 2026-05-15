@@ -71,10 +71,21 @@ void DatabaseNode::setTables(const std::vector<TableNode> &tables)
     this->tables = tables;
 }
 
+const std::uint64_t &DatabaseNode::getDbVersion() const
+{
+    return dbVersion;
+}
+
+void DatabaseNode::setDbVersion(std::uint64_t dbVersion)
+{
+    this->dbVersion = dbVersion;
+}
+
 std::string DatabaseNode::toJson() const
 {
     nlohmann::json jsonObject;
     jsonObject["name"] = name;
+    jsonObject["dbVersion"] = dbVersion;
 
     nlohmann::json tablesJson = nlohmann::json::array();
     for (const TableNode &tableNode : tables) {
@@ -95,7 +106,9 @@ DatabaseNode DatabaseNode::fromJson(const std::string &jsonStr)
         }
     }
 
-    return DatabaseNode(jsonObject.value("name", ""), tableNodes);
+    DatabaseNode node(jsonObject.value("name", ""), tableNodes);
+    node.setDbVersion(jsonObject.value("dbVersion", std::uint64_t(0)));
+    return node;
 }
 
 NetworkTransferData::NetworkTransferData()
@@ -125,6 +138,7 @@ std::string NetworkTransferData::toJson() const
     jsonObject["affectedRows"] = affectedRows;
     jsonObject["columns"] = columns;
     jsonObject["rows"] = rows;
+    jsonObject["dbVersion"] = dbVersion;
 
     nlohmann::json databasesJson = nlohmann::json::array();
     for (const DatabaseNode &databaseNode : databases) {
@@ -148,6 +162,7 @@ NetworkTransferData NetworkTransferData::fromJson(const std::string &jsonStr)
     networkTransferData.setAffectedRows(jsonObject.value("affectedRows", 0));
     networkTransferData.setColumns(jsonObject.value("columns", std::vector<std::string> {}));
     networkTransferData.setRows(jsonObject.value("rows", std::vector<std::vector<std::string>> {}));
+    networkTransferData.setDbVersion(jsonObject.value("dbVersion", std::uint64_t(0)));
 
     std::vector<DatabaseNode> databaseNodes;
     if (jsonObject.contains("databases") && jsonObject["databases"].is_array()) {
@@ -267,4 +282,14 @@ const std::vector<DatabaseNode> &NetworkTransferData::getDatabases() const
 void NetworkTransferData::setDatabases(const std::vector<DatabaseNode> &databases)
 {
     this->databases = databases;
+}
+
+std::uint64_t NetworkTransferData::getDbVersion() const
+{
+    return dbVersion;
+}
+
+void NetworkTransferData::setDbVersion(std::uint64_t dbVersion)
+{
+    this->dbVersion = dbVersion;
 }

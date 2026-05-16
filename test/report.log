@@ -4011,3 +4011,221 @@ line */SELECT
 [YES]TK-161 hasMoreTokens false on empty input
 [YES]TK-162 only whitespace returns EOF
 [YES]TK-163 reset() changes input
+====================
+ParserTest
+2026-05-16 20:49:44
+80/105
+[YES]Parse CREATE DATABASE
+[YES]Parse CREATE DATABASE with numbers
+[YES]Reject CREATE DATABASE no name
+[YES]Parse CREATE DATABASE underscore prefix
+[YES]Parse CREATE TABLE
+[YES]Parse CREATE TABLE constraints
+[NO]Parse CREATE TABLE TEXT
+[YES]Parse CREATE TABLE FLOAT
+[YES]Parse CREATE TABLE DOUBLE
+[YES]Parse CREATE TABLE AUTO_INCREMENT
+[YES]Parse CREATE TABLE UNIQUE
+[YES]Parse CREATE TABLE multiple columns
+[NO]Parse CREATE TABLE BOOLEAN
+[YES]Parse CREATE TABLE NOT NULL
+[YES]Parse CREATE TABLE DEFAULT
+[YES]Parse CREATE TABLE VARCHAR length
+[YES]Parse INSERT INTO VALUES
+[YES]Parse INSERT column list
+[YES]Parse INSERT mixed types
+[YES]Parse INSERT single column
+[YES]Parse INSERT many values
+[YES]Parse SELECT *
+[YES]Parse SELECT specific columns
+[YES]Parse SELECT WHERE
+[YES]Parse SELECT AND condition
+[NO]Parse SELECT BETWEEN
+[NO]Parse SELECT LIKE
+[YES]Parse SELECT IN
+[YES]Parse SELECT ORDER BY ASC
+[YES]Parse SELECT ORDER BY DESC
+[YES]Parse SELECT LIMIT
+[NO]Parse SELECT DISTINCT
+[NO]Parse SELECT IS NULL
+[NO]Parse SELECT IS NOT NULL
+[NO]Parse SELECT NOT condition
+[YES]Parse SELECT NOT IN
+[NO]Parse SELECT NOT LIKE
+[NO]Parse SELECT NOT BETWEEN
+[NO]Parse SELECT column alias
+[YES]Parse SELECT COUNT(*)
+[YES]Parse SELECT SUM/AVG
+[YES]Parse SELECT MIN/MAX
+[YES]Parse SELECT parenthesized OR+AND
+[YES]Parse SELECT mixed AND/OR
+[NO]Parse SELECT table.column
+[NO]Parse SELECT EXISTS subquery
+[YES]Parse SELECT INNER JOIN
+[YES]Parse SELECT LEFT JOIN
+[YES]Parse SELECT RIGHT JOIN
+[NO]Parse SELECT JOIN (default INNER)
+[NO]Parse SELECT JOIN + GROUP BY
+[YES]Parse SELECT GROUP BY
+[YES]Parse SELECT GROUP BY + HAVING
+[YES]Parse SELECT GROUP BY with SUM
+[NO]Parse DROP TABLE
+[YES]Parse DROP DATABASE
+[YES]Parse SHOW DATABASES
+[YES]Parse SHOW TABLES
+[YES]Parse USE DATABASE
+[YES]Parse USE short form
+[YES]Parse DELETE WHERE
+[YES]Parse DELETE complex WHERE
+[YES]Parse UPDATE SET WHERE
+[YES]Parse UPDATE multiple SET
+[YES]Parse UPDATE AND condition
+[YES]Parse UNION SELECT
+[YES]Parse UNION ALL SELECT
+[YES]Parse SELECT ORDER BY + LIMIT
+[YES]Parse SELECT WHERE+ORDER BY+LIMIT
+[NO]Parse ALTER TABLE ADD COLUMN
+[NO]Parse TRUNCATE TABLE
+[YES]Reject invalid SQL
+[YES]Reject incomplete SELECT
+[YES]Reject CREATE TABLE without columns
+[YES]Reject INSERT without values
+[YES]Reject INSERT empty values
+[YES]Reject SELECT WHERE no condition
+[YES]Reject ORDER BY no column
+[YES]Reject DROP TABLE no name
+[YES]Reject UPDATE SET empty
+[NO]Reject DELETE without WHERE
+[YES]Reject standalone JOIN
+[NO]Parse COUNT as identifier (not function)
+[YES]Reject empty SQL
+[YES]Reject SELECT without FROM
+[YES]Reject UPDATE without SET
+[NO]Parse CREATE DATABASE IF NOT EXISTS
+[YES]Parse SELECT table alias
+[NO]Parse SELECT multiple LIKE OR
+[YES]Parse SELECT many cols + conditions
+[YES]Parse SELECT NOT IN subquery
+[YES]Parse SELECT nested parentheses
+[YES]Parse INSERT 4 columns mixed
+[YES]Parse INSERT 5 values
+[YES]Parse UPDATE 4 SET columns WHERE
+[YES]Parse UPDATE WHERE IN list
+[NO]Parse DELETE WHERE BETWEEN
+[NO]Parse DELETE WHERE IS NULL
+[YES]Parse SELECT MAX
+[YES]Parse SELECT MIN
+[NO]Parse SELECT ORDER BY multiple
+[YES]Parse SELECT range AND
+[YES]Parse SELECT OR + equality
+[YES]Parse SHOW DATABASE specific
+[YES]Parse SHOW TABLE specific
+====================
+ParserTest
+2026-05-16 20:53:16
+92/105
+[YES]Parse CREATE DATABASE
+[YES]Parse CREATE DATABASE with numbers
+[YES]Reject CREATE DATABASE no name
+[YES]Parse CREATE DATABASE underscore prefix
+[YES]Parse CREATE TABLE
+[YES]Parse CREATE TABLE constraints
+[YES]Parse CREATE TABLE TEXT
+[YES]Parse CREATE TABLE FLOAT
+[YES]Parse CREATE TABLE DOUBLE
+[YES]Parse CREATE TABLE AUTO_INCREMENT
+[YES]Parse CREATE TABLE UNIQUE
+[YES]Parse CREATE TABLE multiple columns
+[YES]Parse CREATE TABLE BOOLEAN
+[YES]Parse CREATE TABLE NOT NULL
+[YES]Parse CREATE TABLE DEFAULT
+[YES]Parse CREATE TABLE VARCHAR length
+[YES]Parse INSERT INTO VALUES
+[YES]Parse INSERT column list
+[YES]Parse INSERT mixed types
+[YES]Parse INSERT single column
+[YES]Parse INSERT many values
+[YES]Parse SELECT *
+[YES]Parse SELECT specific columns
+[YES]Parse SELECT WHERE
+[YES]Parse SELECT AND condition
+[YES]Parse SELECT BETWEEN
+[YES]Parse SELECT LIKE
+[YES]Parse SELECT IN
+[YES]Parse SELECT ORDER BY ASC
+[YES]Parse SELECT ORDER BY DESC
+[YES]Parse SELECT LIMIT
+[YES]Parse SELECT DISTINCT
+[NO]Parse SELECT IS NULL
+[NO]Parse SELECT IS NOT NULL
+[NO]Parse SELECT NOT condition
+[YES]Parse SELECT NOT IN
+[YES]Parse SELECT NOT LIKE
+[YES]Parse SELECT NOT BETWEEN
+[NO]Parse SELECT column alias
+[YES]Parse SELECT COUNT(*)
+[YES]Parse SELECT SUM/AVG
+[YES]Parse SELECT MIN/MAX
+[YES]Parse SELECT parenthesized OR+AND
+[YES]Parse SELECT mixed AND/OR
+[YES]Parse SELECT table.column
+[NO]Parse SELECT EXISTS subquery
+[YES]Parse SELECT INNER JOIN
+[YES]Parse SELECT LEFT JOIN
+[YES]Parse SELECT RIGHT JOIN
+[NO]Parse SELECT JOIN (default INNER)
+[NO]Parse SELECT JOIN + GROUP BY
+[YES]Parse SELECT GROUP BY
+[YES]Parse SELECT GROUP BY + HAVING
+[YES]Parse SELECT GROUP BY with SUM
+[NO]Parse DROP TABLE
+[YES]Parse DROP DATABASE
+[YES]Parse SHOW DATABASES
+[YES]Parse SHOW TABLES
+[YES]Parse USE DATABASE
+[YES]Parse USE short form
+[YES]Parse DELETE WHERE
+[YES]Parse DELETE complex WHERE
+[YES]Parse UPDATE SET WHERE
+[YES]Parse UPDATE multiple SET
+[YES]Parse UPDATE AND condition
+[YES]Parse UNION SELECT
+[YES]Parse UNION ALL SELECT
+[YES]Parse SELECT ORDER BY + LIMIT
+[YES]Parse SELECT WHERE+ORDER BY+LIMIT
+[NO]Parse ALTER TABLE ADD COLUMN
+[YES]Parse TRUNCATE TABLE
+[YES]Reject invalid SQL
+[YES]Reject incomplete SELECT
+[YES]Reject CREATE TABLE without columns
+[YES]Reject INSERT without values
+[YES]Reject INSERT empty values
+[YES]Reject SELECT WHERE no condition
+[YES]Reject ORDER BY no column
+[YES]Reject DROP TABLE no name
+[YES]Reject UPDATE SET empty
+[NO]Reject DELETE without WHERE
+[YES]Reject standalone JOIN
+[NO]Parse COUNT as identifier (not function)
+[YES]Reject empty SQL
+[YES]Reject SELECT without FROM
+[YES]Reject UPDATE without SET
+[NO]Parse CREATE DATABASE IF NOT EXISTS
+[YES]Parse SELECT table alias
+[YES]Parse SELECT multiple LIKE OR
+[YES]Parse SELECT many cols + conditions
+[YES]Parse SELECT NOT IN subquery
+[YES]Parse SELECT nested parentheses
+[YES]Parse INSERT 4 columns mixed
+[YES]Parse INSERT 5 values
+[YES]Parse UPDATE 4 SET columns WHERE
+[YES]Parse UPDATE WHERE IN list
+[YES]Parse DELETE WHERE BETWEEN
+[NO]Parse DELETE WHERE IS NULL
+[YES]Parse SELECT MAX
+[YES]Parse SELECT MIN
+[YES]Parse SELECT ORDER BY multiple
+[YES]Parse SELECT range AND
+[YES]Parse SELECT OR + equality
+[YES]Parse SHOW DATABASE specific
+[YES]Parse SHOW TABLE specific

@@ -140,6 +140,22 @@ private:
     std::shared_ptr<UpdateStmt> parseUpdateStatement(TokenStream &tokenStream) const;
 
     /**
+     * @brief 解析 TRUNCATE TABLE 语句
+     * @author NAPH130
+     * @param tokenStream token 游标流
+     * @return TRUNCATE 语句 AST 节点
+     */
+    std::shared_ptr<SQLStatement> parseTruncateStatement(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 ALTER TABLE 语句
+     * @author NAPH130
+     * @param tokenStream token 游标流
+     * @return ALTER 语句 AST 节点
+     */
+    std::shared_ptr<SQLStatement> parseAlterStatement(TokenStream &tokenStream) const;
+
+    /**
      * @brief 解析 UPDATE SET 赋值列表
      * @author YuzhSong
      * @param tokenStream token 游标流

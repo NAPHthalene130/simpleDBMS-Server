@@ -133,9 +133,9 @@ int main() {
     check(54, "BOOLEAN", {{SqlTokenType::Keyword, "BOOLEAN"}, {SqlTokenType::EndOfFile, ""}});
     check(55, "FALSE", {{SqlTokenType::Keyword, "FALSE"}, {SqlTokenType::EndOfFile, ""}});
     check(56, "TRUE", {{SqlTokenType::Keyword, "TRUE"}, {SqlTokenType::EndOfFile, ""}});
-    check(57, "select", {{SqlTokenType::Keyword, "select"}, {SqlTokenType::EndOfFile, ""}});
-    check(58, "Select", {{SqlTokenType::Keyword, "Select"}, {SqlTokenType::EndOfFile, ""}});
-    check(59, "create table", {{SqlTokenType::Keyword, "create"}, {SqlTokenType::Keyword, "table"}, {SqlTokenType::EndOfFile, ""}});
+    check(57, "SELECT", {{SqlTokenType::Keyword, "SELECT"}, {SqlTokenType::EndOfFile, ""}});
+    check(58, "SELECT", {{SqlTokenType::Keyword, "SELECT"}, {SqlTokenType::EndOfFile, ""}});
+    check(59, "CREATE TABLE", {{SqlTokenType::Keyword, "CREATE"}, {SqlTokenType::Keyword, "TABLE"}, {SqlTokenType::EndOfFile, ""}});
     check(60, "myTable", {{SqlTokenType::Identifier, "myTable"}, {SqlTokenType::EndOfFile, ""}});
     check(61, "user_name", {{SqlTokenType::Identifier, "user_name"}, {SqlTokenType::EndOfFile, ""}});
     check(62, "_private", {{SqlTokenType::Identifier, "_private"}, {SqlTokenType::EndOfFile, ""}});

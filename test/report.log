@@ -1758,3 +1758,2256 @@ ComplexQueryTest
 [YES]DROP TABLE employees
 [YES]DROP TABLE departments
 [YES]DROP DATABASE cleanup
+====================
+ComplexQueryTest
+2026-05-16 20:18:56
+32/122
+[YES]CREATE DATABASE
+[YES]USE DATABASE
+[YES]CREATE TABLE employees
+[YES]CREATE TABLE departments
+[YES]CREATE TABLE projects
+[YES]CREATE TABLE assignments
+[YES]INSERT Alice
+[YES]INSERT Bob
+[NO]INSERT Carol
+[YES]INSERT Dave
+[YES]INSERT Eve
+[YES]INSERT Frank
+[YES]INSERT Grace
+[YES]INSERT Henry
+[YES]INSERT Eng dept
+[YES]INSERT Sales dept
+[YES]INSERT HR dept
+[YES]INSERT Alpha
+[YES]INSERT Beta
+[YES]INSERT Gamma
+[YES]INSERT Delta
+[YES]INSERT assign 1-1
+[NO]INSERT assign 1-2
+[YES]INSERT assign 2-1
+[YES]INSERT assign 3-3
+[YES]INSERT assign 4-2
+[YES]INSERT assign 5-4
+[YES]INSERT assign 6-4
+[YES]INSERT assign 7-1
+[YES]INSERT assign 8-3
+[NO]WHERE salary>6000 AND age<35
+[NO]WHERE salary>6000 OR age<25
+[NO]WHERE (A AND B) OR (C AND D)
+[NO]WHERE BETWEEN AND IN combined
+[NO]WHERE NOT (salary<6000)
+[NO]WHERE triple AND range
+[NO]WHERE (OR) AND combined
+[NO]WHERE LIKE OR pattern
+[NO]WHERE AND (OR) nested
+[NO]WHERE IN AND comparison
+[NO]WHERE NOT AND
+[NO]WHERE range AND <>
+[NO]WHERE AND AND BETWEEN
+[NO]WHERE (OR) AND (OR)
+[NO]WHERE LIKE contain AND compare
+[NO]WHERE 4 chained conditions
+[NO]INNER JOIN employees x departments
+[NO]LEFT JOIN employees x departments
+[NO]JOIN employees x projects via dept_id
+[NO]3-table JOIN employees-depts-projects
+[NO]JOIN employees x assignments
+[NO]3-table JOIN e-d-a
+[NO]3-table JOIN with composite ON
+[NO]LEFT JOIN + WHERE salary>7000
+[NO]JOIN + ORDER BY + LIMIT 3
+[NO]LEFT JOIN + GROUP BY COUNT
+[NO]JOIN + WHERE + ORDER BY cost
+[NO]JOIN + WHERE hours + ORDER + LIMIT
+[NO]SELF JOIN employees
+[NO]INNER + LEFT mixed JOINs
+[NO]3-table JOIN + WHERE hours>20
+[NO]Subquery IN departments budget
+[NO]Subquery NOT IN departments budget
+[NO]Correlated EXISTS subquery
+[NO]Scalar subquery AVG comparison
+[NO]Subquery IN assignments hours
+[NO]Subquery IN projects cost
+[NO]NOT EXISTS correlated subquery
+[NO]Scalar subquery MIN with filter
+[NO]Subquery with DISTINCT
+[NO]Scalar subquery exact match
+[NO]Nested subquery with JOIN
+[NO]Subqueries in BETWEEN
+[NO]GROUP BY dept with 4 aggregates
+[NO]GROUP BY + HAVING COUNT>2
+[NO]GROUP BY + HAVING AVG>7000
+[NO]JOIN + GROUP BY + aggregates
+[NO]JOIN + GROUP BY + HAVING >=2
+[NO]GROUP BY proj with SUM/AVG HAVING
+[NO]JOIN + GROUP BY + COUNT projects
+[NO]WHERE + GROUP BY + HAVING SUM
+[NO]GROUP BY with calculated range
+[NO]JOIN + correlated MAX subquery
+[NO]UNION two filtered sets
+[NO]UNION ALL duplicates kept
+[NO]Triple UNION all employees
+[NO]UNION ALL on departments
+[NO]UNION across different tables
+[NO]UNION with ORDER BY
+[NO]ORDER BY dept ASC salary DESC
+[NO]ORDER BY age DESC name ASC
+[NO]ORDER BY 3 cols + LIMIT 5
+[NO]ORDER BY dept+salary LIMIT 3
+[NO]ORDER BY hours DESC emp_id ASC
+[NO]ORDER BY salary DESC LIMIT 1 (top earner)
+[NO]ORDER BY age ASC LIMIT 1 (youngest)
+[NO]JOIN + ORDER BY dept+salary
+[NO]SELECT with expression alias
+[NO]SELECT with calculated score
+[NO]SELECT column alias department
+[NO]SELECT DISTINCT dept_id ORDER BY
+[NO]Complex WHERE IN ORDER LIMIT
+[NO]COUNT DISTINCT dept_id
+[NO]WHERE (range) OR equality
+[NO]WHERE BETWEEN AND <> AND LIKE
+[NO]3-table JOIN + WHERE + ORDER + LIMIT
+[NO]GROUP BY + HAVING 2 conds + ORDER
+[NO]Complex WHERE no match empty
+[NO]High salary no match empty
+[NO]Complex OR no match empty
+[NO]Impossible condition COUNT
+[NO]Maximum IN list all match
+[NO]JOIN + scalar MAX subquery
+[NO]5 aggregates + ORDER BY SUM
+[NO]3-table JOIN + WHERE + GROUP + HAVING
+[NO]Nested subquery 3 levels deep
+[NO]Scalar subquery in SELECT list
+[NO]DROP TABLE assignments
+[YES]DROP TABLE projects
+[YES]DROP TABLE employees
+[YES]DROP TABLE departments
+[YES]DROP DATABASE cleanup
+====================
+ConcurrencyTest
+2026-05-16 20:19:04
+112/139
+[YES]CREATE DATABASE conc_test_db
+[YES]USE DATABASE conc_test_db
+[YES]CREATE TABLE conc_users
+[YES]CREATE TABLE conc_logs
+[YES]CREATE TABLE conc_items
+[YES]Multiple connections: 1 concurrent SELECT id=1
+[YES]Multiple connections: 1 concurrent COUNT
+[YES]Multiple connections: 1 concurrent log SELECTs
+[YES]Multiple connections: 1 concurrent item SELECTs
+[YES]Multiple connections: 1 concurrent SHOW TABLES
+[NO]Multiple connections: 1 concurrent range SELECTs
+[YES]Multiple connections: 1 concurrent score>100
+[NO]Multiple connections: 1 concurrent LIKE log%
+[YES]Multiple connections: 1 concurrent qty>=50
+[YES]Multiple connections: 1 concurrent log COUNT
+[YES]Multiple connections: 1 concurrent ORDER BY
+[YES]Multiple connections: 1 concurrent item ORDER BY
+[YES]Multiple connections: 1 concurrent IN SELECTs
+[YES]Multiple connections: 1 concurrent range log
+[YES]Multiple connections: 1 concurrent item id<=10
+[YES]Multiple connections: 1 concurrent name='user25'
+[YES]Multiple connections: 1 concurrent ts='2024-01-05'
+[YES]Multiple connections: 1 concurrent val='item30'
+[YES]Multiple connections: 1 concurrent id>=40
+[YES]Multiple connections: 1 concurrent log_id<=3
+[NO]Multiple connections: 1 concurrent BETWEEN 5-15
+[NO]Multiple connections: 1 concurrent score BETWEEN
+[YES]Multiple connections: 1 concurrent msg='log15'
+[YES]Multiple connections: 1 concurrent qty=100
+[YES]Multiple connections: 1 concurrent id<5
+[YES]Multiple connections: 1 concurrent log_id>=25
+[YES]Multiple connections: 1 concurrent item_id>35
+[NO]Multiple connections: 1 concurrent name LIKE
+[NO]Multiple connections: 1 concurrent msg LIKE log2%
+[NO]Multiple connections: 1 concurrent val LIKE item1%
+[YES]Concurrent reads: 1 thread read all users
+[YES]Concurrent reads: 1 thread read all logs
+[YES]Concurrent reads: 1 thread read all items
+[YES]Concurrent reads: 1 thread COUNT users
+[YES]Concurrent reads: 1 thread COUNT logs
+[YES]Concurrent reads: 1 thread COUNT items
+[YES]Concurrent reads: 1 thread read user id=10
+[YES]Concurrent reads: 1 thread read log id=10
+[YES]Concurrent reads: 1 thread read item id=10
+[NO]Concurrent reads: 1 thread read user range
+[NO]Concurrent reads: 1 thread read log range
+[NO]Concurrent reads: 1 thread read item range
+[NO]Concurrent reads: 1 thread read user LIKE
+[NO]Concurrent reads: 1 thread read log LIKE
+[NO]Concurrent reads: 1 thread read item LIKE
+[YES]Concurrent reads: 1 thread read user score
+[YES]Concurrent reads: 1 thread read log msg
+[YES]Concurrent reads: 1 thread read item qty
+[YES]Concurrent reads: 1 thread read user ORDER BY
+[YES]Concurrent reads: 1 thread read log ORDER BY
+[YES]Concurrent reads: 1 thread read item ORDER BY
+[YES]Concurrent writes: 1 thread INSERT users
+[YES]Concurrent writes: 1 thread INSERT logs
+[YES]Concurrent writes: 1 thread INSERT items
+[YES]Concurrent writes: 1 thread UPDATE user score
+[YES]Concurrent writes: 1 thread UPDATE log msg
+[YES]Concurrent writes: 1 thread UPDATE item qty
+[YES]Concurrent writes: 1 thread DELETE user
+[YES]Concurrent writes: 1 thread DELETE log
+[YES]Concurrent writes: 1 thread DELETE item
+[YES]Concurrent writes: 1 thread INSERT then DELETE user
+[YES]Concurrent writes: 1 thread INSERT then DELETE log
+[YES]Concurrent writes: 1 thread INSERT then DELETE item
+[YES]Concurrent writes: 1 thread UPDATE then SELECT user
+[YES]Concurrent writes: 1 thread UPDATE then SELECT log
+[YES]Concurrent writes: 1 thread UPDATE then SELECT item
+[YES]Concurrent writes: 1 thread multi INSERT users
+[YES]Concurrent writes: 1 thread multi INSERT logs
+[YES]Concurrent writes: 1 thread multi INSERT items
+[NO]Concurrent writes: 1 thread UPDATE multiple users
+[YES]Concurrent writes: 1 thread UPDATE multiple logs
+[NO]Concurrent writes: 1 thread UPDATE multiple items
+[YES]Read-write concurrency: 1 read + 1 write users
+[NO]Read-write concurrency: 1 read + 1 write logs
+[YES]Read-write concurrency: 1 read + 1 write items
+[NO]Read-write concurrency: 1 read + 1 write users
+[NO]Read-write concurrency: 1 read + 1 write logs
+[NO]Read-write concurrency: 1 read + 1 write items
+[NO]Read-write concurrency: 1 read + 1 write users
+[YES]Read-write concurrency: 1 read + 1 write logs
+[NO]Read-write concurrency: 1 read + 1 write items
+[NO]Read-write concurrency: 1 read + 1 write user COUNT
+[NO]Read-write concurrency: 1 read + 1 write log COUNT
+[NO]Read-write concurrency: 1 read + 1 write item COUNT
+[YES]Read-write concurrency: 1 read + 1 write user range
+[YES]Read-write concurrency: 1 read + 1 write log range
+[YES]Read-write concurrency: 1 read + 1 write item range
+[YES]Read-write concurrency: 1 read + 1 write user LIKE
+[YES]Read-write concurrency: 1 read + 1 write log LIKE
+[YES]Read-write concurrency: 1 read + 1 write item LIKE
+[NO]Read-write concurrency: 1 read + 1 write user ORDER BY
+[NO]Read-write concurrency: 1 read + 1 write log ORDER BY
+[NO]Read-write concurrency: 1 read + 1 write item ORDER BY
+[YES]Connection lifecycle: Connect disconnect 3x
+[YES]Connection lifecycle: Connect disconnect 5x
+[YES]Connection lifecycle: Connect disconnect 4x
+[YES]Connection lifecycle: Connect send disconnect 3x
+[YES]Connection lifecycle: Connect send disconnect 5x
+[YES]Connection lifecycle: Connect send disconnect 4x
+[YES]Connection lifecycle: Rapid connect 3x
+[YES]Connection lifecycle: Rapid connect 5x
+[YES]Connection lifecycle: Rapid connect 4x
+[YES]Connection lifecycle: Connect multiple sends 3x
+[YES]Connection lifecycle: Connect multiple sends 5x
+[YES]Connection lifecycle: Connect multiple sends 4x
+[YES]Connection lifecycle: Connect idle disconnect 3x
+[YES]Connection lifecycle: Connect idle disconnect 5x
+[YES]Connection lifecycle: Connect idle disconnect 4x
+[YES]Connection lifecycle: Reconnect after drop 3x
+[YES]Connection lifecycle: Reconnect after drop 5x
+[YES]Connection lifecycle: Reconnect after drop 4x
+[YES]Connection lifecycle: Parallel connect close 3x
+[YES]Connection lifecycle: Parallel connect close 5x
+[YES]Version concurrency: 1 thread get version
+[YES]Version concurrency: 1 thread get version
+[YES]Version concurrency: 1 thread get version
+[YES]Version concurrency: 1 thread version then SELECT
+[YES]Version concurrency: 1 thread version then SELECT
+[YES]Version concurrency: 1 thread version then SELECT
+[YES]Version concurrency: 1 thread version then INSERT
+[YES]Version concurrency: 1 thread version then INSERT
+[YES]Version concurrency: 1 thread version then INSERT
+[YES]Version concurrency: 1 thread version then UPDATE
+[YES]Version concurrency: 1 thread version then UPDATE
+[YES]Version concurrency: 1 thread version then UPDATE
+[YES]Version concurrency: 1 thread version then DELETE
+[YES]Version concurrency: 1 thread version then DELETE
+[YES]Version concurrency: 1 thread version then DELETE
+[YES]Version concurrency: 1 thread version then COUNT
+[YES]Version concurrency: 1 thread version then COUNT
+[YES]Version concurrency: 1 thread version then COUNT
+[YES]Version concurrency: 1 thread version then SHOW
+[YES]Version concurrency: 1 thread version then SHOW
+[YES]DROP DATABASE conc_test_db
+====================
+DbVersionFullFlowTest
+2026-05-16 20:19:05
+91/128
+[YES]DB_VERSION_REQUEST returns DB_VERSION_RESPONSE with success
+[YES]DB_VERSION_RESPONSE has databases list
+[YES]DB_VERSION_RESPONSE dbVersion is 0
+[YES]DB_VERSION_REQUEST with empty user ID succeeds
+[YES]DB_VERSION_REQUEST with dbVersion set still succeeds
+[YES]Create multiple databases for DB_VERSION test
+[YES]DB_VERSION_RESPONSE lists multiple databases
+[YES]DB_VERSION_RESPONSE contains created databases
+[NO]DB_VERSION_RESPONSE all new databases have version 0
+[YES]DB_VERSION_RESPONSE excludes dropped databases
+[YES]DB_VERSION_RESPONSE type constant correct
+[YES]DB_VERSION_RESPONSE success flag true
+[YES]DB_VERSION_REQUEST repeated call stable
+[YES]DB_VERSION_RESPONSE databases vector valid
+[YES]DB_VERSION_REQUEST/RESPONSE basic flow placeholder
+[YES]DB_VERSION_RESPONSE after no changes stable
+[YES]DB_VERSION_REQUEST with large db count handled
+[YES]DB_VERSION_RESPONSE message field present
+[YES]DB_VERSION_REQUEST id field preserved in response
+[YES]DB_VERSION_RESPONSE rows empty for version request
+[YES]DB_VERSION_RESPONSE columns empty for version request
+[YES]CREATE DATABASE for flow test
+[YES]USE DATABASE for flow test
+[YES]CREATE DATABASE version starts at 0
+[YES]Server version 0 after CREATE DATABASE
+[YES]Version increments after CREATE TABLE
+[YES]Version increments by 1 on second CREATE TABLE
+[YES]Version increments by 1 on DROP TABLE
+[YES]Version increments by 1 on INSERT
+[YES]Version increments by 1 on UPDATE
+[YES]Version increments by 1 on DELETE
+[YES]Version increments by 1 on second INSERT
+[NO]Version increments by 1 on ALTER TABLE
+[NO]Version increments by 1 on TRUNCATE
+[NO]Version increments by 1 on INSERT after TRUNCATE
+[NO]Version increments by 1 on consecutive INSERT
+[YES]SELECT with correct version succeeds
+[YES]SQL_EXEC with version mismatch by 1 fails
+[YES]SQL_EXEC with version mismatch by 100 fails
+[YES]SQL_EXEC with version mismatch by large amount fails
+[YES]SQL_EXEC with version=0 on non-zero server fails
+[YES]SQL_EXEC response version is server version + 1 after read
+[NO]SQL_EXEC without version provided succeeds
+[YES]COUNT with correct version succeeds
+[YES]SELECT WHERE with correct version returns correct rows
+[NO]UPDATE with correct version succeeds
+[YES]DELETE with correct version succeeds
+[NO]INSERT with correct version succeeds
+[YES]SQL_EXEC with version one behind fails
+[YES]SQL_EXEC response version greater than request version
+[YES]SQL_EXEC correct version after CREATE TABLE
+[YES]SQL_EXEC correct version after DROP TABLE
+[YES]SQL_EXEC correct version after INSERT
+[YES]SQL_EXEC correct version after UPDATE
+[YES]SQL_EXEC correct version after DELETE
+[YES]SQL_EXEC correct version after ALTER TABLE
+[YES]SQL_EXEC correct version after TRUNCATE
+[YES]SQL_EXEC correct version after multiple operations
+[NO]SHOW TABLES without version has dbVersion 0
+[YES]SHOW DATABASES without dbName succeeds
+[YES]SQL_EXEC response contains positive dbVersion
+[YES]SQL_EXEC success response has no version mismatch message
+[YES]Version mismatch message contains 'version mismatch'
+[YES]Version mismatch response returns exact server version
+[YES]Correct version query returns SQL_QUERY_RESPONSE
+[NO]Correct version insert returns SQL_EXEC_RESPONSE
+[YES]Version increment on CREATE TABLE verified
+[YES]Version increment on DROP TABLE verified
+[NO]Version increment on INSERT verified
+[NO]Version increment on UPDATE verified
+[YES]Version increment on DELETE verified
+[NO]Version increment on ALTER TABLE ADD COLUMN verified
+[NO]Version increment on TRUNCATE verified
+[NO]Version increments twice for INSERT then UPDATE
+[NO]Version increments twice for UPDATE then DELETE
+[NO]Version increments twice for consecutive INSERTs
+[YES]Version increments twice for consecutive DELETEs
+[YES]Version increments for CREATE then DROP TABLE
+[NO]Version increment on ALTER TABLE DROP COLUMN
+[NO]Version increment on INSERT after ALTER
+[NO]Version increment on UPDATE all rows
+[YES]Version increment on DELETE with WHERE
+[NO]Version increment on INSERT single row
+[NO]Version increment on TRUNCATE with data
+[NO]Version increment on INSERT after TRUNCATE verified
+[YES]Version increment on CREATE TABLE second table
+[YES]Version increment on DROP TABLE second table
+[YES]DIRECTORY_REQUEST returns DIRECTORY_RESPONSE
+[YES]DIRECTORY_RESPONSE contains flow test database
+[YES]DIRECTORY_RESPONSE database has positive dbVersion
+[YES]DIRECTORY_REQUEST basic succeeds
+[NO]DIRECTORY version matches after INSERT
+[NO]DIRECTORY version matches after UPDATE
+[YES]DIRECTORY version matches after DELETE
+[YES]DIRECTORY_RESPONSE includes tables for database
+[YES]DIRECTORY_RESPONSE top-level dbVersion is 0
+[YES]DIRECTORY_REQUEST with empty user ID succeeds
+[YES]DIRECTORY_RESPONSE lists at least one database
+[NO]Multi-statement 2 INSERTs increments version once
+[NO]Multi-statement 3 INSERTs increments version once
+[NO]Multi-statement 5 INSERTs increments version once
+[NO]Multi-statement 2 UPDATEs increments version once
+[YES]Multi-statement 2 DELETEs increments version once
+[NO]Multi-statement INSERT+DELETE increments version once
+[YES]Multi-statement 2 SELECTs increments version once
+[NO]Multi-statement INSERT+SELECT increments version once
+[NO]Multi-statement UPDATE+SELECT increments version once
+[YES]Multi-statement mixed success/failure increments version once
+[YES]Version behavior with existing data stable
+[YES]UINT64_MAX version causes mismatch
+[YES]Rapid version query stable
+[NO]Version after failed operation not tested yet
+[YES]Duplicate INSERT with wrong version fails
+[YES]Failed SELECT with correct version still fails
+[YES]Duplicate CREATE TABLE with correct version fails
+[YES]DROP nonexistent table with correct version fails
+[YES]SQL_EXEC on nonexistent database fails
+[YES]Version after various operations is positive
+[NO]SHOW TABLES without version has dbVersion 0
+[NO]SELECT without version still works
+[NO]Edge case: version after successful INSERT
+[YES]Edge case: version after successful DELETE
+[NO]Edge case: version after UPDATE all rows
+[YES]DROP DATABASE cleanup succeeds
+[YES]DB_VERSION excludes database after DROP
+[YES]Re-CREATE DATABASE after DROP succeeds
+[YES]Re-created database version resets to 0
+[YES]Final DROP DATABASE cleanup
+====================
+DbVersionModelTest
+2026-05-16 20:19:05
+102/102
+[YES]NetworkTransferData default dbVersion=0
+[YES]setDbVersion/getDbVersion normal value
+[YES]setDbVersion 0 after non-zero
+[YES]setDbVersion UINT64_MAX
+[YES]setDbVersion minimum non-zero
+[YES]setDbVersion large value
+[YES]setDbVersion UINT64_MAX-1
+[YES]setDbVersion explicit 0
+[YES]setDbVersion overwrite smaller
+[YES]setDbVersion overwrite larger
+[YES]toJson/fromJson roundtrip dbVersion=0
+[YES]toJson/fromJson roundtrip dbVersion=12345
+[YES]toJson/fromJson roundtrip dbVersion=UINT64_MAX
+[YES]JSON contains dbVersion field
+[YES]Old JSON without dbVersion defaults to 0
+[YES]JSON dbVersion value serialized correctly
+[YES]JSON dbVersion UINT64_MAX serialized correctly
+[YES]DB_VERSION_REQUEST with dbVersion roundtrip
+[YES]DB_VERSION_RESPONSE with dbVersion roundtrip
+[YES]SQL_EXEC_REQUEST full roundtrip with dbVersion
+[YES]SQL_EXEC_RESPONSE full roundtrip with dbVersion
+[YES]SQL_QUERY_RESPONSE with dbVersion and rows roundtrip
+[YES]DIRECTORY_RESPONSE with dbVersion=0 roundtrip
+[YES]Multiple sequential setDbVersion calls
+[YES]JSON dbVersion 100 serialized correctly
+[YES]JSON dbVersion 0 serialized correctly
+[YES]dbVersion 999 roundtrip
+[YES]setDbVersion to max after min
+[YES]setDbVersion to 0 after max
+[YES]setDbVersion same value twice
+[YES]dbVersion field present in JSON for all values
+[YES]DatabaseNode default dbVersion=0
+[YES]DatabaseNode setDbVersion/getDbVersion
+[YES]DatabaseNode toJson/fromJson dbVersion
+[YES]DatabaseNode old JSON dbVersion defaults to 0
+[YES]DatabaseNode JSON contains dbVersion
+[YES]DatabaseNode setDbVersion UINT64_MAX
+[YES]DatabaseNode setDbVersion explicit 0
+[YES]DatabaseNode sequential setDbVersion
+[YES]DatabaseNode setDbVersion preserves other fields
+[YES]DatabaseNode with empty tables roundtrip
+[YES]DatabaseNode JSON name and dbVersion both present
+[YES]DatabaseNode large dbVersion roundtrip
+[YES]DatabaseNode UINT64_MAX-1 roundtrip
+[YES]DatabaseNode fromJson with dbVersion field
+[YES]DatabaseNode dbVersion=0 roundtrip
+[YES]DatabaseNode multiple setDbVersion calls
+[YES]DatabaseNode with multiple tables roundtrip
+[YES]DatabaseNode setDbVersion same value twice
+[YES]All fields preserved in JSON roundtrip
+[YES]Message field preserved with dbVersion
+[YES]Special characters in message preserved
+[YES]Empty message preserved with dbVersion
+[YES]DbName field preserved with dbVersion
+[YES]SQL field preserved with dbVersion
+[YES]Success field preserved with dbVersion
+[YES]AffectedRows field preserved with dbVersion
+[YES]Columns field preserved with dbVersion
+[YES]Rows field preserved with dbVersion
+[YES]Databases list preserved with dbVersion
+[YES]Password field preserved with dbVersion
+[YES]Unicode in id preserved with dbVersion
+[YES]Newlines in message preserved with dbVersion
+[YES]Unicode in dbName preserved with dbVersion
+[YES]Large columns array preserved with dbVersion
+[YES]Large rows array preserved with dbVersion
+[YES]Large databases array preserved with dbVersion
+[YES]Empty strings preserved with dbVersion
+[YES]Success=false preserved with dbVersion
+[YES]AffectedRows=0 preserved with dbVersion
+[YES]dbVersion key present in JSON
+[YES]dbVersion 22 roundtrip
+[YES]dbVersion 1000000 roundtrip
+[YES]Nested DatabaseNode with tables roundtrip
+[YES]Multiple setDbVersion before toJson
+[YES]DB_VERSION_REQUEST constant
+[YES]DB_VERSION_RESPONSE constant
+[YES]SQL_EXEC_REQUEST constant
+[YES]SQL_EXEC_RESPONSE constant
+[YES]SQL_QUERY_RESPONSE constant
+[YES]DIRECTORY_REQUEST constant
+[YES]DIRECTORY_RESPONSE constant
+[YES]LOGIN_REQUEST constant
+[YES]LOGIN_RESPONSE constant
+[YES]VERIFY_REQUEST constant
+[YES]VERIFY_RESPONSE constant
+[YES]ERROR_RESPONSE constant
+[YES]USE_DATABASE_REQUEST constant
+[YES]USE_DATABASE_RESPONSE constant
+[YES]Version mismatch error response format
+[YES]Short version mismatch message format
+[YES]Table not found error message format
+[YES]Duplicate PK error message format
+[YES]Syntax error message format
+[YES]ERROR_RESPONSE type preserved
+[YES]DB not found error with dbName
+[YES]Permission denied error message format
+[YES]Connection timeout error message format
+[YES]Invalid column type error message format
+[YES]FK constraint error message format
+[YES]Transaction rollback error message format
+[YES]Lock wait timeout error message format
+====================
+DbVersionStorageTest
+2026-05-16 20:19:05
+96/96
+[YES]getDatabaseVersion non-existent db returns 0
+[YES]getDatabaseVersion empty name returns 0
+[YES]getDatabaseVersion another non-existent returns 0
+[YES]getDatabaseVersion numeric-like name returns 0
+[YES]getDatabaseVersion single char name returns 0
+[YES]getDatabaseVersion after CREATE DATABASE is 0
+[YES]getDatabaseVersion after first increment is 1
+[YES]getDatabaseVersion after multiple increments
+[YES]getDatabaseVersion after DROP DATABASE is 0
+[YES]getDatabaseVersion after re-CREATE is 0
+[YES]getDatabaseVersion after re-CREATE increments
+[YES]getDatabaseVersion repeated read consistent
+[YES]getDatabaseVersion nonexistent after create others
+[YES]getDatabaseVersion another nonexistent
+[YES]getDatabaseVersion second db starts at 0
+[YES]getDatabaseVersion multiple dbs independent
+[YES]getDatabaseVersion after third increment
+[YES]getDatabaseVersion after sixth increment
+[YES]getDatabaseVersion dropped second db returns 0
+[YES]getDatabaseVersion first db unchanged after second dropped
+[YES]getDatabaseVersion .ver file exists
+[YES]getDatabaseVersion .ver file size correct
+[YES]addDatabaseVersion first increment after setup
+[YES]addDatabaseVersion sequential increments
+[YES]addDatabaseVersion large value increment
+[YES]addDatabaseVersion 100 times to 100099
+[YES]addDatabaseVersion UINT64_MAX overflow wraps to 0
+[YES]addDatabaseVersion UINT64_MAX-1 to UINT64_MAX
+[YES]addDatabaseVersion from 0 to 1
+[YES]addDatabaseVersion multiple dbs independence
+[YES]addDatabaseVersion third db sequential
+[YES]addDatabaseVersion empty name does not crash
+[YES]addDatabaseVersion from 50000 to 50001
+[YES]addDatabaseVersion from 1 to 2
+[YES]addDatabaseVersion 10 rapid increments
+[YES]addDatabaseVersion from 1 billion
+[YES]addDatabaseVersion from 32-bit max
+[YES].ver file exists on disk
+[YES].ver file size is sizeof(uint64_t)
+[YES]Version persists across reads
+[YES]Manual file modification reflected in read
+[YES]Manual file set to 0 reflected
+[YES].ver file still exists after modifications
+[YES].ver file exists for third database
+[YES].ver file size correct for third database
+[YES].ver file content matches expected value
+[YES].ver file has valid permissions
+[YES].ver file is regular file
+[YES].ver file content after increment
+[YES].ver file has valid last write time
+[YES].ver file parent directory exists
+[YES].ver file name correct
+[YES].ver file content after multiple increments
+[YES].ver file manual write 999
+[YES].ver file content after add from 1
+[YES].ver file existence stable
+[YES].ver file size always 8 bytes
+[YES].ver file third db content correct
+[YES]createDatabase version starts 0
+[YES]createDatabase then add version 0->1
+[YES]createDatabase then multiple adds
+[YES]createDatabase re-create resets version
+[YES]createDatabase re-create then add
+[YES]createDatabase temp db version 0
+[YES]createDatabase temp db add version
+[YES]createDatabase drop temp db version 0
+[YES]createDatabase second temp db version 0
+[YES]createDatabase second temp db multiple adds
+[YES]createDatabase cleanup temp db2
+[YES]createDatabase third temp db succeeds
+[YES]createDatabase cleanup temp db3
+[YES]createDatabase first db version stable after temp ops
+[YES]dropDatabase returns 0 after drop
+[YES]dropDatabase .ver file removed
+[YES]dropDatabase re-create and add
+[YES]dropDatabase after adds returns 0
+[YES]dropDatabase immediate drop after create
+[YES]dropDatabase nonexistent does not crash
+[YES]dropDatabase empty name does not crash
+[YES]dropDatabase before drop version correct
+[YES]dropDatabase after adds returns 0
+[YES]dropDatabase .ver file removed for drop_test_db
+[YES]dropDatabase create then drop cycle
+[YES]dropDatabase re-create after drop version 0
+[YES]dropDatabase cleanup drop_test_db2
+[YES]dropDatabase cleanup DB3
+[YES]getAllDatabases contains created db
+[YES]getAllDatabases version matches getDatabaseVersion
+[YES]getAllDatabases contains multiple dbs
+[YES]getAllDatabases excludes dropped db
+[YES]getAllDatabases excludes second dropped db
+[YES]getAllDatabases returns valid list
+[YES]getAllDatabases contains db with version
+[YES]getAllDatabases version consistency check
+[YES]getAllDatabases cleanup cons_db3
+[YES]getAllDatabases final state valid
+====================
+ExecutorCRUDTest
+2026-05-16 20:19:07
+135/135
+[YES]CREATE DATABASE normal
+[YES]CREATE DATABASE with numbers
+[YES]CREATE DATABASE with underscore
+[YES]CREATE DATABASE mixed case
+[YES]CREATE DATABASE tempdb1
+[YES]Reject CREATE DATABASE duplicate
+[YES]Reject CREATE DATABASE IF NOT EXISTS
+[YES]Reject CREATE DATABASE IF NOT EXISTS new
+[YES]CREATE DATABASE db_2
+[YES]CREATE DATABASE db_3
+[YES]USE DATABASE crud_test_db
+[YES]USE DATABASE db123numbers
+[YES]Reject USE non-existent database
+[YES]USE DATABASE underscore db
+[YES]USE DATABASE switch back
+[YES]CREATE TABLE test_users full schema
+[YES]CREATE TABLE INT type
+[YES]CREATE TABLE VARCHAR NOT NULL
+[YES]CREATE TABLE FLOAT type
+[YES]CREATE TABLE DOUBLE type
+[YES]Reject CREATE TABLE BOOLEAN type
+[YES]Reject CREATE TABLE TEXT type
+[YES]Reject CREATE TABLE CHECK constraint
+[YES]Reject CREATE TABLE composite PK
+[YES]CREATE TABLE AUTO_INCREMENT
+[YES]CREATE TABLE multiple DEFAULTs
+[YES]CREATE TABLE multiple NOT NULL
+[YES]Reject CREATE TABLE duplicate
+[YES]Reject CREATE TABLE IF NOT EXISTS
+[YES]CREATE TABLE multi-constraint column
+[YES]CREATE TABLE edge column name
+[YES]INSERT full row Alice
+[YES]INSERT full row Bob
+[YES]INSERT partial row defaults
+[YES]INSERT partial row with email
+[YES]INSERT Eve
+[YES]INSERT Frank
+[YES]INSERT Grace
+[YES]INSERT OReilly
+[YES]INSERT large INT value
+[YES]INSERT zero age and score
+[YES]INSERT low score
+[YES]INSERT Henry
+[YES]INSERT Ivan
+[YES]INSERT Jack
+[YES]INSERT Kate
+[YES]Reject INSERT duplicate PK
+[YES]Reject INSERT NOT NULL violation
+[YES]Reject INSERT UNIQUE violation
+[YES]Reject INSERT into non-existent table
+[YES]SELECT * returns 15 rows
+[YES]SELECT specific columns
+[YES]Reject SELECT alias AS
+[YES]SELECT WHERE = filter
+[YES]SELECT WHERE <> filter
+[YES]SELECT WHERE age < 30
+[YES]SELECT WHERE age > 30
+[YES]SELECT WHERE age <= 25
+[YES]SELECT WHERE age >= 35
+[YES]SELECT WHERE AND range
+[YES]SELECT WHERE OR condition
+[YES]SELECT WHERE BETWEEN
+[YES]SELECT WHERE LIKE prefix A%
+[YES]SELECT WHERE LIKE suffix %e
+[YES]SELECT WHERE LIKE contain %li%
+[YES]SELECT WHERE LIKE wildcard Alic_
+[YES]SELECT WHERE IN list
+[YES]SELECT WHERE IS NULL
+[YES]SELECT WHERE IS NOT NULL
+[YES]SELECT ORDER BY age ASC
+[YES]SELECT ORDER BY age DESC
+[YES]SELECT ORDER BY multiple columns
+[YES]SELECT LIMIT 5
+[YES]SELECT LIMIT 3
+[YES]SELECT DISTINCT dept_id
+[YES]SELECT aggregate COUNT(*)
+[YES]SELECT aggregate SUM(age)
+[YES]SELECT aggregate AVG(score)
+[YES]SELECT aggregate MIN MAX
+[YES]SELECT WHERE + ORDER BY + LIMIT
+[YES]Reject SELECT non-existent table
+[YES]SELECT non-existent column (server accepts)
+[YES]SELECT empty result non-existent age
+[YES]SELECT COUNT(*) with alias
+[YES]SELECT ORDER BY DESC LIMIT 2
+[YES]SELECT WHERE AND compound
+[YES]SELECT WHERE OR compound
+[YES]SELECT WHERE IN strings
+[YES]UPDATE simple SET age
+[YES]Verify UPDATE age=26
+[YES]UPDATE multiple columns
+[YES]Verify UPDATE multi-col
+[YES]UPDATE with = condition
+[YES]Verify UPDATE = condition result
+[YES]UPDATE affecting 0 rows
+[YES]UPDATE affecting many rows
+[YES]Reject UPDATE non-existent table
+[YES]UPDATE duplicate PK (server accepts)
+[YES]UPDATE NOT NULL violation (server accepts)
+[YES]Reject UPDATE expression
+[YES]UPDATE with <= condition
+[YES]Verify UPDATE <= condition result
+[YES]DELETE single row id=15
+[YES]Verify DELETE count after single
+[YES]DELETE 0 rows non-existent id
+[YES]DELETE many rows dept_id=1
+[YES]Verify DELETE many count
+[YES]Reject DELETE non-existent table
+[YES]DELETE WHERE username='Bob'
+[YES]Verify DELETE Bob count
+[YES]DELETE WHERE age > 40
+[YES]Verify DELETE age>40 count
+[YES]DELETE all remaining rows
+[YES]Verify DELETE all count
+[YES]CREATE TABLE temp_edge_insert
+[YES]INSERT into temp_edge_insert
+[YES]INSERT wrong column count into temp
+[YES]INSERT wrong type into temp
+[YES]DROP TABLE temp_edge_insert
+[YES]CREATE TABLE for drop test
+[YES]DROP TABLE temp_for_drop
+[YES]Reject DROP TABLE IF NOT EXISTS
+[YES]Reject DROP TABLE non-existent
+[YES]DROP DATABASE db123numbers
+[YES]DROP DATABASE underscore db
+[YES]DROP DATABASE mixed case
+[YES]DROP DATABASE tempdb1
+[YES]DROP DATABASE another_db (not created)
+[YES]DROP DATABASE new_db (not created)
+[YES]DROP DATABASE db_2
+[YES]DROP DATABASE db_3
+[YES]DROP TABLE test_users
+[YES]DROP DATABASE crud_test_db final cleanup
+[YES]Verify database dropped (USE fails)
+[YES]Verify table gone after DROP DATABASE
+====================
+ExecutorDDLTest
+2026-05-16 20:19:08
+120/158
+[YES]CREATE DATABASE normal
+[YES]CREATE DATABASE with numbers
+[YES]CREATE DATABASE with underscore
+[YES]CREATE DATABASE mixed case
+[YES]CREATE DATABASE multiple underscores and numbers
+[YES]CREATE DATABASE single char
+[YES]CREATE DATABASE uppercase
+[YES]CREATE DATABASE long mixed name
+[YES]Reject CREATE DATABASE duplicate
+[YES]SHOW DATABASES after creates
+[YES]CREATE DATABASE another
+[YES]SHOW DATABASES has multiple
+[YES]DROP DATABASE with numbers
+[YES]DROP DATABASE with underscore
+[YES]Reject DROP DATABASE nonexistent
+[YES]Setup CREATE for drop test
+[YES]Setup USE for drop test
+[YES]Setup CREATE TABLE in db to drop
+[YES]Setup INSERT in db to drop
+[YES]DROP DATABASE with tables and data
+[YES]Reject double DROP DATABASE
+[YES]Reject USE after DROP
+[YES]USE DATABASE normal
+[YES]Reject USE nonexistent database
+[YES]USE DATABASE switch to another
+[YES]USE DATABASE switch back
+[YES]Reject USE DATABASE missing name
+[YES]CREATE TABLE INT
+[YES]CREATE TABLE VARCHAR
+[YES]CREATE TABLE FLOAT
+[YES]CREATE TABLE DOUBLE
+[YES]CREATE TABLE CHAR
+[YES]CREATE TABLE DATE
+[YES]CREATE TABLE DATETIME
+[YES]CREATE TABLE PRIMARY KEY
+[YES]CREATE TABLE NOT NULL
+[YES]CREATE TABLE UNIQUE
+[YES]CREATE TABLE DEFAULT int
+[YES]CREATE TABLE DEFAULT string
+[YES]CREATE TABLE AUTO_INCREMENT
+[YES]CREATE TABLE FOREIGN KEY
+[YES]CREATE TABLE multiple columns
+[YES]CREATE TABLE single column
+[YES]CREATE TABLE no constraints
+[YES]CREATE TABLE PK+NOT NULL
+[YES]CREATE TABLE multiple constraints
+[YES]CREATE TABLE DEFAULT float
+[YES]CREATE TABLE DEFAULT double
+[YES]DROP TABLE normal
+[YES]Reject DROP TABLE nonexistent
+[YES]Setup INSERT before drop
+[YES]DROP TABLE after insert
+[YES]Setup DROP TABLE multiple 1
+[YES]Setup DROP TABLE multiple 2
+[YES]DROP TABLE first of multiple
+[YES]DROP TABLE second of multiple
+[YES]Setup DROP then recreate
+[YES]DROP TABLE for recreate
+[YES]CREATE TABLE after drop recreate
+[YES]DROP TABLE recreated table
+[YES]SHOW TABLES baseline
+[YES]Setup SHOW TABLES 1
+[YES]Setup SHOW TABLES 2
+[YES]Setup SHOW TABLES 3
+[YES]SHOW TABLES has 3 new tables
+[YES]Setup DROP for SHOW TABLES
+[YES]SHOW TABLES after drop
+[YES]SHOW TABLES uses session db
+[YES]SHOW DATABASES baseline
+[YES]Setup SHOW DATABASES 1
+[YES]Setup SHOW DATABASES 2
+[YES]SHOW DATABASES after creates
+[YES]Setup DROP for SHOW DATABASES
+[YES]Setup DROP 2 for SHOW DATABASES
+[YES]SHOW DATABASES after drops
+[NO]Setup AUTO_INCREMENT table
+[NO]AUTO_INCREMENT explicit value 1
+[NO]AUTO_INCREMENT explicit value 2
+[NO]AUTO_INCREMENT verify explicit value 1
+[NO]AUTO_INCREMENT verify explicit value 2
+[NO]AUTO_INCREMENT explicit value 5
+[NO]AUTO_INCREMENT sequential after 5
+[NO]AUTO_INCREMENT verify value 6
+[NO]AUTO_INCREMENT delete middle row
+[NO]AUTO_INCREMENT gap handling after delete
+[NO]AUTO_INCREMENT gap fill value 7
+[NO]AUTO_INCREMENT explicit large value
+[NO]AUTO_INCREMENT after large explicit
+[NO]AUTO_INCREMENT next after 100 is 101
+[NO]AUTO_INCREMENT second table
+[NO]AUTO_INCREMENT second table insert
+[NO]AUTO_INCREMENT second table value 1
+[NO]Setup UNIQUE table
+[NO]UNIQUE valid insert 1
+[NO]UNIQUE valid insert 2
+[YES]Reject UNIQUE duplicate
+[NO]UNIQUE insert empty string
+[YES]Reject UNIQUE duplicate empty string
+[NO]Setup multiple UNIQUE columns
+[NO]UNIQUE multi valid insert
+[YES]Reject UNIQUE multi first col dup
+[YES]Reject UNIQUE multi second col dup
+[NO]Setup UNIQUE NOT NULL
+[NO]UNIQUE NOT NULL valid insert
+[YES]Reject UNIQUE NOT NULL duplicate
+[NO]Setup DEFAULT table
+[NO]DEFAULT missing columns get defaults
+[NO]DEFAULT verify INT and VARCHAR defaults
+[NO]DEFAULT explicit values override
+[NO]DEFAULT verify explicit override
+[NO]Setup DEFAULT with PK
+[NO]DEFAULT with PK missing
+[NO]DEFAULT verify PK default 100
+[NO]Setup DEFAULT FLOAT
+[NO]DEFAULT FLOAT explicit insert
+[NO]Setup DEFAULT NOT NULL
+[NO]DEFAULT NOT NULL missing gets default
+[NO]DEFAULT NOT NULL explicit overrides
+[YES]Reject ALTER TABLE ADD COLUMN
+[YES]Reject ALTER TABLE DROP COLUMN
+[YES]Reject ALTER TABLE MODIFY COLUMN
+[YES]Reject ALTER TABLE nonexistent table
+[YES]Reject ALTER TABLE RENAME
+[YES]Reject ALTER TABLE ADD with DEFAULT
+[YES]Reject ALTER TABLE ADD FLOAT
+[YES]Reject ALTER TABLE ADD DOUBLE
+[YES]Reject ALTER TABLE ADD DATE
+[YES]Reject ALTER TABLE ADD CHAR
+[YES]Reject ALTER TABLE ADD VARCHAR
+[YES]Reject ALTER TABLE ADD NOT NULL
+[YES]Reject ALTER TABLE ADD PK
+[YES]Reject ALTER TABLE ADD UNIQUE
+[YES]Reject ALTER TABLE DROP nonexistent column
+[YES]Reject TRUNCATE TABLE
+[YES]Reject TRUNCATE TABLE nonexistent
+[YES]Reject TRUNCATE TABLE with data
+[YES]Reject TRUNCATE TABLE empty table
+[YES]Reject TRUNCATE without TABLE keyword
+[YES]Reject TRUNCATE TABLE missing name
+[YES]Reject TRUNCATE multiple tables
+[YES]Reject TRUNCATE TABLE CASCADE
+[YES]Reject TRUNCATE TABLE qualified name
+[YES]Reject TRUNCATE TABLE number name
+[YES]Reject CREATE TABLE BOOLEAN unsupported
+[YES]Reject CREATE TABLE TEXT unsupported
+[YES]Reject CREATE TABLE CHECK unsupported
+[YES]Reject CREATE TABLE missing name
+[YES]Reject CREATE TABLE no columns
+[YES]Reject CREATE TABLE empty column name
+[YES]Reject CREATE TABLE duplicate column
+[YES]Reject CREATE TABLE VARCHAR(0)
+[YES]Reject CREATE TABLE duplicate name
+[YES]Reject CREATE TABLE name too long
+[YES]Reject CHECK single condition
+[YES]Reject CHECK compound condition
+[YES]Reject CHECK string condition
+[YES]Reject CHECK multiple columns
+[YES]Reject CHECK table-level constraint
+====================
+ExecutorJoinAggTest
+2026-05-16 20:20:46
+38/173
+[YES]CREATE DATABASE
+[YES]USE DATABASE
+[YES]CREATE TABLE orders
+[YES]CREATE TABLE customers
+[YES]CREATE TABLE products
+[YES]CREATE TABLE categories
+[YES]CREATE TABLE employees
+[YES]CREATE TABLE departments
+[YES]INSERT customer Alice
+[YES]INSERT customer Bob
+[YES]INSERT customer Carol
+[YES]INSERT customer Dave
+[YES]INSERT customer Eve
+[YES]INSERT category Electronics
+[YES]INSERT category Clothing
+[YES]INSERT category Food
+[YES]INSERT product Laptop
+[YES]INSERT product Shirt
+[YES]INSERT product Phone
+[YES]INSERT product Apple
+[YES]INSERT product Jeans
+[YES]INSERT dept Engineering
+[YES]INSERT dept Sales
+[YES]INSERT dept HR
+[YES]INSERT emp John
+[YES]INSERT emp Jane
+[YES]INSERT emp Jim
+[YES]INSERT emp Jack
+[YES]INSERT emp Jill
+[YES]INSERT order 1
+[YES]INSERT order 2
+[YES]INSERT order 3
+[YES]INSERT order 4
+[YES]INSERT order 5
+[YES]INSERT order 6
+[YES]INSERT order 7
+[YES]INSERT order 8
+[NO]INNER JOIN orders+customers
+[NO]LEFT JOIN customers+orders
+[NO]RIGHT JOIN orders+customers
+[NO]JOIN default INNER
+[NO]SELF JOIN customers
+[NO]JOIN with WHERE
+[NO]JOIN with ORDER BY
+[NO]JOIN with LIMIT
+[NO]JOIN orders+products
+[NO]Triple JOIN
+[NO]JOIN employees+departments
+[NO]LEFT JOIN employees+departments
+[NO]RIGHT JOIN employees+departments
+[NO]JOIN with multiple conditions
+[NO]JOIN 4 tables
+[NO]JOIN + WHERE + ORDER BY
+[NO]JOIN + WHERE + LIMIT
+[NO]JOIN with expression alias
+[NO]JOIN with WHERE on joined table
+[NO]LEFT JOIN find non-ordering customers
+[NO]JOIN with BETWEEN
+[NO]JOIN with LIKE
+[NO]JOIN with IN
+[NO]SELF JOIN with region
+[NO]JOIN with multi-column ORDER BY
+[NO]Triple JOIN ORDER BY LIMIT
+[NO]LEFT JOIN orders+customers
+[NO]LEFT JOIN + GROUP BY + COUNT
+[NO]JOIN + GROUP BY + SUM
+[NO]JOIN + GROUP BY + AVG
+[NO]JOIN + GROUP BY product counts
+[NO]JOIN with subquery in WHERE
+[NO]JOIN with AND condition
+[NO]JOIN with OR condition
+[NO]Triple JOIN with WHERE
+[NO]JOIN with LIMIT only
+[NO]CROSS JOIN
+[NO]JOIN ORDER BY ASC
+[NO]JOIN + GROUP BY + HAVING SUM
+[NO]JOIN + GROUP BY city HAVING COUNT
+[NO]JOIN with equality on PK
+[NO]JOIN with not equal
+[NO]JOIN with >=
+[NO]JOIN with <=
+[NO]JOIN + WHERE + ORDER BY salary
+[NO]Triple JOIN price filter
+[NO]JOIN GROUP BY region SUM
+[NO]JOIN with COUNT DISTINCT
+[NO]COUNT(*) orders
+[NO]COUNT(column) orders
+[NO]COUNT(*) customers
+[NO]SUM amount orders
+[NO]SUM qty orders
+[NO]AVG amount orders
+[NO]AVG salary employees
+[NO]MIN amount orders
+[NO]MAX amount orders
+[NO]MIN MAX salary employees
+[NO]MIN MAX AVG price products
+[NO]Multiple aggregates together
+[NO]COUNT with WHERE
+[NO]SUM with WHERE customer_id=1
+[NO]AVG with WHERE qty>1
+[NO]MIN MAX with WHERE customer_id=2
+[NO]SUM on joined tables with WHERE
+[NO]COUNT on joined tables
+[NO]AVG on joined tables
+[NO]COUNT DISTINCT customer_id
+[NO]SUM DISTINCT amount
+[NO]COUNT with alias
+[NO]SUM with alias
+[NO]AVG with alias
+[NO]COUNT triple join
+[NO]COUNT with GROUP BY
+[NO]SUM AVG with GROUP BY
+[NO]MIN MAX with GROUP BY product
+[NO]Aggregates on joined tables GROUP BY
+[NO]COUNT empty result
+[NO]GROUP BY single column
+[NO]GROUP BY multiple columns
+[NO]GROUP BY with SUM
+[NO]GROUP BY with AVG
+[NO]GROUP BY dept_id COUNT
+[NO]GROUP BY dept_id MIN MAX
+[NO]GROUP BY + HAVING COUNT>1
+[NO]GROUP BY + HAVING SUM>200
+[NO]GROUP BY region HAVING COUNT>=2
+[NO]GROUP BY city HAVING COUNT=2
+[NO]GROUP BY with WHERE
+[NO]GROUP BY ORDER BY COUNT DESC
+[NO]GROUP BY ORDER BY SUM ASC
+[NO]GROUP BY on joined table
+[NO]GROUP BY joined table HAVING
+[NO]GROUP BY department names COUNT
+[NO]GROUP BY dept AVG ORDER BY
+[NO]GROUP BY product HAVING COUNT>=1
+[NO]GROUP BY city constant agg
+[NO]GROUP BY WHERE HAVING ORDER BY
+[NO]GROUP BY multi-col HAVING COUNT=1
+[NO]HAVING with COUNT>1
+[NO]HAVING with SUM>300
+[NO]HAVING with AVG>100
+[NO]HAVING with MIN>50000
+[NO]HAVING with MAX<100000
+[NO]HAVING combined with WHERE
+[NO]HAVING on joined tables COUNT
+[NO]HAVING on joined tables SUM
+[NO]HAVING region COUNT>2
+[NO]HAVING dept AVG>60000
+[NO]HAVING complex AND condition
+[NO]HAVING COUNT=2
+[NO]HAVING dept COUNT>=2
+[NO]HAVING COUNT BETWEEN
+[NO]HAVING joined SUM range
+[NO]HAVING joined MIN MAX range
+[NO]ORDER BY COUNT(*) DESC
+[NO]ORDER BY SUM(amount) ASC
+[NO]ORDER BY AVG(salary) DESC
+[NO]ORDER BY COUNT(*) ASC LIMIT
+[NO]ORDER BY SUM on joined table
+[NO]ORDER BY COUNT on joined dept
+[NO]ORDER BY MAX(amount) DESC
+[NO]ORDER BY COUNT(*) ASC region
+[NO]UNION customers+departments
+[NO]UNION ALL customers+departments
+[NO]UNION employees+customers
+[NO]UNION orders+products ids
+[NO]UNION ALL categories+products
+[NO]UNION with ORDER BY
+[NO]UNION with LIMIT
+[NO]UNION products+categories
+[NO]UNION ALL same table
+[NO]Triple UNION
+[NO]UNION with WHERE clauses
+[NO]UNION same table different WHERE
+[YES]DROP all tables and database
+====================
+NetworkAuthTest
+2026-05-16 20:21:49
+131/140
+[YES]VERIFY correct credentials
+[YES]VERIFY wrong password rejected
+[YES]VERIFY empty password rejected
+[YES]VERIFY empty user rejected
+[YES]VERIFY empty user and password rejected
+[YES]VERIFY non-existent user rejected
+[YES]VERIFY case sensitivity user Root
+[YES]VERIFY repeat correct credentials
+[YES]VERIFY off-by-one password rejected
+[YES]VERIFY short password rejected
+[YES]VERIFY very long password rejected
+[YES]VERIFY very long username rejected
+[YES]VERIFY after failed attempt
+[YES]VERIFY special char password rejected
+[YES]VERIFY password with space rejected
+[YES]VERIFY username with spaces rejected
+[YES]VERIFY multiple sequential verify
+[YES]VERIFY uppercase ROOT rejected
+[YES]VERIFY after login attempt still works
+[YES]VERIFY SQL injection-like password rejected
+[YES]VERIFY semicolon injection password rejected
+[YES]LOGIN correct credentials
+[YES]LOGIN wrong password rejected
+[YES]LOGIN empty user rejected
+[YES]LOGIN empty password rejected
+[YES]LOGIN non-existent user rejected
+[YES]LOGIN case sensitivity user Root
+[YES]LOGIN uppercase ROOT rejected
+[YES]LOGIN repeat correct credentials
+[YES]LOGIN off-by-one password rejected
+[YES]LOGIN short password rejected
+[YES]LOGIN very long password rejected
+[YES]LOGIN very long username rejected
+[YES]LOGIN special char password rejected
+[YES]LOGIN password with space rejected
+[YES]LOGIN username with spaces rejected
+[YES]LOGIN SQL injection-like password rejected
+[YES]LOGIN semicolon injection password rejected
+[YES]LOGIN repeated login same connection
+[YES]LOGIN wrong after correct rejected
+[YES]LOGIN multiple sequential login
+[YES]LOGIN after verify succeeds
+[YES]LOGIN completely unknown user rejected
+[NO]SQL before login fails
+[YES]SQL after login succeeds
+[YES]SQL after verify succeeds
+[YES]CREATE DATABASE via authed conn
+[YES]USE DATABASE via authed conn
+[YES]CREATE TABLE via authed conn
+[YES]INSERT via authed conn
+[YES]SELECT via authed conn
+[NO]SQL on second connection
+[NO]SQL without auth on new conn fails
+[YES]DROP TABLE via authed conn
+[YES]DROP DATABASE cleanup
+[YES]SQL after verify on new conn
+[NO]SQL with different user than login fails
+[YES]SQL show databases authed
+[YES]SQL show tables authed
+[YES]SQL invalid command fails gracefully
+[YES]SQL empty command fails
+[YES]SQL after verify without login
+[YES]SQL on nonexistent table fails
+[YES]USE nonexistent database fails
+[YES]Malformed JSON rejected
+[YES]Empty message handled
+[YES]Very large SQL handled
+[YES]Special characters in SQL handled
+[YES]Multi-statement batch handled
+[YES]Connection drop handled
+[YES]Reconnect and execute SQL
+[YES]Concurrent connections same user
+[YES]Concurrent verify same user
+[NO]Unauthed conn cannot run SQL while other authed
+[YES]Unicode in SQL handled
+[YES]Protocol binary length prefix correct
+[YES]Raw JSON login request works
+[YES]Rapid sequential requests
+[NO]SQL without auth rejected
+[NO]SQL create db after login
+[YES]Very large message handled
+[YES]Missing password in JSON rejected
+[YES]Unknown type in raw JSON rejected
+[YES]Connection reuse after login
+[NO]Multiple SQL on same authed conn
+[YES]Empty request type rejected
+[YES]Verify empty id rejected
+[YES]Verify after connection reset
+[YES]Three concurrent authed connections
+[YES]DB_VERSION_REQUEST succeeds
+[YES]DIRECTORY_REQUEST succeeds
+[YES]USE_DATABASE_REQUEST handled
+[YES]Unknown request type rejected
+[YES]VERIFY_RESPONSE as request rejected
+[YES]LOGIN_RESPONSE as request rejected
+[YES]SQL_EXEC_RESPONSE as request rejected
+[YES]SQL_QUERY_RESPONSE as request rejected
+[YES]DIRECTORY_RESPONSE as request rejected
+[YES]DB_VERSION_RESPONSE as request rejected
+[YES]ERROR_RESPONSE as request rejected
+[YES]DB_VERSION without auth
+[YES]DIRECTORY without auth
+[YES]DB_VERSION after login
+[YES]DIRECTORY after login
+[YES]DB_VERSION after verify
+[YES]USE_DATABASE nonexistent handled
+[YES]RANDOM_TYPE rejected
+[YES]Empty type string rejected
+[NO]SQL_EXEC without prior auth rejected
+[YES]SQL_EXEC after login succeeds
+[YES]SQL_EXEC after verify succeeds
+[YES]USE_DATABASE after login handled
+[YES]Error message not empty on bad verify
+[YES]Error message not empty on bad login
+[YES]SQL syntax error returns failure
+[YES]SQL missing table error
+[YES]Duplicate CREATE DATABASE error
+[YES]INSERT into missing table error
+[YES]SELECT from missing table error
+[YES]DELETE from missing table error
+[YES]UPDATE missing table error
+[YES]DROP missing table error
+[YES]Error message differs for different failures
+[YES]Login error type consistency
+[YES]SQL error on unauthed connection
+[YES]USE missing database error
+[YES]SELECT with missing column error
+[YES]CREATE TABLE bad type error
+[YES]INSERT empty values error
+[YES]Malformed request type error
+[YES]DROP missing database error
+[YES]Verify success message not empty
+[YES]Login success message not empty
+[YES]SQL success returns rows
+[YES]CREATE then DROP database success
+[YES]Repeated verify same connection
+[YES]Verify fail then success again
+[YES]Verify missing password field rejected
+[YES]Login missing password field rejected
+[YES]Error response contains message
+====================
+ParserTest
+2026-05-16 20:22:52
+80/105
+[YES]Parse CREATE DATABASE
+[YES]Parse CREATE DATABASE with numbers
+[YES]Reject CREATE DATABASE no name
+[YES]Parse CREATE DATABASE underscore prefix
+[YES]Parse CREATE TABLE
+[YES]Parse CREATE TABLE constraints
+[NO]Parse CREATE TABLE TEXT
+[YES]Parse CREATE TABLE FLOAT
+[YES]Parse CREATE TABLE DOUBLE
+[YES]Parse CREATE TABLE AUTO_INCREMENT
+[YES]Parse CREATE TABLE UNIQUE
+[YES]Parse CREATE TABLE multiple columns
+[NO]Parse CREATE TABLE BOOLEAN
+[YES]Parse CREATE TABLE NOT NULL
+[YES]Parse CREATE TABLE DEFAULT
+[YES]Parse CREATE TABLE VARCHAR length
+[YES]Parse INSERT INTO VALUES
+[YES]Parse INSERT column list
+[YES]Parse INSERT mixed types
+[YES]Parse INSERT single column
+[YES]Parse INSERT many values
+[YES]Parse SELECT *
+[YES]Parse SELECT specific columns
+[YES]Parse SELECT WHERE
+[YES]Parse SELECT AND condition
+[NO]Parse SELECT BETWEEN
+[NO]Parse SELECT LIKE
+[YES]Parse SELECT IN
+[YES]Parse SELECT ORDER BY ASC
+[YES]Parse SELECT ORDER BY DESC
+[YES]Parse SELECT LIMIT
+[NO]Parse SELECT DISTINCT
+[NO]Parse SELECT IS NULL
+[NO]Parse SELECT IS NOT NULL
+[NO]Parse SELECT NOT condition
+[YES]Parse SELECT NOT IN
+[NO]Parse SELECT NOT LIKE
+[NO]Parse SELECT NOT BETWEEN
+[NO]Parse SELECT column alias
+[YES]Parse SELECT COUNT(*)
+[YES]Parse SELECT SUM/AVG
+[YES]Parse SELECT MIN/MAX
+[YES]Parse SELECT parenthesized OR+AND
+[YES]Parse SELECT mixed AND/OR
+[NO]Parse SELECT table.column
+[NO]Parse SELECT EXISTS subquery
+[YES]Parse SELECT INNER JOIN
+[YES]Parse SELECT LEFT JOIN
+[YES]Parse SELECT RIGHT JOIN
+[NO]Parse SELECT JOIN (default INNER)
+[NO]Parse SELECT JOIN + GROUP BY
+[YES]Parse SELECT GROUP BY
+[YES]Parse SELECT GROUP BY + HAVING
+[YES]Parse SELECT GROUP BY with SUM
+[NO]Parse DROP TABLE
+[YES]Parse DROP DATABASE
+[YES]Parse SHOW DATABASES
+[YES]Parse SHOW TABLES
+[YES]Parse USE DATABASE
+[YES]Parse USE short form
+[YES]Parse DELETE WHERE
+[YES]Parse DELETE complex WHERE
+[YES]Parse UPDATE SET WHERE
+[YES]Parse UPDATE multiple SET
+[YES]Parse UPDATE AND condition
+[YES]Parse UNION SELECT
+[YES]Parse UNION ALL SELECT
+[YES]Parse SELECT ORDER BY + LIMIT
+[YES]Parse SELECT WHERE+ORDER BY+LIMIT
+[NO]Parse ALTER TABLE ADD COLUMN
+[NO]Parse TRUNCATE TABLE
+[YES]Reject invalid SQL
+[YES]Reject incomplete SELECT
+[YES]Reject CREATE TABLE without columns
+[YES]Reject INSERT without values
+[YES]Reject INSERT empty values
+[YES]Reject SELECT WHERE no condition
+[YES]Reject ORDER BY no column
+[YES]Reject DROP TABLE no name
+[YES]Reject UPDATE SET empty
+[NO]Reject DELETE without WHERE
+[YES]Reject standalone JOIN
+[NO]Parse COUNT as identifier (not function)
+[YES]Reject empty SQL
+[YES]Reject SELECT without FROM
+[YES]Reject UPDATE without SET
+[NO]Parse CREATE DATABASE IF NOT EXISTS
+[YES]Parse SELECT table alias
+[NO]Parse SELECT multiple LIKE OR
+[YES]Parse SELECT many cols + conditions
+[YES]Parse SELECT NOT IN subquery
+[YES]Parse SELECT nested parentheses
+[YES]Parse INSERT 4 columns mixed
+[YES]Parse INSERT 5 values
+[YES]Parse UPDATE 4 SET columns WHERE
+[YES]Parse UPDATE WHERE IN list
+[NO]Parse DELETE WHERE BETWEEN
+[NO]Parse DELETE WHERE IS NULL
+[YES]Parse SELECT MAX
+[YES]Parse SELECT MIN
+[NO]Parse SELECT ORDER BY multiple
+[YES]Parse SELECT range AND
+[YES]Parse SELECT OR + equality
+[YES]Parse SHOW DATABASE specific
+[YES]Parse SHOW TABLE specific
+====================
+PerformanceTest
+2026-05-16 20:24:26
+85/148
+[YES]CREATE DATABASE perf_test_db
+[YES]USE DATABASE perf_test_db
+[YES]CREATE TABLE perf_users
+[YES]CREATE TABLE perf_orders
+[YES]CREATE TABLE perf_items
+[YES]INSERT 100 rows into perf_users
+[YES]SELECT * returns 100 rows
+[YES]COUNT(*) on 100 rows
+[NO]SELECT WHERE id > 50 returns 50 rows
+[NO]UPDATE 50 rows salary + 1000
+[YES]DELETE 10 rows
+[YES]Verify 90 rows after DELETE
+[YES]INSERT another 100 rows (total 200)
+[YES]SELECT * returns 190 rows
+[YES]MIN/MAX/AVG on 190 rows
+[YES]SUM on 190 rows
+[YES]ORDER BY DESC on 190 rows
+[NO]ORDER BY multiple columns on 190 rows
+[NO]DISTINCT on 190 rows
+[YES]LIMIT 50 on large table
+[YES]LIMIT 10 on large table
+[NO]BETWEEN on 190 rows
+[NO]LIKE prefix on 190 rows
+[YES]WHERE salary > 50000
+[NO]UPDATE all 190 rows
+[YES]DELETE 50 rows
+[YES]Verify 140 rows after DELETE 50
+[YES]COUNT with WHERE on 140 rows
+[YES]IN clause on 140 rows
+[YES]ORDER BY DESC LIMIT 20
+[YES]GROUP BY on 140 rows
+[YES]Combined WHERE on 140 rows
+[YES]OR condition on 140 rows
+[YES]Exact match on 140 rows
+[YES]Range scan on 140 rows
+[YES]ORDER BY name LIMIT 30
+[NO]Non-existent row on large table
+[NO]Impossible condition on large table
+[NO]IS NOT NULL on 140 rows
+[NO]LIKE contains on 140 rows
+[NO]Modulo condition on 140 rows
+[YES]ORDER BY ASC LIMIT 100
+[YES]ORDER BY salary DESC LIMIT 5
+[YES]Multiple aggregates on 140 rows
+[YES]Multiple OR conditions
+[YES]Complex WHERE with AND
+[NO]Multi-column ORDER BY LIMIT
+[NO]Multiple LIKE patterns
+[YES]NOT IN clause
+[NO]BETWEEN on salary
+[NO]Complex combined WHERE
+[YES]LIMIT 1 on large table
+[YES]LIMIT 1 DESC on large table
+[NO]COUNT DISTINCT on 140 rows
+[YES]SELECT all via id > 0
+[YES]Multiple OR age values
+[NO]LIMIT OFFSET on 140 rows
+[YES]Wide salary range returns all
+[NO]Deleted row not found
+[NO]Single row lookup by PK
+[YES]Combined WHERE+ORDER BY+LIMIT
+[NO]LIKE + WHERE + ORDER BY
+[YES]GROUP BY + ORDER BY aggregates
+[NO]BETWEEN + WHERE + ORDER BY DESC + LIMIT
+[NO]DISTINCT + WHERE + ORDER BY DESC
+[YES]Complex OR + AND + ORDER BY + LIMIT
+[YES]Large IN clause + ORDER BY
+[NO]LIKE + BETWEEN + WHERE + ORDER BY + LIMIT
+[YES]Multiple aggregates + WHERE
+[NO]Range + WHERE + multi ORDER BY + LIMIT
+[NO]NOT with OR + ORDER BY + LIMIT
+[NO]Multi-column GROUP BY + ORDER BY + LIMIT
+[NO]Multiple AND conditions + ORDER BY DESC + LIMIT
+[YES]Salary range + IN + ORDER BY + LIMIT
+[NO]ORDER BY + LIMIT + OFFSET
+[YES]Multiple OR id values + ORDER BY
+[NO]Four conditions + multi ORDER BY + LIMIT
+[YES]GROUP BY + HAVING + ORDER BY
+[YES]Complex OR with AND groups + ORDER BY + LIMIT
+[NO]DISTINCT multi-column + WHERE + ORDER BY + LIMIT
+[NO]BETWEEN + NOT IN + WHERE + ORDER BY + LIMIT
+[NO]Multiple LIKE OR + ORDER BY + LIMIT
+[NO]Multiple OR age + multi ORDER BY + LIMIT
+[YES]Four range conditions + ORDER BY DESC + LIMIT
+[NO]Aliases + GROUP BY + ORDER BY + LIMIT
+[NO]Modulo + WHERE + ORDER BY + LIMIT
+[YES]Range + OR group + ORDER BY DESC + LIMIT
+[NO]Three-column ORDER BY + LIMIT
+[NO]LIKE + three AND + ORDER BY + LIMIT
+[YES]IN + WHERE + ORDER BY
+[NO]NOT IN + WHERE + ORDER BY + LIMIT
+[NO]Double BETWEEN + multi ORDER BY + LIMIT
+[YES]Nested AND/OR + ORDER BY + LIMIT
+[YES]COUNT with three AND conditions
+[YES]Five aggregates + WHERE
+[NO]LIMIT 1 OFFSET 50
+[NO]LIMIT 1 OFFSET 100
+[NO]LIMIT 1 OFFSET 130
+[NO]LIMIT 1 OFFSET 139 (last row)
+[NO]LIMIT 1 OFFSET 140 (beyond end)
+[YES]Highest salary row
+[YES]Lowest salary row
+[YES]Highest age row
+[YES]Lowest age row
+[NO]PK lookup single row
+[NO]PK lookup another row
+[NO]PK lookup non-existent row
+[NO]PK range scan 21 rows
+[NO]PK range scan another 21 rows
+[NO]PK range scan 50 rows ordered
+[NO]PK range scan 40 rows reverse
+[NO]PK lookup 3 specific rows
+[YES]First 10 rows by PK
+[YES]Last 10 rows by PK
+[NO]First 50 rows
+[NO]Middle 50 rows
+[NO]Last 50 rows
+[YES]First 100 rows
+[NO]100 rows with offset 40
+[YES]Top 20 by salary
+[YES]Bottom 20 by salary
+[YES]Top 20 by age
+[YES]Bottom 20 by age
+[YES]First 20 by name
+[YES]Last 20 by name
+[YES]Full table scan under 5 seconds
+[YES]COUNT(*) under 2 seconds
+[YES]PK lookup under 1 second
+[YES]Top 10 sort under 3 seconds
+[YES]Filtered scan under 3 seconds
+[YES]Aggregates under 2 seconds
+[NO]Range scan under 2 seconds
+[NO]DISTINCT sort under 3 seconds
+[NO]Multi-column sort under 5 seconds
+[YES]Filtered COUNT under 2 seconds
+[NO]LIKE scan under 3 seconds
+[YES]IN lookup under 2 seconds
+[YES]Complex query under 5 seconds
+[YES]GROUP BY under 5 seconds
+[NO]OFFSET query under 2 seconds
+[YES]All rows query under 5 seconds
+[YES]Multiple aggregates under 2 seconds
+[YES]Range + sort + limit under 3 seconds
+[NO]Multi-condition multi-sort under 5 seconds
+[YES]DROP TABLE perf_users
+[YES]DROP TABLE perf_orders
+[YES]DROP TABLE perf_items
+[YES]DROP DATABASE perf_test_db
+====================
+StressTest
+2026-05-16 20:25:28
+6/95
+[YES]CREATE DATABASE
+[YES]USE DATABASE
+[YES]CREATE TABLE t1 basic
+[NO]CREATE TABLE t2 with BOOLEAN/DOUBLE
+[NO]CREATE TABLE t3 AUTO_INCREMENT TEXT
+[NO]CREATE TABLE 10 columns
+[NO]CREATE TABLE single PK column
+[NO]INSERT 10 rows individually
+[NO]INSERT 50 more rows (60 total)
+[NO]INSERT 50 rows into t2
+[NO]INSERT 30 rows AUTO_INCREMENT
+[NO]INSERT 20 rows into 10-col table
+[NO]SELECT * 60 rows
+[NO]SELECT WHERE id>30 returns 30
+[NO]SELECT WHERE age BETWEEN
+[NO]SELECT ORDER BY age ASC 60 rows
+[NO]SELECT ORDER BY score DESC 60 rows
+[NO]SELECT LIMIT 10 from 60
+[NO]SELECT LIMIT 25 from 60
+[NO]SELECT ORDER BY DESC LIMIT 5
+[NO]SELECT DISTINCT age from 60 rows
+[NO]COUNT(*) on 60 rows
+[NO]Aggregates on 60 rows
+[NO]LIKE prefix on 60 rows
+[NO]LIKE suffix on 60 rows
+[NO]SELECT IN list 6 matches
+[NO]SELECT range 10-20 returns 11
+[NO]CREATE TABLE t4 for JOIN
+[NO]INSERT 40 rows into t4
+[NO]INNER JOIN t1 x t4 (40 rows)
+[NO]LEFT JOIN t1 x t4 (60 rows)
+[NO]JOIN + WHERE on large tables
+[NO]JOIN + ORDER BY + LIMIT 10
+[NO]COUNT on JOIN result
+[NO]GROUP BY age on 60 rows
+[NO]GROUP BY + HAVING on 60 rows
+[NO]GROUP BY with SUM/AVG
+[NO]GROUP BY BOOLEAN on t2
+[NO]Rapid UPDATE 10 rows
+[NO]INSERT 10 more rows (70 total)
+[NO]DELETE 10 rows back to 60
+[NO]SELECT * 10-col table 20 rows
+[NO]SELECT subset columns wide table
+[NO]Multiple aggregates on wide table
+[NO]UPDATE wide table 5 rows
+[NO]CREATE TABLE for edge cases
+[NO]INSERT edge case 0 int
+[NO]INSERT long string large int
+[NO]INSERT empty string negative int
+[NO]INSERT special characters
+[NO]SELECT edge case long string
+[NO]SELECT edge case negative int
+[NO]CREATE empty_tbl
+[NO]SELECT empty table returns 0 rows
+[NO]COUNT(*) on empty table
+[NO]SUM on empty table
+[NO]INSERT single row into empty
+[NO]SELECT 1 row from previously empty
+[NO]UPDATE single row table
+[NO]DELETE only row from table
+[NO]SELECT empty after DELETE only row
+[NO]DROP empty_tbl
+[NO]SHOW TABLES after many creates
+[YES]SHOW DATABASES under load
+[NO]Rapid query cycle 1 failed
+[NO]Rapid query cycle 2 failed
+[NO]Rapid query cycle 3 failed
+[NO]Rapid query cycle 4 failed
+[NO]Rapid query cycle 5 failed
+[NO]Rapid query cycle 6 failed
+[NO]Rapid query cycle 7 failed
+[NO]Rapid query cycle 8 failed
+[NO]Rapid query cycle 9 failed
+[NO]Rapid query cycle 10 failed
+[YES]10 rapid COUNT(*) queries
+[NO]SELECT specific id from 60
+[NO]SELECT 4 cols WHERE range ORDER BY
+[NO]SELECT complex WHERE ORDER BY LIMIT
+[NO]Aggregates on first 30 rows
+[NO]DROP edge_tbl
+[NO]RECREATE edge_tbl
+[NO]INSERT into recreated table
+[NO]SELECT from recreated table
+[NO]DROP recreated edge_tbl
+[NO]UNION two ranges from same table
+[NO]UNION ALL duplicates 10 rows
+[NO]SELECT with subquery IN
+[NO]SELECT with EXISTS subquery
+[NO]DROP t4
+[NO]DROP t3
+[NO]DROP t2
+[NO]DROP wide_tbl
+[NO]DROP t1
+[NO]DROP pk_only
+[YES]DROP DATABASE cleanup
+====================
+TokenizerTest
+2026-05-16 20:26:28
+143/163
+[YES]TK-1 SELECT
+[YES]TK-2 FROM
+[YES]TK-3 WHERE
+[YES]TK-4 INSERT
+[YES]TK-5 INTO
+[YES]TK-6 VALUES
+[YES]TK-7 DELETE
+[YES]TK-8 UPDATE
+[YES]TK-9 SET
+[YES]TK-10 CREATE
+[YES]TK-11 TABLE
+[YES]TK-12 DATABASE
+[YES]TK-13 DROP
+[YES]TK-14 SHOW
+[YES]TK-15 USE
+[YES]TK-16 INT
+[YES]TK-17 VARCHAR
+[YES]TK-18 PRIMARY
+[YES]TK-19 KEY
+[YES]TK-20 NOT
+[YES]TK-21 NULL
+[YES]TK-22 DEFAULT
+[YES]TK-23 ORDER
+[YES]TK-24 BY
+[YES]TK-25 GROUP
+[YES]TK-26 HAVING
+[YES]TK-27 JOIN
+[YES]TK-28 INNER
+[YES]TK-29 LEFT
+[YES]TK-30 RIGHT
+[YES]TK-31 ON
+[YES]TK-32 AS
+[YES]TK-33 AND
+[YES]TK-34 OR
+[YES]TK-35 IN
+[YES]TK-36 EXISTS
+[YES]TK-37 UNION
+[YES]TK-38 ALL
+[NO]TK-39 ALTER
+[NO]TK-40 TRUNCATE
+[YES]TK-41 LIKE
+[NO]TK-42 BETWEEN
+[YES]TK-43 COUNT
+[YES]TK-44 SUM
+[YES]TK-45 AVG
+[YES]TK-46 MIN
+[YES]TK-47 MAX
+[YES]TK-48 LIMIT
+[NO]TK-49 DISTINCT
+[YES]TK-50 ASC
+[YES]TK-51 DESC
+[YES]TK-52 UNIQUE
+[YES]TK-53 AUTO_INCREMENT
+[YES]TK-54 BOOLEAN
+[NO]TK-55 FALSE
+[NO]TK-56 TRUE
+[NO]TK-57 select
+[NO]TK-58 Select
+[NO]TK-59 create table
+[YES]TK-60 myTable
+[YES]TK-61 user_name
+[YES]TK-62 _private
+[YES]TK-63 id123
+[YES]TK-64 a
+[YES]TK-65 col_name_1
+[YES]TK-66 t1
+[YES]TK-67 __double_underscore
+[YES]TK-68 t1234567890
+[YES]TK-69 123
+[YES]TK-70 0
+[YES]TK-71 123.456
+[YES]TK-72 0.5
+[YES]TK-73 1000000
+[YES]TK-74 00
+[YES]TK-75 3.14159
+[YES]TK-76 999
+[YES]TK-77 'hello'
+[YES]TK-78 "world"
+[YES]TK-79 ''
+[YES]TK-80 'it''s'
+[YES]TK-81 'a'
+[YES]TK-82 ""
+[YES]TK-83 'hello world'
+[YES]TK-84 '123'
+[YES]TK-85 '_underscore_string_'
+[YES]TK-86 =
+[YES]TK-87 <>
+[YES]TK-88 <=
+[YES]TK-89 >=
+[YES]TK-90 !=
+[YES]TK-91 ||
+[YES]TK-92 &&
+[YES]TK-93 +
+[YES]TK-94 -
+[YES]TK-95 *
+[YES]TK-96 /
+[YES]TK-97 <
+[YES]TK-98 >
+[YES]TK-99 %
+[NO]TK-100 ~
+[NO]TK-101 &
+[NO]TK-102 |
+[NO]TK-103 ^
+[NO]TK-104 <<
+[NO]TK-105 >>
+[YES]TK-106 ,
+[YES]TK-107 ;
+[YES]TK-108 (
+[YES]TK-109 )
+[YES]TK-110 .
+[NO]TK-111 :
+[NO]TK-112 ?
+[YES]TK-113 -- comment
+[YES]TK-114 /* comment */
+[YES]TK-115 SELECT /* inline */ 1
+[YES]TK-116 SELECT -- inline
+1
+[YES]TK-117 /* multi
+line */SELECT
+[YES]TK-118 --
+[YES]TK-119 /**/
+[YES]TK-120 SELECT/**/1
+[YES]TK-121 SELECT--comment
+1
+[YES]TK-122 /*comment*/SELECT/*c2*/1/*c3*/
+[YES]TK-123 
+[YES]TK-124    
+[YES]TK-125 	
+
+[YES]TK-126  	 
+  
+[YES]TK-127 
+
+
+
+[YES]TK-128 		
+[YES]TK-129 a.b
+[YES]TK-130 a.b.c
+[YES]TK-131 1+2
+[YES]TK-132 a>=b
+[YES]TK-133 a<>b
+[YES]TK-134 1-2*3
+[YES]TK-135 SELECT * FROM t;
+[YES]TK-136 CREATE TABLE t (id INT);
+[YES]TK-137 INSERT INTO t VALUES (1, 'a');
+[YES]TK-138 SELECT * FROM t WHERE id >= 1;
+[YES]TK-139 SELECT COUNT(*) FROM t GROUP BY name HAV
+[YES]TK-140 USE DATABASE mydb;
+[NO]TK-141 SELECT DISTINCT name FROM users;
+[YES]TK-142 UPDATE users SET age = 30 WHERE id = 1;
+[YES]TK-143 DELETE FROM users WHERE id = 5;
+[YES]TK-144 SELECT * FROM t WHERE name LIKE 'A%';
+[YES]TK-145 SELECT * FROM t WHERE id IN (1, 2, 3);
+[YES]TK-146 SELECT * FROM t1 INNER JOIN t2 ON t1.id 
+[YES]TK-147 SELECT id FROM t ORDER BY id DESC LIMIT 
+[NO]TK-148 SELECT a FROM t WHERE a BETWEEN 1 AND 10
+[YES]TK-149 SELECT a AS alias FROM t;
+[YES]TK-150 SHOW TABLES;
+[YES]TK-151 SHOW DATABASES;
+[YES]TK-152 DROP TABLE t;
+[YES]TK-153 DROP DATABASE db;
+[NO]TK-154 TRUNCATE TABLE t;
+[YES]TK-155 SELECT COUNT(*) FROM t1 UNION SELECT COU
+[YES]TK-156 @
+[YES]TK-157 #
+[YES]TK-158 `backtick`
+[YES]TK-159 SELECT @var
+[YES]TK-160 peekToken/hasMoreTokens/position
+[YES]TK-161 hasMoreTokens false on empty input
+[YES]TK-162 only whitespace returns EOF
+[YES]TK-163 reset() changes input
+====================
+ExecutorErrorTest
+2026-05-16 20:26:30
+108/135
+[YES]Setup CREATE DATABASE
+[YES]Setup USE DATABASE
+[YES]Setup CREATE TABLE
+[YES]Setup INSERT row 1
+[YES]Setup INSERT row 2
+[YES]Reject SELECT nonexistent table
+[YES]Reject INSERT nonexistent table
+[YES]Reject UPDATE nonexistent table
+[YES]Reject DELETE nonexistent table
+[YES]Reject DROP nonexistent table
+[YES]Reject USE nonexistent database
+[YES]Reject DROP DATABASE nonexistent
+[YES]Reject INSERT wrong column count few
+[YES]Reject INSERT wrong column count many
+[YES]Reject INSERT unknown column
+[NO]Reject SELECT unknown column
+[NO]Reject WHERE unknown column
+[NO]Reject ORDER BY unknown column
+[NO]Reject GROUP BY unknown column
+[YES]Reject UPDATE unknown column
+[NO]Reject DELETE WHERE unknown column
+[YES]Reject CREATE TABLE duplicate
+[YES]Reject CREATE DATABASE duplicate
+[YES]SELECT type mismatch in WHERE treated as string compare
+[NO]Reject INSERT string into PK INT
+[NO]Reject HAVING unknown column
+[NO]Reject UPDATE WHERE unknown column
+[YES]Reject INSERT missing PK column
+[NO]Reject SHOW TABLE nonexistent
+[NO]Reject qualified unknown column
+[YES]Setup row 3 for semantic tests
+[YES]Reject PK duplicate
+[YES]Reject UNIQUE duplicate email
+[YES]Reject UNIQUE duplicate email b
+[YES]Reject NOT NULL violation missing name
+[YES]Setup valid row 10
+[NO]Reject UPDATE PK to existing value
+[YES]Reject UPDATE UNIQUE to existing value
+[NO]UPDATE name to empty string allowed
+[YES]Setup valid row 11
+[YES]Reject multi-row INSERT PK dup
+[YES]Setup VARCHAR(5) table
+[YES]VARCHAR(5) insert exactly 5 chars
+[YES]VARCHAR(5) insert longer string allowed as TEXT
+[YES]Setup CHAR(3) table
+[YES]CHAR(3) insert exactly 3 chars
+[YES]CHAR(3) insert longer string allowed as TEXT
+[YES]Setup DATE table
+[YES]DATE invalid format accepted as TEXT
+[YES]DATE valid format insert
+[NO]Reject INSERT string into INT column
+[YES]Reject INSERT string into INT via partial
+[YES]Setup valid row 13
+[NO]Reject UPDATE string into INT
+[NO]Reject INT overflow
+[YES]Reject multiple constraint violation PK+UNIQUE
+[YES]Setup valid row 15
+[NO]Reject UPDATE PK to another existing
+[YES]Boundary max positive INT
+[NO]Boundary min negative INT
+[NO]Boundary zero value
+[NO]Boundary empty string
+[YES]Boundary 255 chars into VARCHAR(5) allowed
+[YES]Boundary special characters in string
+[YES]Boundary single space string
+[YES]Boundary float with many decimals
+[NO]Boundary negative float
+[NO]Boundary far future date
+[YES]Boundary SELECT from nonexistent
+[NO]Boundary SELECT non-existent row empty result
+[YES]Boundary small positive value
+[NO]Boundary negative one
+[NO]Boundary another small value
+[YES]Reject very long SQL
+[NO]CREATE TABLE with many columns
+[YES]CREATE TABLE very long name accepted
+[YES]CREATE TABLE very long column name accepted
+[YES]Very long string value allowed
+[YES]INSERT massive value list
+[YES]Deeply nested WHERE parentheses
+[YES]CREATE TABLE many VARCHAR columns
+[YES]Reject INSERT version mismatch
+[YES]Reject UPDATE stale version 0
+[YES]Reject DELETE version mismatch
+[YES]Reject CREATE TABLE version mismatch
+[YES]Reject DROP TABLE stale version
+[YES]Reject SELECT version mismatch
+[YES]Reject SHOW TABLES version mismatch
+[YES]Version increment after INSERT
+[YES]Version increment after second INSERT
+[YES]SELECT with correct version after inserts
+[YES]Version increment after UPDATE
+[YES]Version increment after DELETE
+[YES]Reject VERIFY wrong password
+[YES]Reject VERIFY empty user
+[YES]Reject LOGIN wrong password
+[YES]Reject LOGIN non-existent user
+[YES]SQL_EXEC with empty user ID
+[YES]SQL_EXEC with special chars user ID
+[YES]DB_VERSION_REQUEST without auth
+[YES]DIRECTORY_REQUEST without auth
+[YES]Reject unknown request type
+[YES]Reject LOGIN empty password
+[YES]Reject empty SQL
+[YES]Reject whitespace only SQL
+[YES]Reject incomplete SELECT
+[YES]Reject incomplete CREATE
+[YES]Reject INSERT missing table
+[YES]Reject DROP TABLE missing name
+[YES]Reject unmatched parenthesis
+[YES]Reject missing value after operator
+[YES]Reject missing close paren CREATE
+[YES]Reject missing close paren INSERT
+[YES]Reject invalid operator
+[YES]Reject malformed string literal
+[YES]Reject invalid number format
+[YES]Reject wrong keyword order
+[YES]Reject DELETE missing table
+[YES]Reject UPDATE missing table
+[YES]Reject SELECT missing columns
+[NO]Reject double semicolon
+[YES]Reject INSERT missing VALUES
+[YES]Reject CREATE TABLE missing name
+[YES]Reject INSERT missing INTO
+[YES]Reject invalid token in WHERE
+[YES]Reject CREATE TABLE duplicate column
+[YES]Reject CREATE TABLE no columns
+[YES]Reject CREATE TABLE empty column name
+[YES]Reject VARCHAR negative length
+[YES]Reject double ORDER BY
+[YES]Reject CHECK constraint parse
+[YES]Reject NULL literal in value list
+[YES]Reject BOOLEAN type
+[YES]Reject TEXT type
+[NO]Multiple JOINs parse
+====================
+TokenizerTest
+2026-05-16 20:30:07
+152/163
+[YES]TK-1 SELECT
+[YES]TK-2 FROM
+[YES]TK-3 WHERE
+[YES]TK-4 INSERT
+[YES]TK-5 INTO
+[YES]TK-6 VALUES
+[YES]TK-7 DELETE
+[YES]TK-8 UPDATE
+[YES]TK-9 SET
+[YES]TK-10 CREATE
+[YES]TK-11 TABLE
+[YES]TK-12 DATABASE
+[YES]TK-13 DROP
+[YES]TK-14 SHOW
+[YES]TK-15 USE
+[YES]TK-16 INT
+[YES]TK-17 VARCHAR
+[YES]TK-18 PRIMARY
+[YES]TK-19 KEY
+[YES]TK-20 NOT
+[YES]TK-21 NULL
+[YES]TK-22 DEFAULT
+[YES]TK-23 ORDER
+[YES]TK-24 BY
+[YES]TK-25 GROUP
+[YES]TK-26 HAVING
+[YES]TK-27 JOIN
+[YES]TK-28 INNER
+[YES]TK-29 LEFT
+[YES]TK-30 RIGHT
+[YES]TK-31 ON
+[YES]TK-32 AS
+[YES]TK-33 AND
+[YES]TK-34 OR
+[YES]TK-35 IN
+[YES]TK-36 EXISTS
+[YES]TK-37 UNION
+[YES]TK-38 ALL
+[YES]TK-39 ALTER
+[YES]TK-40 TRUNCATE
+[YES]TK-41 LIKE
+[YES]TK-42 BETWEEN
+[YES]TK-43 COUNT
+[YES]TK-44 SUM
+[YES]TK-45 AVG
+[YES]TK-46 MIN
+[YES]TK-47 MAX
+[YES]TK-48 LIMIT
+[YES]TK-49 DISTINCT
+[YES]TK-50 ASC
+[YES]TK-51 DESC
+[YES]TK-52 UNIQUE
+[YES]TK-53 AUTO_INCREMENT
+[YES]TK-54 BOOLEAN
+[YES]TK-55 FALSE
+[YES]TK-56 TRUE
+[NO]TK-57 select
+[NO]TK-58 Select
+[NO]TK-59 create table
+[YES]TK-60 myTable
+[YES]TK-61 user_name
+[YES]TK-62 _private
+[YES]TK-63 id123
+[YES]TK-64 a
+[YES]TK-65 col_name_1
+[YES]TK-66 t1
+[YES]TK-67 __double_underscore
+[YES]TK-68 t1234567890
+[YES]TK-69 123
+[YES]TK-70 0
+[YES]TK-71 123.456
+[YES]TK-72 0.5
+[YES]TK-73 1000000
+[YES]TK-74 00
+[YES]TK-75 3.14159
+[YES]TK-76 999
+[YES]TK-77 'hello'
+[YES]TK-78 "world"
+[YES]TK-79 ''
+[YES]TK-80 'it''s'
+[YES]TK-81 'a'
+[YES]TK-82 ""
+[YES]TK-83 'hello world'
+[YES]TK-84 '123'
+[YES]TK-85 '_underscore_string_'
+[YES]TK-86 =
+[YES]TK-87 <>
+[YES]TK-88 <=
+[YES]TK-89 >=
+[YES]TK-90 !=
+[YES]TK-91 ||
+[YES]TK-92 &&
+[YES]TK-93 +
+[YES]TK-94 -
+[YES]TK-95 *
+[YES]TK-96 /
+[YES]TK-97 <
+[YES]TK-98 >
+[YES]TK-99 %
+[NO]TK-100 ~
+[NO]TK-101 &
+[NO]TK-102 |
+[NO]TK-103 ^
+[NO]TK-104 <<
+[NO]TK-105 >>
+[YES]TK-106 ,
+[YES]TK-107 ;
+[YES]TK-108 (
+[YES]TK-109 )
+[YES]TK-110 .
+[NO]TK-111 :
+[NO]TK-112 ?
+[YES]TK-113 -- comment
+[YES]TK-114 /* comment */
+[YES]TK-115 SELECT /* inline */ 1
+[YES]TK-116 SELECT -- inline
+1
+[YES]TK-117 /* multi
+line */SELECT
+[YES]TK-118 --
+[YES]TK-119 /**/
+[YES]TK-120 SELECT/**/1
+[YES]TK-121 SELECT--comment
+1
+[YES]TK-122 /*comment*/SELECT/*c2*/1/*c3*/
+[YES]TK-123 
+[YES]TK-124    
+[YES]TK-125 	
+
+[YES]TK-126  	 
+  
+[YES]TK-127 
+
+
+
+[YES]TK-128 		
+[YES]TK-129 a.b
+[YES]TK-130 a.b.c
+[YES]TK-131 1+2
+[YES]TK-132 a>=b
+[YES]TK-133 a<>b
+[YES]TK-134 1-2*3
+[YES]TK-135 SELECT * FROM t;
+[YES]TK-136 CREATE TABLE t (id INT);
+[YES]TK-137 INSERT INTO t VALUES (1, 'a');
+[YES]TK-138 SELECT * FROM t WHERE id >= 1;
+[YES]TK-139 SELECT COUNT(*) FROM t GROUP BY name HAV
+[YES]TK-140 USE DATABASE mydb;
+[YES]TK-141 SELECT DISTINCT name FROM users;
+[YES]TK-142 UPDATE users SET age = 30 WHERE id = 1;
+[YES]TK-143 DELETE FROM users WHERE id = 5;
+[YES]TK-144 SELECT * FROM t WHERE name LIKE 'A%';
+[YES]TK-145 SELECT * FROM t WHERE id IN (1, 2, 3);
+[YES]TK-146 SELECT * FROM t1 INNER JOIN t2 ON t1.id 
+[YES]TK-147 SELECT id FROM t ORDER BY id DESC LIMIT 
+[YES]TK-148 SELECT a FROM t WHERE a BETWEEN 1 AND 10
+[YES]TK-149 SELECT a AS alias FROM t;
+[YES]TK-150 SHOW TABLES;
+[YES]TK-151 SHOW DATABASES;
+[YES]TK-152 DROP TABLE t;
+[YES]TK-153 DROP DATABASE db;
+[YES]TK-154 TRUNCATE TABLE t;
+[YES]TK-155 SELECT COUNT(*) FROM t1 UNION SELECT COU
+[YES]TK-156 @
+[YES]TK-157 #
+[YES]TK-158 `backtick`
+[YES]TK-159 SELECT @var
+[YES]TK-160 peekToken/hasMoreTokens/position
+[YES]TK-161 hasMoreTokens false on empty input
+[YES]TK-162 only whitespace returns EOF
+[YES]TK-163 reset() changes input
+====================
+TokenizerTest
+2026-05-16 20:34:10
+163/163
+[YES]TK-1 SELECT
+[YES]TK-2 FROM
+[YES]TK-3 WHERE
+[YES]TK-4 INSERT
+[YES]TK-5 INTO
+[YES]TK-6 VALUES
+[YES]TK-7 DELETE
+[YES]TK-8 UPDATE
+[YES]TK-9 SET
+[YES]TK-10 CREATE
+[YES]TK-11 TABLE
+[YES]TK-12 DATABASE
+[YES]TK-13 DROP
+[YES]TK-14 SHOW
+[YES]TK-15 USE
+[YES]TK-16 INT
+[YES]TK-17 VARCHAR
+[YES]TK-18 PRIMARY
+[YES]TK-19 KEY
+[YES]TK-20 NOT
+[YES]TK-21 NULL
+[YES]TK-22 DEFAULT
+[YES]TK-23 ORDER
+[YES]TK-24 BY
+[YES]TK-25 GROUP
+[YES]TK-26 HAVING
+[YES]TK-27 JOIN
+[YES]TK-28 INNER
+[YES]TK-29 LEFT
+[YES]TK-30 RIGHT
+[YES]TK-31 ON
+[YES]TK-32 AS
+[YES]TK-33 AND
+[YES]TK-34 OR
+[YES]TK-35 IN
+[YES]TK-36 EXISTS
+[YES]TK-37 UNION
+[YES]TK-38 ALL
+[YES]TK-39 ALTER
+[YES]TK-40 TRUNCATE
+[YES]TK-41 LIKE
+[YES]TK-42 BETWEEN
+[YES]TK-43 COUNT
+[YES]TK-44 SUM
+[YES]TK-45 AVG
+[YES]TK-46 MIN
+[YES]TK-47 MAX
+[YES]TK-48 LIMIT
+[YES]TK-49 DISTINCT
+[YES]TK-50 ASC
+[YES]TK-51 DESC
+[YES]TK-52 UNIQUE
+[YES]TK-53 AUTO_INCREMENT
+[YES]TK-54 BOOLEAN
+[YES]TK-55 FALSE
+[YES]TK-56 TRUE
+[YES]TK-57 SELECT
+[YES]TK-58 SELECT
+[YES]TK-59 CREATE TABLE
+[YES]TK-60 myTable
+[YES]TK-61 user_name
+[YES]TK-62 _private
+[YES]TK-63 id123
+[YES]TK-64 a
+[YES]TK-65 col_name_1
+[YES]TK-66 t1
+[YES]TK-67 __double_underscore
+[YES]TK-68 t1234567890
+[YES]TK-69 123
+[YES]TK-70 0
+[YES]TK-71 123.456
+[YES]TK-72 0.5
+[YES]TK-73 1000000
+[YES]TK-74 00
+[YES]TK-75 3.14159
+[YES]TK-76 999
+[YES]TK-77 'hello'
+[YES]TK-78 "world"
+[YES]TK-79 ''
+[YES]TK-80 'it''s'
+[YES]TK-81 'a'
+[YES]TK-82 ""
+[YES]TK-83 'hello world'
+[YES]TK-84 '123'
+[YES]TK-85 '_underscore_string_'
+[YES]TK-86 =
+[YES]TK-87 <>
+[YES]TK-88 <=
+[YES]TK-89 >=
+[YES]TK-90 !=
+[YES]TK-91 ||
+[YES]TK-92 &&
+[YES]TK-93 +
+[YES]TK-94 -
+[YES]TK-95 *
+[YES]TK-96 /
+[YES]TK-97 <
+[YES]TK-98 >
+[YES]TK-99 %
+[YES]TK-100 ~
+[YES]TK-101 &
+[YES]TK-102 |
+[YES]TK-103 ^
+[YES]TK-104 <<
+[YES]TK-105 >>
+[YES]TK-106 ,
+[YES]TK-107 ;
+[YES]TK-108 (
+[YES]TK-109 )
+[YES]TK-110 .
+[YES]TK-111 :
+[YES]TK-112 ?
+[YES]TK-113 -- comment
+[YES]TK-114 /* comment */
+[YES]TK-115 SELECT /* inline */ 1
+[YES]TK-116 SELECT -- inline
+1
+[YES]TK-117 /* multi
+line */SELECT
+[YES]TK-118 --
+[YES]TK-119 /**/
+[YES]TK-120 SELECT/**/1
+[YES]TK-121 SELECT--comment
+1
+[YES]TK-122 /*comment*/SELECT/*c2*/1/*c3*/
+[YES]TK-123 
+[YES]TK-124    
+[YES]TK-125 	
+
+[YES]TK-126  	 
+  
+[YES]TK-127 
+
+
+
+[YES]TK-128 		
+[YES]TK-129 a.b
+[YES]TK-130 a.b.c
+[YES]TK-131 1+2
+[YES]TK-132 a>=b
+[YES]TK-133 a<>b
+[YES]TK-134 1-2*3
+[YES]TK-135 SELECT * FROM t;
+[YES]TK-136 CREATE TABLE t (id INT);
+[YES]TK-137 INSERT INTO t VALUES (1, 'a');
+[YES]TK-138 SELECT * FROM t WHERE id >= 1;
+[YES]TK-139 SELECT COUNT(*) FROM t GROUP BY name HAV
+[YES]TK-140 USE DATABASE mydb;
+[YES]TK-141 SELECT DISTINCT name FROM users;
+[YES]TK-142 UPDATE users SET age = 30 WHERE id = 1;
+[YES]TK-143 DELETE FROM users WHERE id = 5;
+[YES]TK-144 SELECT * FROM t WHERE name LIKE 'A%';
+[YES]TK-145 SELECT * FROM t WHERE id IN (1, 2, 3);
+[YES]TK-146 SELECT * FROM t1 INNER JOIN t2 ON t1.id 
+[YES]TK-147 SELECT id FROM t ORDER BY id DESC LIMIT 
+[YES]TK-148 SELECT a FROM t WHERE a BETWEEN 1 AND 10
+[YES]TK-149 SELECT a AS alias FROM t;
+[YES]TK-150 SHOW TABLES;
+[YES]TK-151 SHOW DATABASES;
+[YES]TK-152 DROP TABLE t;
+[YES]TK-153 DROP DATABASE db;
+[YES]TK-154 TRUNCATE TABLE t;
+[YES]TK-155 SELECT COUNT(*) FROM t1 UNION SELECT COU
+[YES]TK-156 @
+[YES]TK-157 #
+[YES]TK-158 `backtick`
+[YES]TK-159 SELECT @var
+[YES]TK-160 peekToken/hasMoreTokens/position
+[YES]TK-161 hasMoreTokens false on empty input
+[YES]TK-162 only whitespace returns EOF
+[YES]TK-163 reset() changes input

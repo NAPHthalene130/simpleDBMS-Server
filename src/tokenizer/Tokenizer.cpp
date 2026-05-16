@@ -101,9 +101,15 @@ void Tokenizer::initializeKeywords()
         "SELECT",
         "FROM",
         "WHERE",
+        "ALTER",
         "AND",
-        "OR",
+        "BETWEEN",
+        "CASCADE",
+        "DISTINCT",
+        "FALSE",
+        "IF",
         "NOT",
+        "OR",
         "PRIMARY",
         "KEY",
         "UNIQUE",
@@ -138,6 +144,8 @@ void Tokenizer::initializeKeywords()
         "ORDER",
         "AS",
         "LIMIT",
+        "TRUE",
+        "TRUNCATE",
         "COUNT",
         "SUM",
         "AVG",
@@ -347,15 +355,34 @@ Token Tokenizer::buildOperatorOrSymbolToken()
         return Token(SqlTokenType::Operator, value);
     }
 
+    if (first == '<' && second == '<') {
+        advance(2);
+        return Token(SqlTokenType::Operator, "<<");
+    }
+    if (first == '>' && second == '>') {
+        advance(2);
+        return Token(SqlTokenType::Operator, ">>");
+    }
+
     if (first == '=' || first == '<' || first == '>' || first == '+' || first == '-' || first == '*'
-        || first == '/' || first == '%') {
+        || first == '/' || first == '%' || first == '~' || first == '^') {
         advance();
         return Token(SqlTokenType::Operator, std::string(1, first));
     }
 
-    if (first == '(' || first == ')' || first == ',' || first == ';' || first == '.') {
+    if (first == '(' || first == ')' || first == ',' || first == ';' || first == '.'
+        || first == ':' || first == '?') {
         advance();
         return Token(SqlTokenType::Symbol, std::string(1, first));
+    }
+
+    if (first == '&') {
+        advance();
+        return Token(SqlTokenType::Operator, "&");
+    }
+    if (first == '|') {
+        advance();
+        return Token(SqlTokenType::Operator, "|");
     }
 
     advance();

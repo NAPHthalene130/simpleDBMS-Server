@@ -153,7 +153,9 @@ void Tokenizer::initializeKeywords()
         "AUTO_INCREMENT",
         "AUTOINCREMENT",
         "REFERENCES",
-        "FOREIGN"
+        "FOREIGN",
+        "DECIMAL",
+        "TEXT"
     };
 }
 

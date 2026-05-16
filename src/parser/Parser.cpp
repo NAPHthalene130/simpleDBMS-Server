@@ -25,6 +25,7 @@ constexpr std::int32_t FIELD_TYPE_DOUBLE = 3;
 constexpr std::int32_t FIELD_TYPE_CHAR = 4;
 constexpr std::int32_t FIELD_TYPE_VARCHAR = 5;
 constexpr std::int32_t FIELD_TYPE_DATE = 6;
+constexpr std::int32_t FIELD_TYPE_DECIMAL = 7;
 
 /**
  * @brief 支持的比较运算符集合
@@ -1110,6 +1111,21 @@ void Parser::parseFieldType(TokenStream &tokenStream, FieldBlock &fieldBlock) co
         // DATETIME 暂按 DATE 类型处理
         // 作者：NAPH130
         fieldBlock.setType(FIELD_TYPE_DATE);
+        fieldBlock.setParam(0);
+        return;
+    }
+
+    if (tokenStream.match(SqlTokenType::Keyword, "DECIMAL")) {
+        // DECIMAL 暂按 FLOAT 类型处理，接收可选精度(precision,scale)但忽略
+        // 修复：NAPH130 — 适应 PerformanceTest 中使用 DECIMAL(10,2) 的场景
+        if (tokenStream.match(SqlTokenType::Symbol, "(")) {
+            tokenStream.expect(SqlTokenType::Number, "DECIMAL type requires precision.");
+            if (tokenStream.match(SqlTokenType::Symbol, ",")) {
+                tokenStream.expect(SqlTokenType::Number, "DECIMAL type requires scale after ','.");
+            }
+            tokenStream.expect(SqlTokenType::Symbol, ")", "DECIMAL type requires ')' after precision/scale.");
+        }
+        fieldBlock.setType(FIELD_TYPE_DECIMAL);
         fieldBlock.setParam(0);
         return;
     }

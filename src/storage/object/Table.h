@@ -286,6 +286,9 @@ public:
      */
     static ColumnMeta toColumnMeta(const ColumnDefinition& def);
 
+    static bool compareValue(const std::string& left, CompareOp op, const std::string& right);
+    static bool compareValue(const std::string& left, const WhereCondition& condition);
+
     const TableSchema& schema() const { return schema_; }
 
     /**

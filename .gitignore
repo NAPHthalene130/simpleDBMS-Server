@@ -190,3 +190,7 @@ src/storage/plan.md
 vcpkg_installed/
 /build-msvc/
 src/storage/data/*
+test/report.log
+build*/
+src/test/test_write_check.txt
+test/report.log

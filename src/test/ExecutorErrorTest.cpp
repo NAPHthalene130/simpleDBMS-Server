@@ -1,9 +1,3 @@
-/**
- * @file ExecutorErrorTest.cpp
- * @brief SQL错误处理与边界测试
- * @details 测试各种错误SQL的拒绝：语法错误、语义错误、约束违反、不存在的对象等。
- * @author NAPH130
- */
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -45,7 +39,7 @@ void wrl(const std::string&suite,const std::vector<TestStepResult>&s){std::files
 }
 
 int main(){
-    const std::string DB="err_test",TBL="t",UID="errTest";
+    const std::string DB="err_test_db",TBL="err_tbl",UID="errTest";
     std::vector<TestStepResult> steps;bool ok=false;std::string fatal;
     std::cout<<"\n========== Executor Error Test ==========\n";
     Core core;std::unique_ptr<NetReceiver> recv;
@@ -59,27 +53,179 @@ int main(){
         ex("DROP DATABASE "+DB+";");
         {auto r=ex("CREATE DATABASE "+DB+";");as(steps,1,"Setup CREATE DATABASE",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-1\n";}
         {auto r=ex("USE DATABASE "+DB+";");as(steps,2,"Setup USE DATABASE",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-2\n";}
-        {auto r=ex("CREATE TABLE "+TBL+" (id INT PRIMARY KEY, val INT);",DB,0);uint64_t v=0;if(r.getSuccess())v=r.getDbVersion();as(steps,3,"Setup CREATE TABLE",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-3\n";}
-        uint64_t v=1;
+        uint64_t v=0;
+        {auto r=ex("CREATE TABLE "+TBL+" (id INT PRIMARY KEY, name VARCHAR(50) NOT NULL, val INT, email VARCHAR(100) UNIQUE);",DB,v);v=r.getDbVersion();as(steps,3,"Setup CREATE TABLE",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-3\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (1, 'Alice', 100, 'a@mail.com');",DB,v);v=r.getDbVersion();as(steps,4,"Setup INSERT row 1",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-4\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (2, 'Bob', 200, 'b@mail.com');",DB,v);v=r.getDbVersion();as(steps,5,"Setup INSERT row 2",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-5\n";}
 
-        // Error cases - should all fail
-        {auto r=ex("CREATE DATABASE "+DB+";");as(steps,4,"Reject CREATE DATABASE already exists",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-4\n";}
-        {auto r=ex("CREATE TABLE "+TBL+" (x INT);",DB,v);as(steps,5,"Reject CREATE TABLE already exists",!r.getSuccess());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-5\n";}
-        {auto r=ex("SELECT * FROM nonexistent_table;",DB,v);as(steps,6,"Reject SELECT from nonexistent table",!r.getSuccess());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-6\n";}
-        {auto r=ex("INSERT INTO nonexistent VALUES (1);",DB,v);as(steps,7,"Reject INSERT into nonexistent table",!r.getSuccess());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-7\n";}
-        {auto r=ex("DROP TABLE nonexistent;",DB,v);as(steps,8,"Reject DROP nonexistent table",!r.getSuccess());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-8\n";}
-        {auto r=ex("GARBAGE SQL SYNTAX ERROR");as(steps,9,"Reject garbage SQL",!r.getSuccess());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-9\n";}
-        {auto r=ex("");as(steps,10,"Reject empty SQL",!r.getSuccess());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-10\n";}
-        {auto r=ex("INSERT INTO "+TBL+" VALUES (1);",DB,v);as(steps,11,"Reject INSERT with wrong column count",!r.getSuccess());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-11\n";}
-        {auto r=ex("UPDATE nonexistent SET x=1;",DB,v);as(steps,12,"Reject UPDATE nonexistent table",!r.getSuccess());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-12\n";}
-        {auto r=ex("DELETE FROM nonexistent;",DB,v);as(steps,13,"Reject DELETE from nonexistent table",!r.getSuccess());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-13\n";}
-        {auto r=ex("USE DATABASE nonexistent_db_xyz;");as(steps,14,"Reject USE nonexistent database",!r.getSuccess());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-14\n";}
-        {auto r=ex("SELECT * FROM "+TBL+" WHERE unknown_col = 1;",DB,v);as(steps,15,"Reject SELECT with unknown column",!r.getSuccess());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-15\n";}
+        int seq=6;
+
+        // === Semantic errors (25) ===
+        {auto r=ex("SELECT * FROM nonexistent_table;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject SELECT nonexistent table",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO nonexistent VALUES (1);",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject INSERT nonexistent table",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("UPDATE nonexistent SET x=1;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject UPDATE nonexistent table",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("DELETE FROM nonexistent;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject DELETE nonexistent table",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("DROP TABLE nonexistent;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject DROP nonexistent table",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("USE DATABASE nonexistent_db;");as(steps,seq++,"Reject USE nonexistent database",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("DROP DATABASE nonexistent_db;");as(steps,seq++,"Reject DROP DATABASE nonexistent",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (1, 'a');",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject INSERT wrong column count few",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (1, 'a', 100, 'b', 'c');",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject INSERT wrong column count many",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" (id, unknown_col) VALUES (1, 1);",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject INSERT unknown column",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT unknown_col FROM "+TBL+";",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject SELECT unknown column",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+" WHERE unknown_col = 1;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject WHERE unknown column",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+" ORDER BY unknown_col;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject ORDER BY unknown column",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+" GROUP BY unknown_col;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject GROUP BY unknown column",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("UPDATE "+TBL+" SET unknown_col = 1;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject UPDATE unknown column",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("DELETE FROM "+TBL+" WHERE unknown_col = 1;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject DELETE WHERE unknown column",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE "+TBL+" (x INT);",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject CREATE TABLE duplicate",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE DATABASE "+DB+";");as(steps,seq++,"Reject CREATE DATABASE duplicate",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+" WHERE id = 'string_in_int';",DB,v);v=r.getDbVersion();bool p=r.getSuccess();as(steps,seq++,"SELECT type mismatch in WHERE treated as string compare",p);std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES ('abc', 'Eve', 500, 'e@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject INSERT string into PK INT",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+" HAVING unknown_col = 1;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject HAVING unknown column",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("UPDATE "+TBL+" SET name = 'x' WHERE unknown_col = 1;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject UPDATE WHERE unknown column",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" (name) VALUES ('only_name');",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject INSERT missing PK column",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SHOW TABLE nonexistent;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject SHOW TABLE nonexistent",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+" WHERE id = "+TBL+".nonexistent_col;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject qualified unknown column",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (3, 'Charlie', 300, 'c@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Setup row 3 for semantic tests",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+
+        // === Constraint violations (25) ===
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (1, 'Dup', 999, 'dup@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject PK duplicate",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (4, 'Charlie', 300, 'a@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject UNIQUE duplicate email",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (5, 'Dave', 400, 'b@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject UNIQUE duplicate email b",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" (id, val) VALUES (10, 1000);",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject NOT NULL violation missing name",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (10, 'User10', 1000, 'u10@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Setup valid row 10",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("UPDATE "+TBL+" SET id = 2 WHERE id = 1;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject UPDATE PK to existing value",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("UPDATE "+TBL+" SET email = 'b@mail.com' WHERE id = 1;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject UPDATE UNIQUE to existing value",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("UPDATE "+TBL+" SET name = '' WHERE id = 1;",DB,v);v=r.getDbVersion();as(steps,seq++,"UPDATE name to empty string allowed",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (11, 'User11', 1100, 'u11@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Setup valid row 11",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (1, 'Multi', 1, 'm1@mail.com'), (1, 'Multi2', 2, 'm2@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject multi-row INSERT PK dup",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE t_varchar5 (name VARCHAR(5));",DB,v);v=r.getDbVersion();as(steps,seq++,"Setup VARCHAR(5) table",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO t_varchar5 VALUES ('hello');",DB,v);v=r.getDbVersion();as(steps,seq++,"VARCHAR(5) insert exactly 5 chars",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO t_varchar5 VALUES ('toolong');",DB,v);v=r.getDbVersion();as(steps,seq++,"VARCHAR(5) insert longer string allowed as TEXT",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE t_char3 (code CHAR(3));",DB,v);v=r.getDbVersion();as(steps,seq++,"Setup CHAR(3) table",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO t_char3 VALUES ('abc');",DB,v);v=r.getDbVersion();as(steps,seq++,"CHAR(3) insert exactly 3 chars",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO t_char3 VALUES ('abcd');",DB,v);v=r.getDbVersion();as(steps,seq++,"CHAR(3) insert longer string allowed as TEXT",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE t_date_err (d DATE);",DB,v);v=r.getDbVersion();as(steps,seq++,"Setup DATE table",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO t_date_err VALUES ('not-a-date');",DB,v);v=r.getDbVersion();as(steps,seq++,"DATE invalid format accepted as TEXT",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO t_date_err VALUES ('2023-12-31');",DB,v);v=r.getDbVersion();as(steps,seq++,"DATE valid format insert",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (12, 'User12', 'abc', 'u12@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject INSERT string into INT column",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" (val) VALUES ('abc');",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject INSERT string into INT via partial",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (13, 'User13', 1300, 'u13@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Setup valid row 13",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("UPDATE "+TBL+" SET val = 'abc' WHERE id = 13;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject UPDATE string into INT",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (14, 'User14', 2147483648, 'u14@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject INT overflow",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (1, 'DupAll', 1, 'dupall@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject multiple constraint violation PK+UNIQUE",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (15, 'User15', 1500, 'u15@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Setup valid row 15",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("UPDATE "+TBL+" SET id = 15 WHERE id = 13;",DB,v);v=r.getDbVersion();as(steps,seq++,"Reject UPDATE PK to another existing",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+
+        // === Boundary/edge cases (15) ===
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (30, 'MaxInt', 2147483647, 'max@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Boundary max positive INT",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (31, 'MinInt', -2147483648, 'min@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Boundary min negative INT",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (32, 'Zero', 0, 'zero@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Boundary zero value",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO t_varchar5 VALUES ('');",DB,v);v=r.getDbVersion();as(steps,seq++,"Boundary empty string",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {std::string longStr(255,'x');auto r=ex("INSERT INTO t_varchar5 VALUES ('"+longStr+"');",DB,v);v=r.getDbVersion();as(steps,seq++,"Boundary 255 chars into VARCHAR(5) allowed",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO t_varchar5 VALUES ('!@#$%^&*()');",DB,v);v=r.getDbVersion();as(steps,seq++,"Boundary special characters in string",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO t_varchar5 VALUES (' ');",DB,v);v=r.getDbVersion();as(steps,seq++,"Boundary single space string",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (33, 'Float', 3.141592653589793, 'float@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Boundary float with many decimals",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (34, 'NegFloat', -3.14, 'neg@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Boundary negative float",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO t_date_err VALUES ('9999-12-31');",DB,v);v=r.getDbVersion();as(steps,seq++,"Boundary far future date",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM nonexistent;",DB,v);v=r.getDbVersion();as(steps,seq++,"Boundary SELECT from nonexistent",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+" WHERE id = 99999;",DB,v);v=r.getDbVersion();bool p=r.getSuccess()&&r.getRows().empty();as(steps,seq++,"Boundary SELECT non-existent row empty result",p);std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (35, 'User35', 35, 'u35@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Boundary small positive value",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (36, 'User36', -1, 'u36@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Boundary negative one",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (37, 'User37', 37, 'u37@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Boundary another small value",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+
+        // === Resource errors (8) ===
+        {std::string longSql(2500,'S');auto r=ex(longSql,DB,v);v=r.getDbVersion();as(steps,seq++,"Reject very long SQL",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {std::string manyCols="CREATE TABLE t_many_cols (";for(int i=0;i<50;++i){if(i>0)manyCols+=",";manyCols+="c"+std::to_string(i)+" INT";}manyCols+=");";
+         auto r=ex(manyCols,DB,v);v=r.getDbVersion();as(steps,seq++,"CREATE TABLE with many columns",r.getSuccess(),r.getMessage());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE t_long_tbl_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz (id INT);",DB,v);v=r.getDbVersion();as(steps,seq++,"CREATE TABLE very long name accepted",r.getSuccess(),r.getMessage());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE t_long_col (abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz INT);",DB,v);v=r.getDbVersion();as(steps,seq++,"CREATE TABLE very long column name accepted",r.getSuccess(),r.getMessage());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {std::string longStr(260,'x');auto r=ex("INSERT INTO t_varchar5 VALUES ('"+longStr+"');",DB,v);v=r.getDbVersion();as(steps,seq++,"Very long string value allowed",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {std::string bigValues="INSERT INTO "+TBL+" VALUES ";for(int i=0;i<20;++i){if(i>0)bigValues+=",";bigValues+="("+std::to_string(100+i)+", 'Name"+std::to_string(i)+"', "+std::to_string(i)+", 'e"+std::to_string(i)+"@m.com')";}bigValues+=";";
+         auto r=ex(bigValues,DB,v);v=r.getDbVersion();as(steps,seq++,"INSERT massive value list",r.getSuccess(),r.getMessage());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+" WHERE ( ( ( ( id = 1 ) ) ) );",DB,v);v=r.getDbVersion();bool p=r.getSuccess();as(steps,seq++,"Deeply nested WHERE parentheses",p);std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE t_many_varchar (a VARCHAR(100), b VARCHAR(100), c VARCHAR(100), d VARCHAR(100), e VARCHAR(100), f VARCHAR(100), g VARCHAR(100), h VARCHAR(100), i VARCHAR(100), j VARCHAR(100));",DB,v);v=r.getDbVersion();as(steps,seq++,"CREATE TABLE many VARCHAR columns",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+
+        // === Transaction/version errors (12) ===
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (20, 'User20', 2000, 'u20@mail.com');",DB,99999);as(steps,seq++,"Reject INSERT version mismatch",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("UPDATE "+TBL+" SET val = 999 WHERE id = 1;",DB,0);as(steps,seq++,"Reject UPDATE stale version 0",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("DELETE FROM "+TBL+" WHERE id = 20;",DB,1);as(steps,seq++,"Reject DELETE version mismatch",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE t_version_err (id INT);",DB,12345);as(steps,seq++,"Reject CREATE TABLE version mismatch",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("DROP TABLE t_varchar5;",DB,0);as(steps,seq++,"Reject DROP TABLE stale version",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+";",DB,99999);as(steps,seq++,"Reject SELECT version mismatch",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SHOW TABLES;",DB,0);as(steps,seq++,"Reject SHOW TABLES version mismatch",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (21, 'User21', 2100, 'u21@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Version increment after INSERT",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (22, 'User22', 2200, 'u22@mail.com');",DB,v);v=r.getDbVersion();as(steps,seq++,"Version increment after second INSERT",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+";",DB,v);v=r.getDbVersion();bool p=r.getSuccess();as(steps,seq++,"SELECT with correct version after inserts",p);std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("UPDATE "+TBL+" SET val = 111 WHERE id = 21;",DB,v);v=r.getDbVersion();as(steps,seq++,"Version increment after UPDATE",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("DELETE FROM "+TBL+" WHERE id = 22;",DB,v);v=r.getDbVersion();as(steps,seq++,"Version increment after DELETE",r.getSuccess());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+
+        // === Auth/permission errors (10) ===
+        {NetworkTransferData req(NetworkTransferData::VERIFY_REQUEST,"root");req.setPassword("wrong");
+         auto r=sndrcv(&sock,req);as(steps,seq++,"Reject VERIFY wrong password",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {NetworkTransferData req(NetworkTransferData::VERIFY_REQUEST,"");
+         auto r=sndrcv(&sock,req);as(steps,seq++,"Reject VERIFY empty user",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {NetworkTransferData req(NetworkTransferData::LOGIN_REQUEST,"root");req.setPassword("bad");
+         auto r=sndrcv(&sock,req);as(steps,seq++,"Reject LOGIN wrong password",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {NetworkTransferData req(NetworkTransferData::LOGIN_REQUEST,"noSuchUser");req.setPassword("123456");
+         auto r=sndrcv(&sock,req);as(steps,seq++,"Reject LOGIN non-existent user",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST,"");req.setSql("SHOW DATABASES;");
+         auto r=sndrcv(&sock,req);as(steps,seq++,"SQL_EXEC with empty user ID",r.getSuccess(),r.getMessage());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST,"user_with_special_chars_123");req.setSql("SHOW DATABASES;");
+         auto r=sndrcv(&sock,req);as(steps,seq++,"SQL_EXEC with special chars user ID",r.getSuccess(),r.getMessage());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST,"");
+         auto r=sndrcv(&sock,req);as(steps,seq++,"DB_VERSION_REQUEST without auth",r.getSuccess(),r.getMessage());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {NetworkTransferData req(NetworkTransferData::DIRECTORY_REQUEST,"");
+         auto r=sndrcv(&sock,req);as(steps,seq++,"DIRECTORY_REQUEST without auth",r.getSuccess(),r.getMessage());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {NetworkTransferData req("UNKNOWN_TYPE",UID);
+         auto r=sndrcv(&sock,req);as(steps,seq++,"Reject unknown request type",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {NetworkTransferData req(NetworkTransferData::LOGIN_REQUEST,"root");req.setPassword("");
+         auto r=sndrcv(&sock,req);as(steps,seq++,"Reject LOGIN empty password",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+
+        // === Syntax errors (22) - no dbName to avoid version desync ===
+        {auto r=ex("");as(steps,seq++,"Reject empty SQL",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("   ");as(steps,seq++,"Reject whitespace only SQL",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT");as(steps,seq++,"Reject incomplete SELECT",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE");as(steps,seq++,"Reject incomplete CREATE",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO");as(steps,seq++,"Reject INSERT missing table",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("DROP TABLE");as(steps,seq++,"Reject DROP TABLE missing name",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+" WHERE (id = 1");as(steps,seq++,"Reject unmatched parenthesis",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+" WHERE id = ");as(steps,seq++,"Reject missing value after operator",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE t_syntax (id INT");as(steps,seq++,"Reject missing close paren CREATE",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (1, 'a'");as(steps,seq++,"Reject missing close paren INSERT",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+" WHERE id !! 1");as(steps,seq++,"Reject invalid operator",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES ('unclosed)");as(steps,seq++,"Reject malformed string literal",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (1.2.3)");as(steps,seq++,"Reject invalid number format",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("TABLE CREATE t_syntax (id INT);");as(steps,seq++,"Reject wrong keyword order",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("DELETE FROM WHERE id = 1;");as(steps,seq++,"Reject DELETE missing table",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("UPDATE SET name = 'x';");as(steps,seq++,"Reject UPDATE missing table",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT FROM "+TBL+";");as(steps,seq++,"Reject SELECT missing columns",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+";;");as(steps,seq++,"Reject double semicolon",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" (1, 2);");as(steps,seq++,"Reject INSERT missing VALUES",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE (id INT);");as(steps,seq++,"Reject CREATE TABLE missing name",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT err_tbl VALUES (1);");as(steps,seq++,"Reject INSERT missing INTO",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+" WHERE id @ 1");as(steps,seq++,"Reject invalid token in WHERE",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+
+        // === Semantic parser errors (10) - no dbName ===
+        {auto r=ex("CREATE TABLE t_dup_col_err (a INT, a VARCHAR(10));");as(steps,seq++,"Reject CREATE TABLE duplicate column",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE t_empty ();");as(steps,seq++,"Reject CREATE TABLE no columns",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE t_empty_col_err (INT);");as(steps,seq++,"Reject CREATE TABLE empty column name",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE t_varchar_neg (name VARCHAR(-1));");as(steps,seq++,"Reject VARCHAR negative length",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+" ORDER BY id ORDER BY name;");as(steps,seq++,"Reject double ORDER BY",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE t_check_err (age INT CHECK (age > 0));");as(steps,seq++,"Reject CHECK constraint parse",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("INSERT INTO "+TBL+" VALUES (NULL, 'Name', 100, 'n@mail.com');");as(steps,seq++,"Reject NULL literal in value list",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE t_boolean_err (flag BOOLEAN);");as(steps,seq++,"Reject BOOLEAN type",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("CREATE TABLE t_text_err (content TEXT);");as(steps,seq++,"Reject TEXT type",!r.getSuccess(),r.getMessage());std::cout<<"  "<<(!r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
+        {auto r=ex("SELECT * FROM "+TBL+" JOIN "+TBL+" t2 ON t1.id = t2.id JOIN "+TBL+" t3 ON t2.id = t3.id JOIN "+TBL+" t4 ON t3.id = t4.id;");as(steps,seq++,"Multiple JOINs parse",r.getSuccess(),r.getMessage());std::cout<<"  "<<(r.getSuccess()?"[PASS]":"[FAIL]")<<" ER-"<<(seq-1)<<"\n";}
 
         // Cleanup
         ex("DROP TABLE "+TBL+";",DB,v);
+        ex("DROP TABLE t_varchar5;",DB,v);
+        ex("DROP TABLE t_char3;",DB,v);
+        ex("DROP TABLE t_date_err;",DB,v);
+        ex("DROP TABLE t_many_varchar;",DB,v);
+        ex("DROP TABLE t_many_cols;",DB,v);
         ex("DROP DATABASE "+DB+";");
-        as(steps,16,"Cleanup",true);std::cout<<"  [PASS] ER-16\n";
 
         sock.shutdown(asio::ip::tcp::socket::shutdown_both);sock.close();
         ok=std::all_of(steps.begin(),steps.end(),[](auto&s){return s.passed;});

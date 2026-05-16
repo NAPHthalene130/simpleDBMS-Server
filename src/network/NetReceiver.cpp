@@ -478,11 +478,11 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             const std::uint64_t clientVersion = networkTransferData.getDbVersion();
             std::uint64_t serverVersion = 0;
             bool versionChecked = false;
-            if (!requestDbName.empty() && core->getStorageManager() != nullptr
+             if (!requestDbName.empty() && core->getStorageManager() != nullptr
                 && core->getStorageManager()->getSystemCatalogManager() != nullptr) {
                 serverVersion = core->getStorageManager()->getSystemCatalogManager()
                                     ->getDatabaseVersion(requestDbName);
-                if (clientVersion != serverVersion) {
+                if (clientVersion > 0 && clientVersion != serverVersion) {
                     NetworkTransferData versionError(NetworkTransferData::SQL_EXEC_RESPONSE,
                                                       networkTransferData.getId());
                     versionError.setSuccess(false);
@@ -498,12 +498,14 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                     sendResponse(versionError);
                     return;
                 }
-                versionChecked = true;
-                // 核验通过后递增版本号
-                // 作者：NAPH130
-                core->getStorageManager()->getSystemCatalogManager()->addDatabaseVersion(requestDbName);
-                serverVersion = core->getStorageManager()->getSystemCatalogManager()
-                                    ->getDatabaseVersion(requestDbName);
+                if (clientVersion > 0) {
+                    versionChecked = true;
+                    // 核验通过后递增版本号
+                    // 作者：NAPH130
+                    core->getStorageManager()->getSystemCatalogManager()->addDatabaseVersion(requestDbName);
+                    serverVersion = core->getStorageManager()->getSystemCatalogManager()
+                                        ->getDatabaseVersion(requestDbName);
+                }
             }
 
             // 1. 对整个 SQL 文本进行词法分析
@@ -747,6 +749,55 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                     sendResponse(errorResponse);
                 }
             }
+            return;
+        }
+
+        if (networkTransferData.getType() == NetworkTransferData::SQL_TEMP_EXEC_REQUEST) {
+            /**
+             * @brief 处理临时 SQL 执行请求（不修改当前会话数据库上下文）
+             * @author Qi
+             * @details 从请求中提取目标 dbName 执行查询，返回结果但不更新会话 currentDbName。
+             */
+            const std::string tempSql = networkTransferData.getSql();
+            const std::string tempDbName = networkTransferData.getDbName();
+
+            if (tempSql.empty() || tempDbName.empty()) {
+                sendFailureResponse("SQL_TEMP_EXEC requires both sql and dbName.");
+                return;
+            }
+
+            if (core == nullptr || core->getParserManager() == nullptr
+                || core->getExecutorManager() == nullptr) {
+                sendFailureResponse("Core modules not initialized.");
+                return;
+            }
+
+            Tokenizer tokenizer(core, tempSql);
+            const std::vector<Token> tokens = tokenizer.tokenize();
+            const ParseResult parseResult = core->getParserManager()->getParser()->parse(tokens);
+            if (!parseResult.success || parseResult.statement == nullptr) {
+                sendFailureResponse("Parse failed: " + parseResult.errorMessage);
+                return;
+            }
+
+            ExecutionContext tempContext;
+            tempContext.setCurrentDbName(tempDbName);
+            tempContext.setConnectionId("temp_query");
+
+            const ExecutionResult execResult =
+                core->getExecutorManager()->getExecutorEngine()->execute(
+                    parseResult.statement.get(), &tempContext);
+
+            const ExecutionStatementType stmtType = parseResult.statement->getStmtType();
+            NetworkTransferData responseData = buildExecutionResponse(execResult, networkTransferData, stmtType);
+            if (isQueryStatementType(stmtType)) {
+                std::vector<std::string> resultCols = execResult.getColumns();
+                if (resultCols.empty()) resultCols = buildQueryColumns(parseResult.statement.get());
+                responseData.setColumns(resultCols);
+                responseData.setRows(execResult.getResultSet());
+            }
+            responseData.setType(NetworkTransferData::SQL_TEMP_EXEC_RESPONSE);
+            sendResponse(responseData);
             return;
         }
 

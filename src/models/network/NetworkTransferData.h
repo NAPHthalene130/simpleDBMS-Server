@@ -83,6 +83,8 @@ public:
     inline static const std::string ERROR_RESPONSE = "ERROR_RESPONSE";
     inline static const std::string DB_VERSION_REQUEST = "DB_VERSION_REQUEST";
     inline static const std::string DB_VERSION_RESPONSE = "DB_VERSION_RESPONSE";
+    inline static const std::string SQL_TEMP_EXEC_REQUEST = "SQL_TEMP_EXEC_REQUEST";
+    inline static const std::string SQL_TEMP_EXEC_RESPONSE = "SQL_TEMP_EXEC_RESPONSE";
 
     NetworkTransferData();
     NetworkTransferData(const std::string &type, const std::string &id);

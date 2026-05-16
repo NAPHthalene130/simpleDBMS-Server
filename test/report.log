@@ -985,3 +985,135 @@ DbVersionFullFlowTest
 [YES]Re-CREATE DATABASE after DROP succeeds
 [YES]Re-created database version resets to 0
 [YES]Final DROP DATABASE cleanup
+====================
+DbVersionFullFlowTest
+2026-05-16 22:20:13
+90/128
+[YES]DB_VERSION_REQUEST returns DB_VERSION_RESPONSE with success
+[YES]DB_VERSION_RESPONSE has databases list
+[YES]DB_VERSION_RESPONSE dbVersion is 0
+[YES]DB_VERSION_REQUEST with empty user ID succeeds
+[YES]DB_VERSION_REQUEST with dbVersion set still succeeds
+[YES]Create multiple databases for DB_VERSION test
+[YES]DB_VERSION_RESPONSE lists multiple databases
+[YES]DB_VERSION_RESPONSE contains created databases
+[NO]DB_VERSION_RESPONSE all new databases have version 0
+[YES]DB_VERSION_RESPONSE excludes dropped databases
+[YES]DB_VERSION_RESPONSE type constant correct
+[YES]DB_VERSION_RESPONSE success flag true
+[YES]DB_VERSION_REQUEST repeated call stable
+[YES]DB_VERSION_RESPONSE databases vector valid
+[YES]DB_VERSION_REQUEST/RESPONSE basic flow placeholder
+[YES]DB_VERSION_RESPONSE after no changes stable
+[YES]DB_VERSION_REQUEST with large db count handled
+[YES]DB_VERSION_RESPONSE message field present
+[YES]DB_VERSION_REQUEST id field preserved in response
+[YES]DB_VERSION_RESPONSE rows empty for version request
+[YES]DB_VERSION_RESPONSE columns empty for version request
+[YES]CREATE DATABASE for flow test
+[YES]USE DATABASE for flow test
+[YES]CREATE DATABASE version starts at 0
+[YES]Server version 0 after CREATE DATABASE
+[YES]Version increments after CREATE TABLE
+[YES]Version increments by 1 on second CREATE TABLE
+[YES]Version increments by 1 on DROP TABLE
+[YES]Version increments by 1 on INSERT
+[YES]Version increments by 1 on UPDATE
+[YES]Version increments by 1 on DELETE
+[YES]Version increments by 1 on second INSERT
+[NO]Version increments by 1 on ALTER TABLE
+[YES]Version increments by 1 on TRUNCATE
+[NO]Version increments by 1 on INSERT after TRUNCATE
+[NO]Version increments by 1 on consecutive INSERT
+[YES]SELECT with correct version succeeds
+[YES]SQL_EXEC with version mismatch by 1 fails
+[YES]SQL_EXEC with version mismatch by 100 fails
+[YES]SQL_EXEC with version mismatch by large amount fails
+[NO]SQL_EXEC with version=0 on non-zero server fails
+[NO]SQL_EXEC response version is server version + 1 after read
+[YES]SQL_EXEC without version provided succeeds
+[YES]COUNT with correct version succeeds
+[NO]SELECT WHERE with correct version returns correct rows
+[NO]UPDATE with correct version succeeds
+[YES]DELETE with correct version succeeds
+[NO]INSERT with correct version succeeds
+[YES]SQL_EXEC with version one behind fails
+[NO]SQL_EXEC response version greater than request version
+[YES]SQL_EXEC correct version after CREATE TABLE
+[YES]SQL_EXEC correct version after DROP TABLE
+[YES]SQL_EXEC correct version after INSERT
+[YES]SQL_EXEC correct version after UPDATE
+[YES]SQL_EXEC correct version after DELETE
+[YES]SQL_EXEC correct version after ALTER TABLE
+[YES]SQL_EXEC correct version after TRUNCATE
+[YES]SQL_EXEC correct version after multiple operations
+[NO]SHOW TABLES without version has dbVersion 0
+[YES]SHOW DATABASES without dbName succeeds
+[YES]SQL_EXEC response contains positive dbVersion
+[YES]SQL_EXEC success response has no version mismatch message
+[YES]Version mismatch message contains 'version mismatch'
+[YES]Version mismatch response returns exact server version
+[YES]Correct version query returns SQL_QUERY_RESPONSE
+[NO]Correct version insert returns SQL_EXEC_RESPONSE
+[YES]Version increment on CREATE TABLE verified
+[YES]Version increment on DROP TABLE verified
+[NO]Version increment on INSERT verified
+[NO]Version increment on UPDATE verified
+[YES]Version increment on DELETE verified
+[NO]Version increment on ALTER TABLE ADD COLUMN verified
+[YES]Version increment on TRUNCATE verified
+[NO]Version increments twice for INSERT then UPDATE
+[NO]Version increments twice for UPDATE then DELETE
+[NO]Version increments twice for consecutive INSERTs
+[YES]Version increments twice for consecutive DELETEs
+[YES]Version increments for CREATE then DROP TABLE
+[NO]Version increment on ALTER TABLE DROP COLUMN
+[NO]Version increment on INSERT after ALTER
+[NO]Version increment on UPDATE all rows
+[YES]Version increment on DELETE with WHERE
+[NO]Version increment on INSERT single row
+[YES]Version increment on TRUNCATE with data
+[NO]Version increment on INSERT after TRUNCATE verified
+[YES]Version increment on CREATE TABLE second table
+[YES]Version increment on DROP TABLE second table
+[YES]DIRECTORY_REQUEST returns DIRECTORY_RESPONSE
+[YES]DIRECTORY_RESPONSE contains flow test database
+[YES]DIRECTORY_RESPONSE database has positive dbVersion
+[YES]DIRECTORY_REQUEST basic succeeds
+[NO]DIRECTORY version matches after INSERT
+[NO]DIRECTORY version matches after UPDATE
+[YES]DIRECTORY version matches after DELETE
+[YES]DIRECTORY_RESPONSE includes tables for database
+[YES]DIRECTORY_RESPONSE top-level dbVersion is 0
+[YES]DIRECTORY_REQUEST with empty user ID succeeds
+[YES]DIRECTORY_RESPONSE lists at least one database
+[NO]Multi-statement 2 INSERTs increments version once
+[NO]Multi-statement 3 INSERTs increments version once
+[NO]Multi-statement 5 INSERTs increments version once
+[NO]Multi-statement 2 UPDATEs increments version once
+[NO]Multi-statement 2 DELETEs increments version once
+[NO]Multi-statement INSERT+DELETE increments version once
+[NO]Multi-statement 2 SELECTs increments version once
+[NO]Multi-statement INSERT+SELECT increments version once
+[NO]Multi-statement UPDATE+SELECT increments version once
+[YES]Multi-statement mixed success/failure increments version once
+[YES]Version behavior with existing data stable
+[YES]UINT64_MAX version causes mismatch
+[YES]Rapid version query stable
+[NO]Version after failed operation not tested yet
+[YES]Duplicate INSERT with wrong version fails
+[YES]Failed SELECT with correct version still fails
+[YES]Duplicate CREATE TABLE with correct version fails
+[YES]DROP nonexistent table with correct version fails
+[YES]SQL_EXEC on nonexistent database fails
+[YES]Version after various operations is positive
+[NO]SHOW TABLES without version has dbVersion 0
+[YES]SELECT without version still works
+[NO]Edge case: version after successful INSERT
+[YES]Edge case: version after successful DELETE
+[NO]Edge case: version after UPDATE all rows
+[YES]DROP DATABASE cleanup succeeds
+[YES]DB_VERSION excludes database after DROP
+[YES]Re-CREATE DATABASE after DROP succeeds
+[YES]Re-created database version resets to 0
+[YES]Final DROP DATABASE cleanup

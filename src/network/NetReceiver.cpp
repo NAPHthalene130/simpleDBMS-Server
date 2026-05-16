@@ -81,7 +81,8 @@ std::string buildResponseType(const std::string &requestType, ExecutionStatement
 
 NetworkTransferData buildFailureResponse(const std::string &message,
                                          const NetworkTransferData *requestData = nullptr,
-                                         std::uint64_t dbVersion = 0)
+                                         std::uint64_t dbVersion = 0,
+                                         bool hasVersionContext = false)
 {
     const std::string requestType = requestData != nullptr ? requestData->getType() : "";
     const std::string requestId = requestData != nullptr ? requestData->getId() : "";
@@ -91,7 +92,7 @@ NetworkTransferData buildFailureResponse(const std::string &message,
     if (requestData != nullptr) {
         responseData.setDbName(requestData->getDbName());
     }
-    if (dbVersion > 0) {
+    if (hasVersionContext) {
         responseData.setDbVersion(dbVersion);
     }
     return responseData;
@@ -262,8 +263,8 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
         core->getNetworkManager()->getNetSender()->send(clientSocket, responseData.toJson());
     };
 
-    auto sendFailureResponse = [&](const std::string &message, std::uint64_t dbVer = 0) {
-        sendResponse(buildFailureResponse(message, &networkTransferData, dbVer));
+    auto sendFailureResponse = [&](const std::string &message, std::uint64_t dbVer = 0, bool hasVer = false) {
+        sendResponse(buildFailureResponse(message, &networkTransferData, dbVer, hasVer));
     };
 
     try {
@@ -522,7 +523,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
 
             if (statementTokensList.empty()) {
                 LogWriter::warning("network", "NetReceiver", "processMsg", "No SQL statements found.");
-                sendFailureResponse("No SQL statements found.", serverVersion);
+                sendFailureResponse("No SQL statements found.", serverVersion, versionChecked);
                 return;
             }
 
@@ -566,7 +567,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                             "Statement " + std::to_string(statementNumber)
                             + " parse failed at token " + std::to_string(parseResult.errorTokenIndex)
                             + ": " + parseResult.errorMessage,
-                            &networkTransferData, serverVersion);
+                            &networkTransferData, serverVersion, versionChecked);
                         sendResponse(errorResponse);
                         continue;
                     }
@@ -700,7 +701,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                         } else {
                             NetworkTransferData errorResponse = buildFailureResponse(
                                 "UNION failed: " + leftResult.getMessage() + " / " + rightResult.getMessage(),
-                                &networkTransferData, serverVersion);
+                                &networkTransferData, serverVersion, versionChecked);
                             sendResponse(errorResponse);
                         }
                         continue;
@@ -758,7 +759,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                     NetworkTransferData errorResponse = buildFailureResponse(
                         "Statement " + std::to_string(statementNumber)
                         + " execution failed: " + std::string(exception.what()),
-                        &networkTransferData, serverVersion);
+                        &networkTransferData, serverVersion, versionChecked);
                     sendResponse(errorResponse);
                 }
             }

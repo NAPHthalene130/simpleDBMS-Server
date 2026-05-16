@@ -529,3 +529,327 @@ ExecutorJoinAggTest
 [YES]UNION with WHERE clauses
 [YES]UNION same table different WHERE
 [YES]DROP all tables and database
+====================
+ExecutorDDLTest
+2026-05-16 21:38:41
+119/158
+[YES]CREATE DATABASE normal
+[YES]CREATE DATABASE with numbers
+[YES]CREATE DATABASE with underscore
+[YES]CREATE DATABASE mixed case
+[NO]CREATE DATABASE multiple underscores and numbers
+[YES]CREATE DATABASE single char
+[YES]CREATE DATABASE uppercase
+[YES]CREATE DATABASE long mixed name
+[YES]Reject CREATE DATABASE duplicate
+[YES]SHOW DATABASES after creates
+[YES]CREATE DATABASE another
+[YES]SHOW DATABASES has multiple
+[YES]DROP DATABASE with numbers
+[YES]DROP DATABASE with underscore
+[YES]Reject DROP DATABASE nonexistent
+[YES]Setup CREATE for drop test
+[YES]Setup USE for drop test
+[YES]Setup CREATE TABLE in db to drop
+[YES]Setup INSERT in db to drop
+[YES]DROP DATABASE with tables and data
+[YES]Reject double DROP DATABASE
+[YES]Reject USE after DROP
+[YES]USE DATABASE normal
+[YES]Reject USE nonexistent database
+[YES]USE DATABASE switch to another
+[YES]USE DATABASE switch back
+[YES]Reject USE DATABASE missing name
+[YES]CREATE TABLE INT
+[YES]CREATE TABLE VARCHAR
+[YES]CREATE TABLE FLOAT
+[YES]CREATE TABLE DOUBLE
+[YES]CREATE TABLE CHAR
+[YES]CREATE TABLE DATE
+[YES]CREATE TABLE DATETIME
+[YES]CREATE TABLE PRIMARY KEY
+[YES]CREATE TABLE NOT NULL
+[YES]CREATE TABLE UNIQUE
+[YES]CREATE TABLE DEFAULT int
+[YES]CREATE TABLE DEFAULT string
+[YES]CREATE TABLE AUTO_INCREMENT
+[YES]CREATE TABLE FOREIGN KEY
+[YES]CREATE TABLE multiple columns
+[YES]CREATE TABLE single column
+[YES]CREATE TABLE no constraints
+[YES]CREATE TABLE PK+NOT NULL
+[YES]CREATE TABLE multiple constraints
+[YES]CREATE TABLE DEFAULT float
+[YES]CREATE TABLE DEFAULT double
+[YES]DROP TABLE normal
+[YES]Reject DROP TABLE nonexistent
+[YES]Setup INSERT before drop
+[YES]DROP TABLE after insert
+[YES]Setup DROP TABLE multiple 1
+[YES]Setup DROP TABLE multiple 2
+[YES]DROP TABLE first of multiple
+[YES]DROP TABLE second of multiple
+[YES]Setup DROP then recreate
+[YES]DROP TABLE for recreate
+[YES]CREATE TABLE after drop recreate
+[YES]DROP TABLE recreated table
+[YES]SHOW TABLES baseline
+[YES]Setup SHOW TABLES 1
+[YES]Setup SHOW TABLES 2
+[YES]Setup SHOW TABLES 3
+[YES]SHOW TABLES has 3 new tables
+[YES]Setup DROP for SHOW TABLES
+[YES]SHOW TABLES after drop
+[YES]SHOW TABLES uses session db
+[YES]SHOW DATABASES baseline
+[YES]Setup SHOW DATABASES 1
+[YES]Setup SHOW DATABASES 2
+[YES]SHOW DATABASES after creates
+[YES]Setup DROP for SHOW DATABASES
+[YES]Setup DROP 2 for SHOW DATABASES
+[YES]SHOW DATABASES after drops
+[NO]Setup AUTO_INCREMENT table
+[NO]AUTO_INCREMENT explicit value 1
+[NO]AUTO_INCREMENT explicit value 2
+[NO]AUTO_INCREMENT verify explicit value 1
+[NO]AUTO_INCREMENT verify explicit value 2
+[NO]AUTO_INCREMENT explicit value 5
+[NO]AUTO_INCREMENT sequential after 5
+[NO]AUTO_INCREMENT verify value 6
+[NO]AUTO_INCREMENT delete middle row
+[NO]AUTO_INCREMENT gap handling after delete
+[NO]AUTO_INCREMENT gap fill value 7
+[NO]AUTO_INCREMENT explicit large value
+[NO]AUTO_INCREMENT after large explicit
+[NO]AUTO_INCREMENT next after 100 is 101
+[NO]AUTO_INCREMENT second table
+[NO]AUTO_INCREMENT second table insert
+[NO]AUTO_INCREMENT second table value 1
+[NO]Setup UNIQUE table
+[NO]UNIQUE valid insert 1
+[NO]UNIQUE valid insert 2
+[YES]Reject UNIQUE duplicate
+[NO]UNIQUE insert empty string
+[YES]Reject UNIQUE duplicate empty string
+[NO]Setup multiple UNIQUE columns
+[NO]UNIQUE multi valid insert
+[YES]Reject UNIQUE multi first col dup
+[YES]Reject UNIQUE multi second col dup
+[NO]Setup UNIQUE NOT NULL
+[NO]UNIQUE NOT NULL valid insert
+[YES]Reject UNIQUE NOT NULL duplicate
+[NO]Setup DEFAULT table
+[NO]DEFAULT missing columns get defaults
+[NO]DEFAULT verify INT and VARCHAR defaults
+[NO]DEFAULT explicit values override
+[NO]DEFAULT verify explicit override
+[NO]Setup DEFAULT with PK
+[NO]DEFAULT with PK missing
+[NO]DEFAULT verify PK default 100
+[NO]Setup DEFAULT FLOAT
+[NO]DEFAULT FLOAT explicit insert
+[NO]Setup DEFAULT NOT NULL
+[NO]DEFAULT NOT NULL missing gets default
+[NO]DEFAULT NOT NULL explicit overrides
+[YES]Reject ALTER TABLE ADD COLUMN
+[YES]Reject ALTER TABLE DROP COLUMN
+[YES]Reject ALTER TABLE MODIFY COLUMN
+[YES]Reject ALTER TABLE nonexistent table
+[YES]Reject ALTER TABLE RENAME
+[YES]Reject ALTER TABLE ADD with DEFAULT
+[YES]Reject ALTER TABLE ADD FLOAT
+[YES]Reject ALTER TABLE ADD DOUBLE
+[YES]Reject ALTER TABLE ADD DATE
+[YES]Reject ALTER TABLE ADD CHAR
+[YES]Reject ALTER TABLE ADD VARCHAR
+[YES]Reject ALTER TABLE ADD NOT NULL
+[YES]Reject ALTER TABLE ADD PK
+[YES]Reject ALTER TABLE ADD UNIQUE
+[YES]Reject ALTER TABLE DROP nonexistent column
+[YES]Reject TRUNCATE TABLE
+[YES]Reject TRUNCATE TABLE nonexistent
+[YES]Reject TRUNCATE TABLE with data
+[YES]Reject TRUNCATE TABLE empty table
+[YES]Reject TRUNCATE without TABLE keyword
+[YES]Reject TRUNCATE TABLE missing name
+[YES]Reject TRUNCATE multiple tables
+[YES]Reject TRUNCATE TABLE CASCADE
+[YES]Reject TRUNCATE TABLE qualified name
+[YES]Reject TRUNCATE TABLE number name
+[YES]Reject CREATE TABLE BOOLEAN unsupported
+[YES]Reject CREATE TABLE TEXT unsupported
+[YES]Reject CREATE TABLE CHECK unsupported
+[YES]Reject CREATE TABLE missing name
+[YES]Reject CREATE TABLE no columns
+[YES]Reject CREATE TABLE empty column name
+[YES]Reject CREATE TABLE duplicate column
+[YES]Reject CREATE TABLE VARCHAR(0)
+[YES]Reject CREATE TABLE duplicate name
+[YES]Reject CREATE TABLE name too long
+[YES]Reject CHECK single condition
+[YES]Reject CHECK compound condition
+[YES]Reject CHECK string condition
+[YES]Reject CHECK multiple columns
+[YES]Reject CHECK table-level constraint
+====================
+ExecutorDDLTest
+2026-05-16 21:39:33
+119/158
+[YES]CREATE DATABASE normal
+[YES]CREATE DATABASE with numbers
+[YES]CREATE DATABASE with underscore
+[YES]CREATE DATABASE mixed case
+[NO]CREATE DATABASE multiple underscores and numbers
+[YES]CREATE DATABASE single char
+[YES]CREATE DATABASE uppercase
+[YES]CREATE DATABASE long mixed name
+[YES]Reject CREATE DATABASE duplicate
+[YES]SHOW DATABASES after creates
+[YES]CREATE DATABASE another
+[YES]SHOW DATABASES has multiple
+[YES]DROP DATABASE with numbers
+[YES]DROP DATABASE with underscore
+[YES]Reject DROP DATABASE nonexistent
+[YES]Setup CREATE for drop test
+[YES]Setup USE for drop test
+[YES]Setup CREATE TABLE in db to drop
+[YES]Setup INSERT in db to drop
+[YES]DROP DATABASE with tables and data
+[YES]Reject double DROP DATABASE
+[YES]Reject USE after DROP
+[YES]USE DATABASE normal
+[YES]Reject USE nonexistent database
+[YES]USE DATABASE switch to another
+[YES]USE DATABASE switch back
+[YES]Reject USE DATABASE missing name
+[YES]CREATE TABLE INT
+[YES]CREATE TABLE VARCHAR
+[YES]CREATE TABLE FLOAT
+[YES]CREATE TABLE DOUBLE
+[YES]CREATE TABLE CHAR
+[YES]CREATE TABLE DATE
+[YES]CREATE TABLE DATETIME
+[YES]CREATE TABLE PRIMARY KEY
+[YES]CREATE TABLE NOT NULL
+[YES]CREATE TABLE UNIQUE
+[YES]CREATE TABLE DEFAULT int
+[YES]CREATE TABLE DEFAULT string
+[YES]CREATE TABLE AUTO_INCREMENT
+[YES]CREATE TABLE FOREIGN KEY
+[YES]CREATE TABLE multiple columns
+[YES]CREATE TABLE single column
+[YES]CREATE TABLE no constraints
+[YES]CREATE TABLE PK+NOT NULL
+[YES]CREATE TABLE multiple constraints
+[YES]CREATE TABLE DEFAULT float
+[YES]CREATE TABLE DEFAULT double
+[YES]DROP TABLE normal
+[YES]Reject DROP TABLE nonexistent
+[YES]Setup INSERT before drop
+[YES]DROP TABLE after insert
+[YES]Setup DROP TABLE multiple 1
+[YES]Setup DROP TABLE multiple 2
+[YES]DROP TABLE first of multiple
+[YES]DROP TABLE second of multiple
+[YES]Setup DROP then recreate
+[YES]DROP TABLE for recreate
+[YES]CREATE TABLE after drop recreate
+[YES]DROP TABLE recreated table
+[YES]SHOW TABLES baseline
+[YES]Setup SHOW TABLES 1
+[YES]Setup SHOW TABLES 2
+[YES]Setup SHOW TABLES 3
+[YES]SHOW TABLES has 3 new tables
+[YES]Setup DROP for SHOW TABLES
+[YES]SHOW TABLES after drop
+[YES]SHOW TABLES uses session db
+[YES]SHOW DATABASES baseline
+[YES]Setup SHOW DATABASES 1
+[YES]Setup SHOW DATABASES 2
+[YES]SHOW DATABASES after creates
+[YES]Setup DROP for SHOW DATABASES
+[YES]Setup DROP 2 for SHOW DATABASES
+[YES]SHOW DATABASES after drops
+[NO]Setup AUTO_INCREMENT table
+[NO]AUTO_INCREMENT explicit value 1
+[NO]AUTO_INCREMENT explicit value 2
+[NO]AUTO_INCREMENT verify explicit value 1
+[NO]AUTO_INCREMENT verify explicit value 2
+[NO]AUTO_INCREMENT explicit value 5
+[NO]AUTO_INCREMENT sequential after 5
+[NO]AUTO_INCREMENT verify value 6
+[NO]AUTO_INCREMENT delete middle row
+[NO]AUTO_INCREMENT gap handling after delete
+[NO]AUTO_INCREMENT gap fill value 7
+[NO]AUTO_INCREMENT explicit large value
+[NO]AUTO_INCREMENT after large explicit
+[NO]AUTO_INCREMENT next after 100 is 101
+[NO]AUTO_INCREMENT second table
+[NO]AUTO_INCREMENT second table insert
+[NO]AUTO_INCREMENT second table value 1
+[NO]Setup UNIQUE table
+[NO]UNIQUE valid insert 1
+[NO]UNIQUE valid insert 2
+[YES]Reject UNIQUE duplicate
+[NO]UNIQUE insert empty string
+[YES]Reject UNIQUE duplicate empty string
+[NO]Setup multiple UNIQUE columns
+[NO]UNIQUE multi valid insert
+[YES]Reject UNIQUE multi first col dup
+[YES]Reject UNIQUE multi second col dup
+[NO]Setup UNIQUE NOT NULL
+[NO]UNIQUE NOT NULL valid insert
+[YES]Reject UNIQUE NOT NULL duplicate
+[NO]Setup DEFAULT table
+[NO]DEFAULT missing columns get defaults
+[NO]DEFAULT verify INT and VARCHAR defaults
+[NO]DEFAULT explicit values override
+[NO]DEFAULT verify explicit override
+[NO]Setup DEFAULT with PK
+[NO]DEFAULT with PK missing
+[NO]DEFAULT verify PK default 100
+[NO]Setup DEFAULT FLOAT
+[NO]DEFAULT FLOAT explicit insert
+[NO]Setup DEFAULT NOT NULL
+[NO]DEFAULT NOT NULL missing gets default
+[NO]DEFAULT NOT NULL explicit overrides
+[YES]Reject ALTER TABLE ADD COLUMN
+[YES]Reject ALTER TABLE DROP COLUMN
+[YES]Reject ALTER TABLE MODIFY COLUMN
+[YES]Reject ALTER TABLE nonexistent table
+[YES]Reject ALTER TABLE RENAME
+[YES]Reject ALTER TABLE ADD with DEFAULT
+[YES]Reject ALTER TABLE ADD FLOAT
+[YES]Reject ALTER TABLE ADD DOUBLE
+[YES]Reject ALTER TABLE ADD DATE
+[YES]Reject ALTER TABLE ADD CHAR
+[YES]Reject ALTER TABLE ADD VARCHAR
+[YES]Reject ALTER TABLE ADD NOT NULL
+[YES]Reject ALTER TABLE ADD PK
+[YES]Reject ALTER TABLE ADD UNIQUE
+[YES]Reject ALTER TABLE DROP nonexistent column
+[YES]Reject TRUNCATE TABLE
+[YES]Reject TRUNCATE TABLE nonexistent
+[YES]Reject TRUNCATE TABLE with data
+[YES]Reject TRUNCATE TABLE empty table
+[YES]Reject TRUNCATE without TABLE keyword
+[YES]Reject TRUNCATE TABLE missing name
+[YES]Reject TRUNCATE multiple tables
+[YES]Reject TRUNCATE TABLE CASCADE
+[YES]Reject TRUNCATE TABLE qualified name
+[YES]Reject TRUNCATE TABLE number name
+[YES]Reject CREATE TABLE BOOLEAN unsupported
+[YES]Reject CREATE TABLE TEXT unsupported
+[YES]Reject CREATE TABLE CHECK unsupported
+[YES]Reject CREATE TABLE missing name
+[YES]Reject CREATE TABLE no columns
+[YES]Reject CREATE TABLE empty column name
+[YES]Reject CREATE TABLE duplicate column
+[YES]Reject CREATE TABLE VARCHAR(0)
+[YES]Reject CREATE TABLE duplicate name
+[YES]Reject CREATE TABLE name too long
+[YES]Reject CHECK single condition
+[YES]Reject CHECK compound condition
+[YES]Reject CHECK string condition
+[YES]Reject CHECK multiple columns
+[YES]Reject CHECK table-level constraint

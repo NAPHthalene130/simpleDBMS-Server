@@ -191,3 +191,6 @@ vcpkg_installed/
 /build-msvc/
 src/storage/data/*
 src/test/StorageCoreChainTest.cpp
+test/report.log
+build*/
+src/test/test_write_check.txt

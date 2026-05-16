@@ -19,6 +19,8 @@ public:
     static constexpr std::int32_t INTEGRITY_NOT_NULL = 1;
     static constexpr std::int32_t INTEGRITY_PRIMARY_KEY = 2;
     static constexpr std::int32_t INTEGRITY_UNIQUE = 4;
+    static constexpr std::int32_t INTEGRITY_AUTO_INCREMENT = 8;
+    static constexpr std::int32_t INTEGRITY_FOREIGN_KEY = 16;
 
     FieldBlock();
 

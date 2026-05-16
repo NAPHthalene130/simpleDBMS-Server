@@ -474,13 +474,24 @@ bool DatabaseManager::createTable(const std::string &dbName,
         return false;
     }
     try {
+        std::vector<storage::Table::ColumnDefinition> cols = columns;
+        // Reorder PK column to front if any column has isPrimaryKey=true
+        std::size_t pkIdx = cols.size();
+        for (std::size_t i = 0; i < cols.size(); ++i)
+            if (cols[i].isPrimaryKey) { pkIdx = i; break; }
+        if (pkIdx < cols.size() && pkIdx > 0) {
+            auto pk = std::move(cols[pkIdx]);
+            cols.erase(cols.begin() + static_cast<std::ptrdiff_t>(pkIdx));
+            cols.insert(cols.begin(), std::move(pk));
+        }
+
         std::vector<std::string> names;
         std::vector<storage::ColumnMeta> columnMetas;
-        names.reserve(columns.size());
-        columnMetas.reserve(columns.size());
-        for (const auto &column : columns) {
-            names.push_back(column.name);
-            columnMetas.push_back(storage::Table::toColumnMeta(column));
+        names.reserve(cols.size());
+        columnMetas.reserve(cols.size());
+        for (const auto &col : cols) {
+            names.push_back(col.name);
+            columnMetas.push_back(storage::Table::toColumnMeta(col));
         }
         return createTable(dbName, tableName, names, columnMetas);
     } catch (...) {
@@ -530,6 +541,13 @@ bool DatabaseManager::insertRow(const std::string &dbName,
                         std::string("Inserted row into ") + dbName + "." + tableName
                             + ", value count=" + std::to_string(values.size()));
         return true;
+    } catch (const std::exception &exception) {
+        LogWriter::error("storage",
+                         "DatabaseManager",
+                         "insertRow",
+                         std::string("Exception inserting into ") + dbName + "." + tableName
+                             + ": " + exception.what());
+        return false;
     } catch (...) {
         LogWriter::error("storage",
                          "DatabaseManager",
@@ -835,9 +853,14 @@ DatabaseManager::JoinResult DatabaseManager::selectJoinRows(
             aliasColumns[joinAlias] = rightTable.schema().columns;
 
             std::vector<JoinedRecord> nextRows;
+            // 用于 RIGHT_JOIN 跟踪右侧行是否已被匹配
+            // 作者：NAPH130
+            std::vector<bool> rightMatched(joinSpec.type == JoinType::RIGHT_JOIN ? rightRows.size() : 0, false);
+
             for (const auto &leftRecord : joinedRows) {
                 bool matched = false;
-                for (const auto &rightRow : rightRows) {
+                for (std::size_t rIdx = 0; rIdx < rightRows.size(); ++rIdx) {
+                    const auto &rightRow = rightRows[rIdx];
                     const JoinedRecord rightRecord = buildRecord(joinAlias, aliasColumns[joinAlias], rightRow);
                     const JoinedRecord candidate = mergeRecord(leftRecord, rightRecord);
                     bool ok = true;
@@ -851,6 +874,9 @@ DatabaseManager::JoinResult DatabaseManager::selectJoinRows(
                         continue;
                     }
                     matched = true;
+                    if (joinSpec.type == JoinType::RIGHT_JOIN) {
+                        rightMatched[rIdx] = true;
+                    }
                     nextRows.push_back(std::move(candidate));
                 }
 
@@ -860,6 +886,32 @@ DatabaseManager::JoinResult DatabaseManager::selectJoinRows(
                         padded[buildJoinedKey(joinAlias, column)] = "";
                     }
                     nextRows.push_back(std::move(padded));
+                }
+            }
+
+            // RIGHT_JOIN：为未被匹配的右侧行补齐左侧空值
+            // 作者：NAPH130
+            if (joinSpec.type == JoinType::RIGHT_JOIN) {
+                for (std::size_t rIdx = 0; rIdx < rightMatched.size(); ++rIdx) {
+                    if (!rightMatched[rIdx]) {
+                        JoinedRecord padded;
+                        // 左侧列全部为空
+                        // 作者：NAPH130
+                        for (const auto &leftAlias : aliasOrder) {
+                            if (leftAlias == joinAlias) continue;
+                            if (aliasColumns.find(leftAlias) == aliasColumns.end()) continue;
+                            for (const auto &column : aliasColumns[leftAlias]) {
+                                padded[buildJoinedKey(leftAlias, column)] = "";
+                            }
+                        }
+                        // 右侧行数据
+                        // 作者：NAPH130
+                        const JoinedRecord rightRecord = buildRecord(joinAlias, aliasColumns[joinAlias], rightRows[rIdx]);
+                        for (const auto &kv : rightRecord) {
+                            padded[kv.first] = kv.second;
+                        }
+                        nextRows.push_back(std::move(padded));
+                    }
                 }
             }
             joinedRows = std::move(nextRows);

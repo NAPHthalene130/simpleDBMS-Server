@@ -20,5 +20,6 @@ enum class ExecutionStatementType
     UseDatabase,     ///< 切换数据库
     Show,            ///< 查看数据库/表
     Use,             ///< 用户相关操作
+    UnionSelect,     ///< UNION 查询
     Unknown          ///< 未知类型
 };

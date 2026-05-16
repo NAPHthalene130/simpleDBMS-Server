@@ -79,9 +79,11 @@ public:
 
     struct SelectOptions {
         std::string orderByColumn;
-        bool orderByDesc = false;
-        bool hasLimit = false;
-        std::size_t limit = 0;
+        bool orderByDesc;
+        bool hasLimit;
+        std::size_t limit;
+
+        SelectOptions() : orderByDesc(false), hasLimit(false), limit(0) {}
     };
 
     enum class SubqueryKind { Scalar, RowSet, Exists };
@@ -125,6 +127,7 @@ public:
         ColumnConstraintSpec constraints;
         DataType dataType = DataType::TEXT;
         std::uint16_t varcharLen = 0;
+        bool isPrimaryKey = false;
     };
 
     struct QueryConstraint {
@@ -228,6 +231,8 @@ public:
     bool renameColumn(const std::string& oldName, const std::string& newName);
     bool alterColumnType(const std::string& column, DataType newType, std::uint16_t varcharLen = 0);
 
+    bool setPrimaryKey(const std::string& column);
+
     SubqueryResult evaluateSubquery(const SubquerySpec& spec) const;
 
     /**
@@ -281,24 +286,29 @@ public:
      */
     static ColumnMeta toColumnMeta(const ColumnDefinition& def);
 
-    /**
-     * @brief 比较两个字段值
-     * @author Startale
-     * @param left 左值
-     * @param op 比较操作符
-     * @param right 右值
-     * @return 比较结果
-     */
-    static bool compareValue(const std::string& left, CompareOp op, const std::string& right);
-    static bool compareValue(const std::string& left,
-                             const WhereCondition& condition);
+    const TableSchema& schema() const { return schema_; }
 
     /**
-     * @brief 获取表结构
-     * @author Startale
-     * @return 表结构对象
+     * @brief 获取指定列的下一自增值并递增计数器
+     * @author NAPH130
+     * @param columnName 列名
+     * @return 下一自增值（首次调用从1开始）
      */
-    const TableSchema& schema() const { return schema_; }
+    std::int64_t nextAutoIncValue(const std::string& columnName) const;
+
+    /**
+     * @brief 初始化自增计数器起始值
+     * @author NAPH130
+     * @param columnName 列名
+     * @param startValue 起始值
+     */
+    void initAutoIncValue(const std::string& columnName, std::int64_t startValue);
+
+    /**
+     * @brief 检查指定列是否有自增标记
+     * @author NAPH130
+     */
+    bool isAutoIncColumn(const std::string& columnName) const;
 
     /**
      * @brief 检查主键是否已存在
@@ -361,6 +371,7 @@ private:
     std::map<std::string, std::uint64_t> primaryKeyOffsetsOrdered_;
     std::unordered_map<std::string, ColumnConstraintSpec> constraintsByColumn_;
     std::unordered_map<std::string, ColumnIndex> secondaryIndexes_;
+    mutable std::map<std::string, std::int64_t> autoIncCounters_;
     DataPageManager dataPages_{*this};
     std::uint32_t rootPageId_ = 1;
     std::uint32_t nextPageId_ = 2;

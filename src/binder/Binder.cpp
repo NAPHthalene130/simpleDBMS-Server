@@ -104,6 +104,10 @@ BindResult Binder::bindSelect(const SelectStmt *selectStmt, const std::string &c
     // 2. 绑定 JOIN 子句
     // 作者：NAPH130
     const auto &joinInfoList = selectStmt->getJoinInfoList();
+    LogWriter::info("binder", "Binder", "bindSelect",
+                    "JOIN count=" + std::to_string(joinInfoList.size())
+                        + " hasJoin=" + std::to_string(selectStmt->hasJoin())
+                        + " for table=" + tableName);
     for (const auto &joinInfo : joinInfoList) {
         auto joinSchema = loadTableSchema(dbPath, joinInfo.tableName);
         if (joinSchema.name.empty()) {

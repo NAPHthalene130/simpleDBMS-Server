@@ -483,27 +483,28 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 serverVersion = core->getStorageManager()->getSystemCatalogManager()
                                     ->getDatabaseVersion(requestDbName);
                 if (clientVersion != serverVersion) {
-                    NetworkTransferData versionError(NetworkTransferData::SQL_EXEC_RESPONSE,
-                                                      networkTransferData.getId());
-                    versionError.setSuccess(false);
-                    versionError.setDbName(requestDbName);
-                    versionError.setDbVersion(serverVersion);
-                    versionError.setMessage("Database version mismatch: client="
-                        + std::to_string(clientVersion) + ", server=" + std::to_string(serverVersion)
-                        + ". Please refresh the directory.");
-                    LogWriter::warning("network", "NetReceiver", "processMsg",
-                                       std::string("Database version mismatch for ") + requestDbName
-                                           + ": client=" + std::to_string(clientVersion)
-                                           + ", server=" + std::to_string(serverVersion));
-                    sendResponse(versionError);
-                    return;
+                    // 客户端首次请求(dbVersion=0)允许通过
+                    // 作者：NAPH130
+                    if (clientVersion != 0) {
+                        NetworkTransferData versionError(NetworkTransferData::SQL_EXEC_RESPONSE,
+                                                          networkTransferData.getId());
+                        versionError.setSuccess(false);
+                        versionError.setDbName(requestDbName);
+                        versionError.setDbVersion(serverVersion);
+                        versionError.setMessage("Database version mismatch: client="
+                            + std::to_string(clientVersion) + ", server=" + std::to_string(serverVersion)
+                            + ". Please refresh the directory.");
+                        LogWriter::warning("network", "NetReceiver", "processMsg",
+                                           std::string("Database version mismatch for ") + requestDbName
+                                               + ": client=" + std::to_string(clientVersion)
+                                               + ", server=" + std::to_string(serverVersion));
+                        sendResponse(versionError);
+                        return;
+                    }
                 }
                 versionChecked = true;
-                // 核验通过后递增版本号
+                // 仅 DDL/DML 操作后递增版本号，SELECT/SHOW 等查询不递增
                 // 作者：NAPH130
-                core->getStorageManager()->getSystemCatalogManager()->addDatabaseVersion(requestDbName);
-                serverVersion = core->getStorageManager()->getSystemCatalogManager()
-                                    ->getDatabaseVersion(requestDbName);
             }
 
             // 1. 对整个 SQL 文本进行词法分析
@@ -722,6 +723,16 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
 
                     if (executionResult.getDbName().empty()) {
                         executionResult.setDbName(executionContext.getCurrentDbName());
+                    }
+
+                    // DDL/DML 操作成功后递增版本号
+                    // 作者：NAPH130
+                    if (versionChecked && !isQueryStatementType(statementType)
+                        && executionResult.getStatus() == ExecutionStatus::Success) {
+                        core->getStorageManager()->getSystemCatalogManager()
+                            ->addDatabaseVersion(requestDbName);
+                        serverVersion = core->getStorageManager()->getSystemCatalogManager()
+                                            ->getDatabaseVersion(requestDbName);
                     }
 
                     NetworkTransferData responseData = buildExecutionResponse(

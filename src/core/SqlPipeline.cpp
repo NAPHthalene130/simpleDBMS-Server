@@ -5,14 +5,21 @@
 #include <nlohmann/json.hpp>
 
 #include "Core.h"
+#include "binder/Binder.h"
+#include "binder/BinderManager.h"
 #include "executor/ExecutorEngine.h"
 #include "executor/ExecutorManager.h"
 #include "models/executor/ExecutionContext.h"
 #include "models/executor/ExecutionResult.h"
 #include "models/network/NetworkExecutionContext.h"
 #include "models/parser/ParseResult.h"
+#include "models/parser/SelectStmt.h"
+#include "models/parser/UnionStmt.h"
 #include "parser/Parser.h"
 #include "parser/ParserManager.h"
+#include "plan/PlanExecutor.h"
+#include "plan/PlanManager.h"
+#include "plan/Planner.h"
 #include "tokenizer/Tokenizer.h"
 #include "log/LogWriter.h"
 
@@ -140,6 +147,109 @@ NetData SqlPipeline::handleSql(const std::string &sql, const NetworkExecutionCon
                              + networkExecutionContext->getConnectionId());
     }
 
+    const ExecutionStatementType statementType = parseResult.statement->getStmtType();
+    const std::string currentDbName = executionContext.getCurrentDbName();
+
+    // 对 SELECT 语句优先使用 Binder + Plan 管道（支持 JOIN 和聚合）
+    // 作者：NAPH130
+    if (statementType == ExecutionStatementType::Select && !currentDbName.empty()
+        && core->getBinderManager() != nullptr && core->getBinderManager()->getBinder() != nullptr
+        && core->getPlanManager() != nullptr && core->getPlanManager()->getPlanner() != nullptr) {
+        const SelectStmt *selectStmt = static_cast<const SelectStmt *>(parseResult.statement.get());
+        const BindResult bindResult =
+            core->getBinderManager()->getBinder()->bindSelect(selectStmt, currentDbName);
+
+        if (bindResult.success) {
+            auto planRoot = core->getPlanManager()->getPlanner()->planSelect(bindResult, currentDbName);
+
+            if (planRoot != nullptr) {
+                PlanExecutor planExecutor(core);
+                ExecutionResult planResult = planExecutor.execute(
+                    planRoot, currentDbName, selectStmt, &executionContext);
+
+                if (!planResult.getDbName().empty()) {
+                    executionContext.setCurrentDbName(planResult.getDbName());
+                }
+                if (planResult.getDbName().empty()) {
+                    planResult.setDbName(currentDbName);
+                }
+
+                LogWriter::info("pipeline", "SqlPipeline", "handleSql",
+                                "Binder+Plan execution finished: " + planResult.getMessage());
+                return buildExecutionResponse(planResult);
+            }
+        }
+    }
+
+    // UNION 查询处理
+    // 作者：NAPH130
+    if (statementType == ExecutionStatementType::UnionSelect && !currentDbName.empty()
+        && core->getBinderManager() != nullptr && core->getPlanManager() != nullptr) {
+        const UnionStmt *unionStmt = static_cast<const UnionStmt *>(parseResult.statement.get());
+        auto execSingleSelect = [this, &executionContext, currentDbName, core = this->core](
+            const std::shared_ptr<SQLStatement> &subStmt) -> ExecutionResult {
+            if (subStmt == nullptr) {
+                ExecutionResult r;
+                r.setStatus(ExecutionStatus::Failure);
+                r.setMessage("union sub-statement is null");
+                return r;
+            }
+            if (subStmt->getStmtType() == ExecutionStatementType::Select) {
+                const SelectStmt *sel = static_cast<const SelectStmt *>(subStmt.get());
+                const BindResult br =
+                    core->getBinderManager()->getBinder()->bindSelect(sel, currentDbName);
+                if (br.success) {
+                    auto pr = core->getPlanManager()->getPlanner()->planSelect(br, currentDbName);
+                    if (pr) {
+                        PlanExecutor pe(core);
+                        return pe.execute(pr, currentDbName, sel, &executionContext);
+                    }
+                }
+            }
+            return core->getExecutorManager()->getExecutorEngine()->execute(
+                subStmt.get(), &executionContext);
+        };
+
+        ExecutionResult leftResult = execSingleSelect(unionStmt->getLeftStmt());
+        ExecutionResult rightResult = execSingleSelect(unionStmt->getRightStmt());
+
+        if (leftResult.getStatus() == ExecutionStatus::Success
+            && rightResult.getStatus() == ExecutionStatus::Success) {
+            std::vector<std::string> unionColumns = leftResult.getColumns();
+            std::vector<std::vector<std::string>> unionRows;
+            for (const auto &row : leftResult.getResultSet()) {
+                unionRows.push_back(row);
+            }
+            for (const auto &row : rightResult.getResultSet()) {
+                if (unionStmt->isUnionAll()) {
+                    unionRows.push_back(row);
+                } else {
+                    bool duplicate = false;
+                    for (const auto &existing : unionRows) {
+                        if (existing == row) { duplicate = true; break; }
+                    }
+                    if (!duplicate) unionRows.push_back(row);
+                }
+            }
+            ExecutionResult unionResult;
+            unionResult.setStatus(ExecutionStatus::Success);
+            unionResult.setMessage("UNION succeeded.");
+            unionResult.setColumns(unionColumns);
+            unionResult.setResultSet(unionRows);
+            unionResult.setAffectedRows(static_cast<std::int32_t>(unionRows.size()));
+            unionResult.setDbName(currentDbName);
+            LogWriter::info("pipeline", "SqlPipeline", "handleSql",
+                            "UNION execution finished with " + std::to_string(unionRows.size()) + " rows.");
+            return buildExecutionResponse(unionResult);
+        } else {
+            NetData errorResp = buildErrorResponse("executor",
+                "UNION failed: " + leftResult.getMessage() + " / " + rightResult.getMessage());
+            return errorResp;
+        }
+    }
+
+    // 普通执行路径
+    // 作者：YuzhSong
     const ExecutionResult executionResult =
         core->getExecutorManager()->getExecutorEngine()->execute(parseResult.statement.get(), &executionContext);
     LogWriter::info("pipeline",

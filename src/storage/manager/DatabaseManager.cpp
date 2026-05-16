@@ -972,7 +972,13 @@ DatabaseManager::JoinResult DatabaseManager::selectJoinRows(
         }
 
         return result;
+    } catch (const std::exception &e) {
+        LogWriter::error("storage", "DatabaseManager", "selectJoinRows",
+                         std::string("Join failed: ") + e.what());
+        return {};
     } catch (...) {
+        LogWriter::error("storage", "DatabaseManager", "selectJoinRows",
+                         "Join failed with unknown exception");
         return {};
     }
 }

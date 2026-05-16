@@ -172,7 +172,8 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
         switch (fieldType) {
             case 1: meta.dataType = storage::DataType::INT; break;
             case 2:
-            case 3: meta.dataType = storage::DataType::FLOAT; break;
+            case 3:
+            case 7: meta.dataType = storage::DataType::FLOAT; break;
             case 5: meta.dataType = storage::DataType::VARCHAR; meta.varcharLen = static_cast<std::uint16_t>(fieldParam); break;
             default: meta.dataType = storage::DataType::TEXT; break;
         }

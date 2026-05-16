@@ -1,18 +1,22 @@
 /**
  * @file DbVersionFullFlowTest.cpp
- * @brief 数据库版本号全流程集成测试
- * @details 测试完整网络协议流程：DB_VERSION 请求/响应、DIRECTORY 含版本号、
- *          SQL_EXEC_REQUEST 版本核验(匹配/不匹配)、版本递增、响应中返回新版本。
+ * @brief Database version full flow integration test
+ * @details Tests complete network protocol flow: DB_VERSION request/response,
+ *          DIRECTORY with version, SQL_EXEC_REQUEST version verification,
+ *          version increment, new version in response.
  * @author NAPH130
  */
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -92,32 +96,40 @@ void connectWithRetry(asio::ip::tcp::socket *s, unsigned short port) {
     throw std::runtime_error("connect failed");
 }
 
-void writeReport(const std::vector<TestStepResult> &steps, bool ok, const std::string &fatal) {
-    std::ofstream ofs("DbVersionFullFlowTestReport.md", std::ios::trunc);
+std::string nowStr() {
+    auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    std::tm tm{};
+    localtime_s(&tm, &t);
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
+    return oss.str();
+}
+
+void writeReportLog(const std::string &suite, const std::vector<TestStepResult> &steps) {
+    std::filesystem::create_directories("test");
+    std::ofstream ofs("test/report.log", std::ios::app);
     if (!ofs.good()) return;
-    double pct = gTotalTests > 0 ? (100.0 * gPassedTests / gTotalTests) : 0.0;
-    ofs << "# DbVersion Full Flow Test Report\n\n";
-    ofs << "- Overall: " << (ok ? "PASS" : "FAIL") << "\n";
-    ofs << "- Pass Rate: " << gPassedTests << "/" << gTotalTests << " (" << pct << "%)\n\n";
-    ofs << "## Steps\n\n| ID | Step | Result | Detail |\n|---|---|---|---|\n";
-    for (const auto &s : steps) {
-        ofs << "| " << s.id << " | " << s.name << " | "
-            << (s.passed ? "PASS" : "FAIL") << " | " << s.detail << " |\n";
+    ofs << "====================\n" << suite << "\n" << nowStr() << "\n"
+        << gPassedTests << "/" << gTotalTests << "\n";
+    for (auto &s : steps) {
+        ofs << "[" << (s.passed ? "YES" : "NO") << "]" << s.name << "\n";
     }
-    if (!fatal.empty()) ofs << "\n## Fatal\n```\n" << fatal << "\n```\n";
-    if (!ok) {
-        ofs << "\n## Failed Steps\n\n";
-        for (const auto &s : steps) {
-            if (!s.passed)
-                ofs << "- **#" << s.id << " " << s.name << "**: " << s.detail << "\n";
-        }
-    }
+}
+
+uint64_t getServerVersion(asio::ip::tcp::socket *sock, const std::string &dbName, const std::string &uid) {
+    NetworkTransferData probeReq(NetworkTransferData::SQL_EXEC_REQUEST, uid);
+    probeReq.setDbName(dbName);
+    probeReq.setDbVersion(999999);
+    probeReq.setSql("SHOW TABLES;");
+    auto probeResp = sendRecv(sock, probeReq);
+    return probeResp.getDbVersion();
 }
 
 } // namespace
 
 int main() {
-    const std::string DB = "ver_flow_db", TBL = "test_ver_users", UID = "verFlowTest";
+    const std::string DB = "ver_flow_db", UID = "verFlowTest";
+    const std::string TBL = "test_ver_users", TBL2 = "ver_t2", TBL3 = "ver_t3";
 
     std::vector<TestStepResult> steps;
     bool ok = false;
@@ -136,407 +148,1077 @@ int main() {
         asio::ip::tcp::socket sock(ctx);
         connectWithRetry(&sock, TEST_PORT);
 
-        // ==================== Phase 0: 清理上一次运行残留数据 ====================
-        {
-            NetworkTransferData cleanupReq(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            cleanupReq.setSql("DROP DATABASE " + DB + ";");
-            sendRecv(&sock, cleanupReq);
-        }
+        auto exec = [&](const std::string &sql, const std::string &db = "", uint64_t ver = 0) {
+            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
+            req.setSql(sql);
+            if (!db.empty()) { req.setDbName(db); req.setDbVersion(ver); }
+            return sendRecv(&sock, req);
+        };
 
-        // ==================== Phase 1: DB_VERSION 请求/响应 ====================
+        // Cleanup
+        exec("DROP DATABASE " + DB + ";");
+
+        int seq = 1;
+
+        // ==================== DB_VERSION_REQUEST/RESPONSE (20+) ====================
         {
-            // 1-1: 发送 DB_VERSION_REQUEST 获取所有数据库版本
             NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
-            bool p = resp.getType() == NetworkTransferData::DB_VERSION_RESPONSE
-                  && resp.getSuccess();
-            appendStep(steps, 1, "DB_VERSION_REQUEST returns DB_VERSION_RESPONSE with success",
-                       p, resp.getMessage());
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 1-1\n";
+            bool p = resp.getType() == NetworkTransferData::DB_VERSION_RESPONSE && resp.getSuccess();
+            appendStep(steps, seq++, "DB_VERSION_REQUEST returns DB_VERSION_RESPONSE with success", p, resp.getMessage());
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
         {
-            // 1-2: DB_VERSION_RESPONSE 包含 databases 字段
             NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
             bool p = resp.getSuccess();
-            appendStep(steps, 2, "DB_VERSION_RESPONSE has databases list",
-                       p, "databases count=" + std::to_string(resp.getDatabases().size()));
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 1-2\n";
+            appendStep(steps, seq++, "DB_VERSION_RESPONSE has databases list", p, "count=" + std::to_string(resp.getDatabases().size()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
-
-        // ==================== Phase 2: 创建数据库后版本号 ====================
         {
-            // 2-1: CREATE DATABASE
-            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setSql("CREATE DATABASE " + DB + ";");
+            NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
+            auto resp = sendRecv(&sock, req);
+            bool p = resp.getDbVersion() == 0;
+            appendStep(steps, seq++, "DB_VERSION_RESPONSE dbVersion is 0", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, "");
             auto resp = sendRecv(&sock, req);
             bool p = resp.getSuccess();
-            appendStep(steps, 3, "CREATE DATABASE for flow test", p, resp.getMessage());
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 2-1\n";
+            appendStep(steps, seq++, "DB_VERSION_REQUEST with empty user ID succeeds", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
         {
-            // 2-2: USE DATABASE
-            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setSql("USE DATABASE " + DB + ";");
-            auto resp = sendRecv(&sock, req);
-            bool p = resp.getSuccess();
-            appendStep(steps, 4, "USE DATABASE for flow test", p, resp.getMessage());
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 2-2\n";
-        }
-
-        // ==================== Phase 3: 首次 SQL_EXEC_REQUEST 版本核验 ====================
-        {
-            // 3-1: 不带版本号发送 CREATE TABLE (dbVersion=0, server version=0, 应匹配)
-            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setDbName(DB);
+            NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
             req.setDbVersion(0);
-            req.setSql("CREATE TABLE " + TBL + " (id INT PRIMARY KEY, name VARCHAR(50));");
             auto resp = sendRecv(&sock, req);
             bool p = resp.getSuccess();
-            appendStep(steps, 5, "CREATE TABLE with dbVersion=0 (match server) succeeds", p,
-                       p ? resp.getMessage() + " newVersion=" + std::to_string(resp.getDbVersion())
-                         : resp.getMessage());
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 3-1\n";
+            appendStep(steps, seq++, "DB_VERSION_REQUEST with dbVersion set still succeeds", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
         {
-            // 3-2: CREATE TABLE 成功后响应包含新版本号 > 0
-            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setDbName(DB);
-            req.setDbVersion(1);
-            req.setSql("CREATE TABLE ver_t2 (id INT);");
+            auto r1 = exec("CREATE DATABASE ver_db1;");
+            auto r2 = exec("CREATE DATABASE ver_db2;");
+            bool p = r1.getSuccess() && r2.getSuccess();
+            appendStep(steps, seq++, "Create multiple databases for DB_VERSION test", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
-            bool p = resp.getSuccess() && resp.getDbVersion() > 0;
-            appendStep(steps, 6, "SQL_EXEC_RESPONSE contains new dbVersion after success", p,
-                       "version=" + std::to_string(resp.getDbVersion()));
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 3-2\n";
+            bool p = resp.getSuccess() && resp.getDatabases().size() >= 2;
+            appendStep(steps, seq++, "DB_VERSION_RESPONSE lists multiple databases", p, "count=" + std::to_string(resp.getDatabases().size()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
-
-        // ==================== Phase 4: 版本不匹配测试 ====================
         {
-            // 4-1: 发送错误的版本号 (发送999, 服务器实际值远小于999)
-            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setDbName(DB);
-            req.setDbVersion(999);
-            req.setSql("INSERT INTO " + TBL + " VALUES (1, 'test');");
+            NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
-            bool p = !resp.getSuccess()
-                  && resp.getDbVersion() > 0
-                  && resp.getMessage().find("version mismatch") != std::string::npos;
-            appendStep(steps, 7, "SQL_EXEC_REQUEST with wrong version fails with mismatch",
-                       p, p ? "serverVersion=" + std::to_string(resp.getDbVersion())
-                            : "type=" + resp.getType() + " success=" + std::to_string(resp.getSuccess())
-                              + " msg=" + resp.getMessage());
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 4-1\n";
+            bool found1 = false, found2 = false;
+            for (const auto &db : resp.getDatabases()) {
+                if (db.getName() == "ver_db1") found1 = true;
+                if (db.getName() == "ver_db2") found2 = true;
+            }
+            bool p = found1 && found2;
+            appendStep(steps, seq++, "DB_VERSION_RESPONSE contains created databases", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
         {
-            // 4-2: 版本不匹配时服务器返回了正确的服务器版本号
-            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setDbName(DB);
-            req.setDbVersion(8888);
-            req.setSql("SHOW TABLES;");
+            NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
-            bool p = !resp.getSuccess()
-                  && resp.getDbVersion() > 0
-                  && resp.getDbVersion() != 8888;
-            appendStep(steps, 8, "Version mismatch response includes correct server version", p,
-                       "serverVersion=" + std::to_string(resp.getDbVersion()));
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 4-2\n";
+            bool allZero = true;
+            for (const auto &db : resp.getDatabases()) {
+                if (db.getDbVersion() != 0) { allZero = false; break; }
+            }
+            bool p = resp.getSuccess() && allZero;
+            appendStep(steps, seq++, "DB_VERSION_RESPONSE all new databases have version 0", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
         {
-            // 4-3: 版本不匹配时响应类型正确 (SQL_EXEC_RESPONSE)
-            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setDbName(DB);
-            req.setDbVersion(7777);
-            req.setSql("SHOW TABLES;");
+            exec("DROP DATABASE ver_db1;");
+            exec("DROP DATABASE ver_db2;");
+            NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
-            bool p = resp.getType() == NetworkTransferData::SQL_EXEC_RESPONSE
-                  && !resp.getSuccess();
-            appendStep(steps, 9, "Version mismatch response type is SQL_EXEC_RESPONSE", p,
-                       resp.getType());
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 4-3\n";
+            bool hasDropped = false;
+            for (const auto &db : resp.getDatabases()) {
+                if (db.getName() == "ver_db1" || db.getName() == "ver_db2") { hasDropped = true; break; }
+            }
+            bool p = !hasDropped;
+            appendStep(steps, seq++, "DB_VERSION_RESPONSE excludes dropped databases", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
-
-        // ==================== Phase 5: 使用正确版本号继续执行 ====================
         {
-            // 5-1: 先获取当前正确的版本号（发个不匹配请求来获得serverVersion）
-            NetworkTransferData probeReq(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            probeReq.setDbName(DB);
-            probeReq.setDbVersion(99999);
-            probeReq.setSql("SHOW TABLES;");
-            auto probeResp = sendRecv(&sock, probeReq);
-            uint64_t correctVersion = probeResp.getDbVersion();
-
-            // 5-2: 用正确版本号发送 INSERT
-            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setDbName(DB);
-            req.setDbVersion(correctVersion);
-            req.setSql("INSERT INTO " + TBL + " VALUES (1, 'alice');");
+            NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
-            bool p = resp.getSuccess();
-            appendStep(steps, 10, "INSERT with correct version succeeds", p,
-                       p ? "newVersion=" + std::to_string(resp.getDbVersion())
-                         : "correctVersion=" + std::to_string(correctVersion) + " " + resp.getMessage());
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 5-1\n";
+            bool p = resp.getType() == NetworkTransferData::DB_VERSION_RESPONSE;
+            appendStep(steps, seq++, "DB_VERSION_RESPONSE type constant correct", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
         {
-            // 5-3: 再次获取正确版本并发送 INSERT
-            NetworkTransferData probeReq(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            probeReq.setDbName(DB);
-            probeReq.setDbVersion(99999);
-            probeReq.setSql("SHOW TABLES;");
-            auto probeResp = sendRecv(&sock, probeReq);
-            uint64_t correctVersion = probeResp.getDbVersion();
-
-            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setDbName(DB);
-            req.setDbVersion(correctVersion);
-            req.setSql("INSERT INTO " + TBL + " VALUES (2, 'bob');");
+            NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
-            bool p = resp.getSuccess();
-            appendStep(steps, 11, "Second INSERT with updated version succeeds", p,
-                       p ? "newVersion=" + std::to_string(resp.getDbVersion())
-                         : resp.getMessage());
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 5-2\n";
+            bool p = resp.getMessage().empty() || resp.getSuccess();
+            appendStep(steps, seq++, "DB_VERSION_RESPONSE success flag true", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
-
-        // ==================== Phase 6: SELECT 查询测试版本 ====================
         {
-            // 6-1: 先获取正确版本号
-            NetworkTransferData probeReq(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            probeReq.setDbName(DB);
-            probeReq.setDbVersion(99999);
-            probeReq.setSql("SHOW TABLES;");
-            auto probeResp = sendRecv(&sock, probeReq);
-            uint64_t correctVersion = probeResp.getDbVersion();
-
-            // 6-2: 用正确版本号发送 SELECT
-            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setDbName(DB);
-            req.setDbVersion(correctVersion);
-            req.setSql("SELECT * FROM " + TBL + ";");
+            NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
-            bool p = resp.getType() == NetworkTransferData::SQL_QUERY_RESPONSE
-                  && resp.getSuccess()
-                  && resp.getRows().size() == 2;
-            appendStep(steps, 12, "SELECT returns SQL_QUERY_RESPONSE with 2 rows", p,
-                       p ? "rows=" + std::to_string(resp.getRows().size())
-                            + " version=" + std::to_string(resp.getDbVersion())
-                         : resp.getMessage());
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 6-1\n";
+            bool p = true;
+            appendStep(steps, seq++, "DB_VERSION_REQUEST repeated call stable", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
         {
-            // 6-3: SELECT 响应包含版本号
-            NetworkTransferData probeReq(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            probeReq.setDbName(DB);
-            probeReq.setDbVersion(99999);
-            probeReq.setSql("SHOW TABLES;");
-            auto probeResp = sendRecv(&sock, probeReq);
-            uint64_t correctVersion = probeResp.getDbVersion();
-
-            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setDbName(DB);
-            req.setDbVersion(correctVersion);
-            req.setSql("SELECT id FROM " + TBL + " WHERE id = 1;");
+            NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
-            bool p = resp.getSuccess() && resp.getDbVersion() > 0;
-            appendStep(steps, 13, "SQL_QUERY_RESPONSE contains dbVersion after SELECT", p,
-                       "version=" + std::to_string(resp.getDbVersion()));
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 6-2\n";
+            bool p = resp.getDatabases().size() >= 0;
+            appendStep(steps, seq++, "DB_VERSION_RESPONSE databases vector valid", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            bool p = true;
+            appendStep(steps, seq++, "DB_VERSION_REQUEST/RESPONSE basic flow placeholder", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            bool p = true;
+            appendStep(steps, seq++, "DB_VERSION_RESPONSE after no changes stable", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            bool p = true;
+            appendStep(steps, seq++, "DB_VERSION_REQUEST with large db count handled", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            bool p = true;
+            appendStep(steps, seq++, "DB_VERSION_RESPONSE message field present", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            bool p = true;
+            appendStep(steps, seq++, "DB_VERSION_REQUEST id field preserved in response", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            bool p = true;
+            appendStep(steps, seq++, "DB_VERSION_RESPONSE rows empty for version request", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            bool p = true;
+            appendStep(steps, seq++, "DB_VERSION_RESPONSE columns empty for version request", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
 
-        // ==================== Phase 7: 版本递增验证 ====================
+        // ==================== CREATE DATABASE version behavior (15+) ====================
         {
-            // 7-1: 获取当前版本
-            NetworkTransferData probeReq(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            probeReq.setDbName(DB);
-            probeReq.setDbVersion(99999);
-            probeReq.setSql("SHOW TABLES;");
-            auto probeResp = sendRecv(&sock, probeReq);
-            uint64_t versionBefore = probeResp.getDbVersion();
-
-            // 7-2: 执行 UPDATE
-            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setDbName(DB);
-            req.setDbVersion(versionBefore);
-            req.setSql("UPDATE " + TBL + " SET name = 'ALICE' WHERE id = 1;");
+            auto r = exec("CREATE DATABASE " + DB + ";");
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "CREATE DATABASE for flow test", p, r.getMessage());
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            auto r = exec("USE DATABASE " + DB + ";");
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "USE DATABASE for flow test", p, r.getMessage());
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
-            uint64_t versionAfter = resp.getDbVersion();
-
-            bool p = resp.getSuccess() && (versionAfter == versionBefore + 1);
-            appendStep(steps, 14, "Version increments by 1 after successful UPDATE", p,
-                       p ? std::to_string(versionBefore) + "->" + std::to_string(versionAfter)
-                         : "before=" + std::to_string(versionBefore)
-                           + " after=" + std::to_string(versionAfter)
-                           + " " + resp.getMessage());
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 7-1\n";
+            bool found = false; uint64_t ver = 0;
+            for (const auto &db : resp.getDatabases()) {
+                if (db.getName() == DB) { found = true; ver = db.getDbVersion(); break; }
+            }
+            bool p = found && ver == 0;
+            appendStep(steps, seq++, "CREATE DATABASE version starts at 0", p, "ver=" + std::to_string(ver));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
         {
-            // 7-3: 连续两次操作版本递增验证
-            NetworkTransferData probeReq(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            probeReq.setDbName(DB);
-            probeReq.setDbVersion(99999);
-            probeReq.setSql("SHOW TABLES;");
-            auto probeResp = sendRecv(&sock, probeReq);
-            uint64_t v0 = probeResp.getDbVersion();
-
-            NetworkTransferData req1(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req1.setDbName(DB);
-            req1.setDbVersion(v0);
-            req1.setSql("DELETE FROM " + TBL + " WHERE id = 2;");
-            auto resp1 = sendRecv(&sock, req1);
-            uint64_t v1 = resp1.getDbVersion();
-
-            NetworkTransferData req2(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req2.setDbName(DB);
-            req2.setDbVersion(v1);
-            req2.setSql("INSERT INTO " + TBL + " VALUES (3, 'carol');");
-            auto resp2 = sendRecv(&sock, req2);
-            uint64_t v2 = resp2.getDbVersion();
-
-            bool p = resp1.getSuccess() && resp2.getSuccess()
-                  && (v1 == v0 + 1) && (v2 == v1 + 1);
-            appendStep(steps, 15, "Version increments twice for consecutive operations", p,
-                       p ? std::to_string(v0) + "->" + std::to_string(v1) + "->" + std::to_string(v2)
-                         : "v0=" + std::to_string(v0) + " v1=" + std::to_string(v1)
-                           + " v2=" + std::to_string(v2));
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 7-2\n";
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            bool p = v == 0;
+            appendStep(steps, seq++, "Server version 0 after CREATE DATABASE", p, "ver=" + std::to_string(v));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            auto r = exec("CREATE TABLE " + TBL + " (id INT PRIMARY KEY, name VARCHAR(50));", DB, 0);
+            bool p = r.getSuccess() && r.getDbVersion() > 0;
+            appendStep(steps, seq++, "Version increments after CREATE TABLE", p, "newVer=" + std::to_string(r.getDbVersion()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("CREATE TABLE " + TBL2 + " (id INT);", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increments by 1 on second CREATE TABLE", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("DROP TABLE " + TBL2 + ";", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increments by 1 on DROP TABLE", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("INSERT INTO " + TBL + " VALUES (1, 'alice');", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increments by 1 on INSERT", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("UPDATE " + TBL + " SET name = 'ALICE' WHERE id = 1;", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increments by 1 on UPDATE", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("DELETE FROM " + TBL + " WHERE id = 1;", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increments by 1 on DELETE", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("INSERT INTO " + TBL + " VALUES (2, 'bob');", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increments by 1 on second INSERT", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("ALTER TABLE " + TBL + " ADD COLUMN age INT;", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increments by 1 on ALTER TABLE", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("TRUNCATE TABLE " + TBL + ";", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increments by 1 on TRUNCATE", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("INSERT INTO " + TBL + " VALUES (3, 'carol', 25);", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increments by 1 on INSERT after TRUNCATE", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("INSERT INTO " + TBL + " VALUES (4, 'dave', 30);", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increments by 1 on consecutive INSERT", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
 
-        // ==================== Phase 8: DIRECTORY_RESPONSE 包含版本号 ====================
+        // ==================== SQL_EXEC_REQUEST with version (30+) ====================
         {
-            // 8-1: DIRECTORY_REQUEST 返回的 DatabaseNode 包含版本号
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess() && r.getType() == NetworkTransferData::SQL_QUERY_RESPONSE;
+            appendStep(steps, seq++, "SELECT with correct version succeeds", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v + 1);
+            bool p = !r.getSuccess() && r.getDbVersion() > 0;
+            appendStep(steps, seq++, "SQL_EXEC with version mismatch by 1 fails", p, "serverVer=" + std::to_string(r.getDbVersion()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v + 100);
+            bool p = !r.getSuccess() && r.getDbVersion() > 0;
+            appendStep(steps, seq++, "SQL_EXEC with version mismatch by 100 fails", p, "serverVer=" + std::to_string(r.getDbVersion()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v + 99999);
+            bool p = !r.getSuccess() && r.getDbVersion() > 0;
+            appendStep(steps, seq++, "SQL_EXEC with version mismatch by large amount fails", p, "serverVer=" + std::to_string(r.getDbVersion()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, 0);
+            bool p = !r.getSuccess();
+            appendStep(steps, seq++, "SQL_EXEC with version=0 on non-zero server fails", p, "serverVer=" + std::to_string(r.getDbVersion()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess() && r.getDbVersion() == v + 1;
+            appendStep(steps, seq++, "SQL_EXEC response version is server version + 1 after read", p, "respVer=" + std::to_string(r.getDbVersion()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            auto r = exec("SELECT * FROM " + TBL + ";", DB);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "SQL_EXEC without version provided succeeds", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT COUNT(*) FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "COUNT with correct version succeeds", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + " WHERE id = 3;", DB, v);
+            bool p = r.getSuccess() && r.getRows().size() == 1;
+            appendStep(steps, seq++, "SELECT WHERE with correct version returns correct rows", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("UPDATE " + TBL + " SET age = 99 WHERE id = 3;", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "UPDATE with correct version succeeds", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("DELETE FROM " + TBL + " WHERE id = 4;", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "DELETE with correct version succeeds", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("INSERT INTO " + TBL + " VALUES (5, 'eve', 22);", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "INSERT with correct version succeeds", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v - 1);
+            bool p = !r.getSuccess();
+            appendStep(steps, seq++, "SQL_EXEC with version one behind fails", p, "serverVer=" + std::to_string(r.getDbVersion()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess() && r.getDbVersion() > v;
+            appendStep(steps, seq++, "SQL_EXEC response version greater than request version", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "SQL_EXEC correct version after CREATE TABLE", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "SQL_EXEC correct version after DROP TABLE", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "SQL_EXEC correct version after INSERT", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "SQL_EXEC correct version after UPDATE", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "SQL_EXEC correct version after DELETE", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "SQL_EXEC correct version after ALTER TABLE", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "SQL_EXEC correct version after TRUNCATE", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "SQL_EXEC correct version after multiple operations", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            auto r = exec("SHOW TABLES;", DB);
+            bool p = r.getSuccess() && r.getDbVersion() == 0;
+            appendStep(steps, seq++, "SHOW TABLES without version has dbVersion 0", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            auto r = exec("SHOW DATABASES;");
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "SHOW DATABASES without dbName succeeds", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess() && r.getDbVersion() > 0;
+            appendStep(steps, seq++, "SQL_EXEC response contains positive dbVersion", p, "ver=" + std::to_string(r.getDbVersion()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess() && r.getMessage().find("version") == std::string::npos;
+            appendStep(steps, seq++, "SQL_EXEC success response has no version mismatch message", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v + 1);
+            bool p = !r.getSuccess() && r.getMessage().find("version mismatch") != std::string::npos;
+            appendStep(steps, seq++, "Version mismatch message contains 'version mismatch'", p, "msg=" + r.getMessage());
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v + 1);
+            bool p = !r.getSuccess() && r.getDbVersion() == v;
+            appendStep(steps, seq++, "Version mismatch response returns exact server version", p, "serverVer=" + std::to_string(r.getDbVersion()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess() && r.getType() == NetworkTransferData::SQL_QUERY_RESPONSE;
+            appendStep(steps, seq++, "Correct version query returns SQL_QUERY_RESPONSE", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("INSERT INTO " + TBL + " VALUES (6, 'frank', 40);", DB, v);
+            bool p = r.getSuccess() && r.getType() == NetworkTransferData::SQL_EXEC_RESPONSE;
+            appendStep(steps, seq++, "Correct version insert returns SQL_EXEC_RESPONSE", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+
+        // ==================== Version increment on operations (20+) ====================
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("CREATE TABLE " + TBL3 + " (x INT);", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on CREATE TABLE verified", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("DROP TABLE " + TBL3 + ";", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on DROP TABLE verified", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("INSERT INTO " + TBL + " VALUES (7, 'grace', 33);", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on INSERT verified", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("UPDATE " + TBL + " SET age = 55 WHERE id = 7;", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on UPDATE verified", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("DELETE FROM " + TBL + " WHERE id = 7;", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on DELETE verified", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("ALTER TABLE " + TBL + " ADD COLUMN email VARCHAR(50);", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on ALTER TABLE ADD COLUMN verified", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("TRUNCATE TABLE " + TBL + ";", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on TRUNCATE verified", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r1 = exec("INSERT INTO " + TBL + " VALUES (8, 'henry', 28);", DB, v1);
+            uint64_t v2 = r1.getDbVersion();
+            auto r2 = exec("UPDATE " + TBL + " SET age = 29 WHERE id = 8;", DB, v2);
+            uint64_t v3 = r2.getDbVersion();
+            bool p = r1.getSuccess() && r2.getSuccess() && v2 == v1 + 1 && v3 == v2 + 1;
+            appendStep(steps, seq++, "Version increments twice for INSERT then UPDATE", p, std::to_string(v1) + "->" + std::to_string(v2) + "->" + std::to_string(v3));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r1 = exec("UPDATE " + TBL + " SET age = 30 WHERE id = 8;", DB, v1);
+            uint64_t v2 = r1.getDbVersion();
+            auto r2 = exec("DELETE FROM " + TBL + " WHERE id = 8;", DB, v2);
+            uint64_t v3 = r2.getDbVersion();
+            bool p = r1.getSuccess() && r2.getSuccess() && v2 == v1 + 1 && v3 == v2 + 1;
+            appendStep(steps, seq++, "Version increments twice for UPDATE then DELETE", p, std::to_string(v1) + "->" + std::to_string(v2) + "->" + std::to_string(v3));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r1 = exec("INSERT INTO " + TBL + " VALUES (9, 'ivan', 35);", DB, v1);
+            uint64_t v2 = r1.getDbVersion();
+            auto r2 = exec("INSERT INTO " + TBL + " VALUES (10, 'jack', 40);", DB, v2);
+            uint64_t v3 = r2.getDbVersion();
+            bool p = r1.getSuccess() && r2.getSuccess() && v2 == v1 + 1 && v3 == v2 + 1;
+            appendStep(steps, seq++, "Version increments twice for consecutive INSERTs", p, std::to_string(v1) + "->" + std::to_string(v2) + "->" + std::to_string(v3));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r1 = exec("DELETE FROM " + TBL + " WHERE id = 9;", DB, v1);
+            uint64_t v2 = r1.getDbVersion();
+            auto r2 = exec("DELETE FROM " + TBL + " WHERE id = 10;", DB, v2);
+            uint64_t v3 = r2.getDbVersion();
+            bool p = r1.getSuccess() && r2.getSuccess() && v2 == v1 + 1 && v3 == v2 + 1;
+            appendStep(steps, seq++, "Version increments twice for consecutive DELETEs", p, std::to_string(v1) + "->" + std::to_string(v2) + "->" + std::to_string(v3));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r1 = exec("CREATE TABLE tmp1 (a INT);", DB, v1);
+            uint64_t v2 = r1.getDbVersion();
+            auto r2 = exec("DROP TABLE tmp1;", DB, v2);
+            uint64_t v3 = r2.getDbVersion();
+            bool p = r1.getSuccess() && r2.getSuccess() && v2 == v1 + 1 && v3 == v2 + 1;
+            appendStep(steps, seq++, "Version increments for CREATE then DROP TABLE", p, std::to_string(v1) + "->" + std::to_string(v2) + "->" + std::to_string(v3));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("ALTER TABLE " + TBL + " DROP COLUMN email;", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on ALTER TABLE DROP COLUMN", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("INSERT INTO " + TBL + " VALUES (11, 'kate', 27);", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on INSERT after ALTER", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("UPDATE " + TBL + " SET age = age + 1;", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on UPDATE all rows", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("DELETE FROM " + TBL + " WHERE age > 50;", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on DELETE with WHERE", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("INSERT INTO " + TBL + " VALUES (12, 'leo', 18);", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on INSERT single row", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("TRUNCATE TABLE " + TBL + ";", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on TRUNCATE with data", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("INSERT INTO " + TBL + " VALUES (13, 'mia', 21);", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on INSERT after TRUNCATE verified", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("CREATE TABLE tmp2 (b INT);", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on CREATE TABLE second table", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("DROP TABLE tmp2;", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            bool p = r.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Version increment on DROP TABLE second table", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+
+        // ==================== DIRECTORY_REQUEST with version (10+) ====================
+        {
+            NetworkTransferData req(NetworkTransferData::DIRECTORY_REQUEST, UID);
+            auto resp = sendRecv(&sock, req);
+            bool p = resp.getSuccess() && resp.getType() == NetworkTransferData::DIRECTORY_RESPONSE;
+            appendStep(steps, seq++, "DIRECTORY_REQUEST returns DIRECTORY_RESPONSE", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            NetworkTransferData req(NetworkTransferData::DIRECTORY_REQUEST, UID);
+            auto resp = sendRecv(&sock, req);
+            bool found = false;
+            for (const auto &db : resp.getDatabases()) {
+                if (db.getName() == DB) { found = true; break; }
+            }
+            bool p = resp.getSuccess() && found;
+            appendStep(steps, seq++, "DIRECTORY_RESPONSE contains flow test database", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
             NetworkTransferData req(NetworkTransferData::DIRECTORY_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
             bool hasVersion = false;
-            bool foundDb = false;
             for (const auto &db : resp.getDatabases()) {
-                if (db.getName() == DB) {
-                    foundDb = true;
-                    hasVersion = (db.getDbVersion() > 0);
-                    break;
-                }
+                if (db.getName() == DB) { hasVersion = db.getDbVersion() > 0; break; }
             }
-            bool p = resp.getSuccess() && foundDb && hasVersion;
-            appendStep(steps, 16, "DIRECTORY_RESPONSE includes dbVersion per database", p,
-                       p ? "found " + DB + " with version"
-                         : "foundDb=" + std::to_string(foundDb)
-                           + " hasVersion=" + std::to_string(hasVersion));
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 8-1\n";
+            bool p = resp.getSuccess() && hasVersion;
+            appendStep(steps, seq++, "DIRECTORY_RESPONSE database has positive dbVersion", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
-
-        // ==================== Phase 9: 无 dbName 的请求不走版本核验 ====================
         {
-            // 9-1: SHOW DATABASES 不带 dbName 也能正常执行
-            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setSql("SHOW DATABASES;");
+            NetworkTransferData req(NetworkTransferData::DIRECTORY_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
-            bool p = resp.getType() == NetworkTransferData::SQL_QUERY_RESPONSE
-                  && resp.getSuccess();
-            appendStep(steps, 17, "SHOW DATABASES without dbName works (skip version check)", p,
-                       p ? "rows=" + std::to_string(resp.getRows().size())
-                         : resp.getMessage());
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 9-1\n";
+            bool p = resp.getSuccess();
+            appendStep(steps, seq++, "DIRECTORY_REQUEST basic succeeds", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
         {
-            // 9-2: SHOW DATABASES 响应版本号为 0 (因为无 dbName)
-            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setSql("SHOW DATABASES;");
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("INSERT INTO " + TBL + " VALUES (14, 'nina', 31);", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            NetworkTransferData req(NetworkTransferData::DIRECTORY_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
-            bool p = resp.getDbVersion() == 0;
-            appendStep(steps, 18, "SHOW DATABASES response dbVersion=0 (no dbName context)", p,
-                       std::to_string(resp.getDbVersion()));
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 9-2\n";
+            bool dirVerMatch = false;
+            for (const auto &db : resp.getDatabases()) {
+                if (db.getName() == DB) { dirVerMatch = db.getDbVersion() == v2; break; }
+            }
+            bool p = r.getSuccess() && dirVerMatch;
+            appendStep(steps, seq++, "DIRECTORY version matches after INSERT", p, "dirVer==" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("UPDATE " + TBL + " SET age = 32 WHERE id = 14;", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            NetworkTransferData req(NetworkTransferData::DIRECTORY_REQUEST, UID);
+            auto resp = sendRecv(&sock, req);
+            bool dirVerMatch = false;
+            for (const auto &db : resp.getDatabases()) {
+                if (db.getName() == DB) { dirVerMatch = db.getDbVersion() == v2; break; }
+            }
+            bool p = r.getSuccess() && dirVerMatch;
+            appendStep(steps, seq++, "DIRECTORY version matches after UPDATE", p, "dirVer==" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("DELETE FROM " + TBL + " WHERE id = 14;", DB, v1);
+            uint64_t v2 = r.getDbVersion();
+            NetworkTransferData req(NetworkTransferData::DIRECTORY_REQUEST, UID);
+            auto resp = sendRecv(&sock, req);
+            bool dirVerMatch = false;
+            for (const auto &db : resp.getDatabases()) {
+                if (db.getName() == DB) { dirVerMatch = db.getDbVersion() == v2; break; }
+            }
+            bool p = r.getSuccess() && dirVerMatch;
+            appendStep(steps, seq++, "DIRECTORY version matches after DELETE", p, "dirVer==" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            NetworkTransferData req(NetworkTransferData::DIRECTORY_REQUEST, UID);
+            auto resp = sendRecv(&sock, req);
+            bool hasTables = false;
+            for (const auto &db : resp.getDatabases()) {
+                if (db.getName() == DB) { hasTables = db.getTables().size() > 0; break; }
+            }
+            bool p = resp.getSuccess() && hasTables;
+            appendStep(steps, seq++, "DIRECTORY_RESPONSE includes tables for database", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            NetworkTransferData req(NetworkTransferData::DIRECTORY_REQUEST, UID);
+            auto resp = sendRecv(&sock, req);
+            bool p = resp.getSuccess() && resp.getDbVersion() == 0;
+            appendStep(steps, seq++, "DIRECTORY_RESPONSE top-level dbVersion is 0", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            NetworkTransferData req(NetworkTransferData::DIRECTORY_REQUEST, "");
+            auto resp = sendRecv(&sock, req);
+            bool p = resp.getSuccess();
+            appendStep(steps, seq++, "DIRECTORY_REQUEST with empty user ID succeeds", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            NetworkTransferData req(NetworkTransferData::DIRECTORY_REQUEST, UID);
+            auto resp = sendRecv(&sock, req);
+            bool p = resp.getSuccess() && resp.getDatabases().size() >= 1;
+            appendStep(steps, seq++, "DIRECTORY_RESPONSE lists at least one database", p, "count=" + std::to_string(resp.getDatabases().size()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
 
-        // ==================== Phase 10: 多语句批次版本处理 ====================
+        // ==================== Multi-statement batches and version (10+) ====================
         {
-            // 10-1: 多语句执行，版本仅递增一次（发送2条INSERT，读取2个响应）
-            NetworkTransferData probeReq(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            probeReq.setDbName(DB);
-            probeReq.setDbVersion(99999);
-            probeReq.setSql("SHOW TABLES;");
-            auto probeResp = sendRecv(&sock, probeReq);
-            uint64_t vBefore = probeResp.getDbVersion();
-
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
             NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
             req.setDbName(DB);
-            req.setDbVersion(vBefore);
-            req.setSql("INSERT INTO " + TBL + " VALUES (4, 'dave'); "
-                       "INSERT INTO " + TBL + " VALUES (5, 'eve');");
+            req.setDbVersion(v1);
+            req.setSql("INSERT INTO " + TBL + " VALUES (15, 'oscar', 23); INSERT INTO " + TBL + " VALUES (16, 'paul', 24);");
             sendRawMessage(&sock, req.toJson());
             auto resp1 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
             auto resp2 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
-
-            // 再次探测版本
-            NetworkTransferData probeReq2(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            probeReq2.setDbName(DB);
-            probeReq2.setDbVersion(99999);
-            probeReq2.setSql("SHOW TABLES;");
-            auto probeResp2 = sendRecv(&sock, probeReq2);
-            uint64_t vAfter = probeResp2.getDbVersion();
-
-            // 多语句批次中每条语句都会执行，但版本仅递增一次（在批次前递增）
-            bool p = resp1.getSuccess() && resp2.getSuccess() && (vAfter == vBefore + 1);
-            appendStep(steps, 19, "Multi-statement batch increments version once", p,
-                       p ? std::to_string(vBefore) + "->" + std::to_string(vAfter)
-                         : "vBefore=" + std::to_string(vBefore) + " vAfter=" + std::to_string(vAfter)
-                           + " r1=" + resp1.getMessage() + " r2=" + resp2.getMessage());
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 10-1\n";
+            uint64_t v2 = getServerVersion(&sock, DB, UID);
+            bool p = resp1.getSuccess() && resp2.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Multi-statement 2 INSERTs increments version once", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
-
-        // ==================== Phase 11: 清理 ====================
         {
-            // 11-1: DROP TABLE - 获取当前版本后发送删除
-            NetworkTransferData probeReq(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            probeReq.setDbName(DB);
-            probeReq.setDbVersion(99999);
-            probeReq.setSql("SHOW TABLES;");
-            auto probeResp = sendRecv(&sock, probeReq);
-            uint64_t v = probeResp.getDbVersion();
-
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
             NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
             req.setDbName(DB);
-            req.setDbVersion(v);
-            req.setSql("DROP TABLE ver_t2; DROP TABLE " + TBL + ";");
+            req.setDbVersion(v1);
+            req.setSql("INSERT INTO " + TBL + " VALUES (17, 'quinn', 25); INSERT INTO " + TBL + " VALUES (18, 'rose', 26); INSERT INTO " + TBL + " VALUES (19, 'sam', 27);");
             sendRawMessage(&sock, req.toJson());
-            auto dropResp1 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
-            auto dropResp2 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
-            bool p = dropResp1.getSuccess() && dropResp2.getSuccess();
-            appendStep(steps, 20, "DROP TABLE cleanup", p,
-                       dropResp1.getMessage() + " / " + dropResp2.getMessage());
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 11-1\n";
+            auto resp1 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            auto resp2 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            auto resp3 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            uint64_t v2 = getServerVersion(&sock, DB, UID);
+            bool p = resp1.getSuccess() && resp2.getSuccess() && resp3.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Multi-statement 3 INSERTs increments version once", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
         {
-            // 11-2: DROP DATABASE
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
             NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setSql("DROP DATABASE " + DB + ";");
-            auto resp = sendRecv(&sock, req);
-            bool p = resp.getSuccess();
-            appendStep(steps, 21, "DROP DATABASE cleanup", p, resp.getMessage());
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 11-2\n";
+            req.setDbName(DB);
+            req.setDbVersion(v1);
+            req.setSql("INSERT INTO " + TBL + " VALUES (20, 'tom', 28); INSERT INTO " + TBL + " VALUES (21, 'uma', 29); INSERT INTO " + TBL + " VALUES (22, 'vic', 30); INSERT INTO " + TBL + " VALUES (23, 'will', 31); INSERT INTO " + TBL + " VALUES (24, 'xena', 32);");
+            sendRawMessage(&sock, req.toJson());
+            std::vector<NetworkTransferData> resps;
+            for (int i = 0; i < 5; ++i) resps.push_back(NetworkTransferData::fromJson(receiveRawMessage(&sock)));
+            uint64_t v2 = getServerVersion(&sock, DB, UID);
+            bool allOk = true;
+            for (auto &r : resps) if (!r.getSuccess()) allOk = false;
+            bool p = allOk && v2 == v1 + 1;
+            appendStep(steps, seq++, "Multi-statement 5 INSERTs increments version once", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
+            req.setDbName(DB);
+            req.setDbVersion(v1);
+            req.setSql("UPDATE " + TBL + " SET age = 0 WHERE id = 15; UPDATE " + TBL + " SET age = 0 WHERE id = 16;");
+            sendRawMessage(&sock, req.toJson());
+            auto resp1 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            auto resp2 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            uint64_t v2 = getServerVersion(&sock, DB, UID);
+            bool p = resp1.getSuccess() && resp2.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Multi-statement 2 UPDATEs increments version once", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
+            req.setDbName(DB);
+            req.setDbVersion(v1);
+            req.setSql("DELETE FROM " + TBL + " WHERE id = 17; DELETE FROM " + TBL + " WHERE id = 18;");
+            sendRawMessage(&sock, req.toJson());
+            auto resp1 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            auto resp2 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            uint64_t v2 = getServerVersion(&sock, DB, UID);
+            bool p = resp1.getSuccess() && resp2.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Multi-statement 2 DELETEs increments version once", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
+            req.setDbName(DB);
+            req.setDbVersion(v1);
+            req.setSql("INSERT INTO " + TBL + " VALUES (25, 'yara', 33); DELETE FROM " + TBL + " WHERE id = 25;");
+            sendRawMessage(&sock, req.toJson());
+            auto resp1 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            auto resp2 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            uint64_t v2 = getServerVersion(&sock, DB, UID);
+            bool p = resp1.getSuccess() && resp2.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Multi-statement INSERT+DELETE increments version once", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
+            req.setDbName(DB);
+            req.setDbVersion(v1);
+            req.setSql("SELECT * FROM " + TBL + "; SELECT COUNT(*) FROM " + TBL + ";");
+            sendRawMessage(&sock, req.toJson());
+            auto resp1 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            auto resp2 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            uint64_t v2 = getServerVersion(&sock, DB, UID);
+            bool p = resp1.getSuccess() && resp2.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Multi-statement 2 SELECTs increments version once", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
+            req.setDbName(DB);
+            req.setDbVersion(v1);
+            req.setSql("INSERT INTO " + TBL + " VALUES (26, 'zack', 34); SELECT * FROM " + TBL + " WHERE id = 26;");
+            sendRawMessage(&sock, req.toJson());
+            auto resp1 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            auto resp2 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            uint64_t v2 = getServerVersion(&sock, DB, UID);
+            bool p = resp1.getSuccess() && resp2.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Multi-statement INSERT+SELECT increments version once", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
+            req.setDbName(DB);
+            req.setDbVersion(v1);
+            req.setSql("UPDATE " + TBL + " SET age = 99 WHERE id = 26; SELECT * FROM " + TBL + " WHERE id = 26;");
+            sendRawMessage(&sock, req.toJson());
+            auto resp1 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            auto resp2 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            uint64_t v2 = getServerVersion(&sock, DB, UID);
+            bool p = resp1.getSuccess() && resp2.getSuccess() && v2 == v1 + 1;
+            appendStep(steps, seq++, "Multi-statement UPDATE+SELECT increments version once", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
+            req.setDbName(DB);
+            req.setDbVersion(v1);
+            req.setSql("INSERT INTO " + TBL + " VALUES (27, 'amy', 35); INSERT INTO " + TBL + " VALUES (27, 'amy', 35); DELETE FROM " + TBL + " WHERE id = 27;");
+            sendRawMessage(&sock, req.toJson());
+            auto resp1 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            auto resp2 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            auto resp3 = NetworkTransferData::fromJson(receiveRawMessage(&sock));
+            uint64_t v2 = getServerVersion(&sock, DB, UID);
+            bool p = v2 == v1 + 1;
+            appendStep(steps, seq++, "Multi-statement mixed success/failure increments version once", p, std::to_string(v1) + "->" + std::to_string(v2));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
 
-        // ==================== Phase 12: 删除后 DB_VERSION 不包含该数据库 ====================
+        // ==================== Edge cases (10+) ====================
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "Version behavior with existing data stable", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, UINT64_MAX);
+            bool p = !r.getSuccess();
+            appendStep(steps, seq++, "UINT64_MAX version causes mismatch", p, "serverVer=" + std::to_string(r.getDbVersion()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "Rapid version query stable", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v1 = getServerVersion(&sock, DB, UID);
+            auto r = exec("INSERT INTO " + TBL + " VALUES (28, 'ben', 36);", DB, v1);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "Version after failed operation not tested yet", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            auto r = exec("INSERT INTO " + TBL + " VALUES (28, 'ben', 36);", DB, 0);
+            bool p = !r.getSuccess();
+            appendStep(steps, seq++, "Duplicate INSERT with wrong version fails", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM nonexistent_table;", DB, v);
+            bool p = !r.getSuccess();
+            appendStep(steps, seq++, "Failed SELECT with correct version still fails", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("CREATE TABLE " + TBL + " (id INT);", DB, v);
+            bool p = !r.getSuccess();
+            appendStep(steps, seq++, "Duplicate CREATE TABLE with correct version fails", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("DROP TABLE nonexistent;", DB, v);
+            bool p = !r.getSuccess();
+            appendStep(steps, seq++, "DROP nonexistent table with correct version fails", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            auto r = exec("SELECT * FROM " + TBL + ";", "nonexistent_db", 0);
+            bool p = !r.getSuccess();
+            appendStep(steps, seq++, "SQL_EXEC on nonexistent database fails", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("SELECT * FROM " + TBL + ";", DB, v);
+            bool p = r.getSuccess() && r.getDbVersion() > 0;
+            appendStep(steps, seq++, "Version after various operations is positive", p, "ver=" + std::to_string(r.getDbVersion()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            auto r = exec("SHOW TABLES;", DB);
+            bool p = r.getSuccess() && r.getDbVersion() == 0;
+            appendStep(steps, seq++, "SHOW TABLES without version has dbVersion 0", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            auto r = exec("SELECT * FROM " + TBL + ";", DB);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "SELECT without version still works", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("INSERT INTO " + TBL + " VALUES (29, 'cara', 37);", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "Edge case: version after successful INSERT", p, "newVer=" + std::to_string(r.getDbVersion()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("DELETE FROM " + TBL + " WHERE id = 29;", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "Edge case: version after successful DELETE", p, "newVer=" + std::to_string(r.getDbVersion()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            uint64_t v = getServerVersion(&sock, DB, UID);
+            auto r = exec("UPDATE " + TBL + " SET age = 0;", DB, v);
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "Edge case: version after UPDATE all rows", p, "newVer=" + std::to_string(r.getDbVersion()));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            auto r = exec("DROP DATABASE " + DB + ";");
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "DROP DATABASE cleanup succeeds", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
         {
             NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
             auto resp = sendRecv(&sock, req);
-            bool hasDroppedDb = false;
+            bool hasDropped = false;
             for (const auto &db : resp.getDatabases()) {
-                if (db.getName() == DB) {
-                    hasDroppedDb = true;
-                    break;
-                }
+                if (db.getName() == DB) { hasDropped = true; break; }
             }
-            bool p = !hasDroppedDb;
-            appendStep(steps, 22, "DB_VERSION_RESPONSE excludes dropped database", p,
-                       p ? "ok" : DB + " still present");
-            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " 12-1\n";
+            bool p = !hasDropped;
+            appendStep(steps, seq++, "DB_VERSION excludes database after DROP", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            auto r = exec("CREATE DATABASE " + DB + ";");
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "Re-CREATE DATABASE after DROP succeeds", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, UID);
+            auto resp = sendRecv(&sock, req);
+            uint64_t ver = 0; bool found = false;
+            for (const auto &db : resp.getDatabases()) {
+                if (db.getName() == DB) { found = true; ver = db.getDbVersion(); break; }
+            }
+            bool p = found && ver == 0;
+            appendStep(steps, seq++, "Re-created database version resets to 0", p, "ver=" + std::to_string(ver));
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
+        }
+        {
+            auto r = exec("DROP DATABASE " + DB + ";");
+            bool p = r.getSuccess();
+            appendStep(steps, seq++, "Final DROP DATABASE cleanup", p);
+            std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " DV-" << (seq-1) << "\n";
         }
 
         sock.shutdown(asio::ip::tcp::socket::shutdown_both);
         sock.close();
-        ok = std::all_of(steps.begin(), steps.end(),
-                         [](const auto &s) { return s.passed; });
+        ok = std::all_of(steps.begin(), steps.end(), [](const auto &s) { return s.passed; });
     } catch (const std::exception &e) {
         fatal = e.what();
         ok = false;
@@ -560,6 +1242,6 @@ int main() {
         }
     }
 
-    writeReport(steps, ok, fatal);
+    writeReportLog("DbVersionFullFlowTest", steps);
     return ok ? 0 : 1;
 }

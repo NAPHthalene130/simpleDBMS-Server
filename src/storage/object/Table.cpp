@@ -150,23 +150,11 @@ Table Table::create(const std::filesystem::path& dbPath,
 Table Table::create(const std::filesystem::path& dbPath,
                     const std::string& tableName,
                     const std::vector<ColumnDefinition>& columns) {
-    std::vector<ColumnDefinition> cols = columns;
-    // If any column has isPrimaryKey=true, move it to front
-    std::size_t pkIdx = cols.size();
-    for (std::size_t i = 0; i < cols.size(); ++i) {
-        if (cols[i].isPrimaryKey) { pkIdx = i; break; }
-    }
-    if (pkIdx < cols.size() && pkIdx > 0) {
-        auto pk = std::move(cols[pkIdx]);
-        cols.erase(cols.begin() + static_cast<std::ptrdiff_t>(pkIdx));
-        cols.insert(cols.begin(), std::move(pk));
-    }
-
     std::vector<std::string> names;
     std::vector<ColumnMeta> metas;
-    names.reserve(cols.size());
-    metas.reserve(cols.size());
-    for (const auto& col : cols) {
+    names.reserve(columns.size());
+    metas.reserve(columns.size());
+    for (const auto& col : columns) {
         ensure(!col.name.empty(), "column name cannot be empty");
         names.push_back(col.name);
         metas.push_back(toColumnMeta(col));
@@ -495,10 +483,10 @@ std::size_t Table::compact() {
                 index_.insert(pk, Row{{pk}});
             }
         });
-    syncIndexPages();
-    flushMeta();  // 持久化自增计数器
-    TableVersionManager::incrementVersion(dbPath_, schema_.name);
-}
+        syncIndexPages();
+        flushMeta();
+        TableVersionManager::incrementVersion(dbPath_, schema_.name);
+    }
     return removed;
 }
 
@@ -682,40 +670,6 @@ bool Table::alterColumnType(const std::string& column, DataType newType, std::ui
     schema_.columnMetas[idx].varcharLen = varcharLen;
     flushMeta();
     TableVersionManager::incrementVersion(dbPath_, schema_.name);
-    return true;
-}
-
-bool Table::setPrimaryKey(const std::string& column) {
-    columnIndex(column);  // ensure column exists
-    auto oldPk = schema_.columns.front();
-    if (oldPk == column) return true;
-
-    // Move column to front in schema
-    std::size_t idx = 0;
-    for (; idx < schema_.columns.size(); ++idx)
-        if (schema_.columns[idx] == column) break;
-    auto colName = schema_.columns[idx];
-    auto colMeta = schema_.columnMetas[idx];
-    schema_.columns.erase(schema_.columns.begin() + static_cast<std::ptrdiff_t>(idx));
-    schema_.columnMetas.erase(schema_.columnMetas.begin() + static_cast<std::ptrdiff_t>(idx));
-    schema_.columns.insert(schema_.columns.begin(), colName);
-    schema_.columnMetas.insert(schema_.columnMetas.begin(), colMeta);
-
-    // Reset old PK constraint flags
-    std::size_t oldPkIdx = 1;  // now old PK is at index 1
-    if (oldPkIdx < schema_.columnMetas.size()) {
-        schema_.columnMetas[oldPkIdx].integrities &= ~(1 | 2 | 4);
-        constraintsByColumn_[oldPk].notNull = false;
-        constraintsByColumn_[oldPk].unique = false;
-    }
-    // Set new PK constraint
-    schema_.columnMetas.front().integrities |= (1 | 2 | 4);
-    constraintsByColumn_[column].column = column;
-    constraintsByColumn_[column].notNull = true;
-    constraintsByColumn_[column].unique = true;
-
-    flushMeta();
-    flushIntegrityMeta();
     return true;
 }
 
@@ -2089,24 +2043,6 @@ void Table::ConstraintValidator::check(const std::vector<std::string>& values,
         const auto& spec = it->second;
         if (spec.notNull) {
             ensure(!values[i].empty(), "NOT NULL constraint violation on column: " + col);
-        }
-        // Type validation
-        if (!values[i].empty()) {
-            auto& meta = schema.columnMetas[i];
-            if (meta.dataType == DataType::INT) {
-                char* e = nullptr; errno = 0;
-                std::strtod(values[i].c_str(), &e);
-                ensure(e != values[i].c_str() && *e == '\0' && errno != ERANGE,
-                       "INVALID type: '" + values[i] + "' cannot be converted to INT on column: " + col);
-            } else if (meta.dataType == DataType::FLOAT) {
-                char* e = nullptr; errno = 0;
-                std::strtod(values[i].c_str(), &e);
-                ensure(e != values[i].c_str() && *e == '\0' && errno != ERANGE,
-                       "INVALID type: '" + values[i] + "' cannot be converted to FLOAT on column: " + col);
-            } else if (meta.dataType == DataType::VARCHAR && meta.varcharLen > 0) {
-                ensure(values[i].size() <= static_cast<std::size_t>(meta.varcharLen),
-                       "INVALID type: value exceeds VARCHAR(" + std::to_string(meta.varcharLen) + ") on column: " + col);
-            }
         }
         if (spec.unique) {
             auto si = table.secondaryIndexes_.find(col);

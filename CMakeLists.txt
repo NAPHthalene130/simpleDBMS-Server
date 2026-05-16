@@ -57,6 +57,9 @@ target_link_libraries(simpleDBMS-Server
     PRIVATE
         ${SERVER_VCPKG_TARGETS}
 )
+if(WIN32)
+    target_link_libraries(simpleDBMS-Server PRIVATE ws2_32 wsock32)
+endif()
 
 set(SERVER_TEST_SOURCE_FILES ${SERVER_SOURCE_FILES})
 list(FILTER SERVER_TEST_SOURCE_FILES EXCLUDE REGEX ".*/src/main\\.cpp$")
@@ -91,6 +94,9 @@ foreach(TEST_FILE ${SERVER_TEST_FILES})
         PRIVATE
             ${SERVER_VCPKG_TARGETS}
     )
+    if(WIN32)
+        target_link_libraries(${TEST_TARGET} PRIVATE ws2_32 wsock32)
+    endif()
 endforeach()
 
 # App 可执行目标：InitSystemUserApp 与 ResetSystemUserApp
@@ -118,6 +124,9 @@ target_link_libraries(simpleDBMS-InitSystemUserApp
     PRIVATE
         ${SERVER_VCPKG_TARGETS}
 )
+if(WIN32)
+    target_link_libraries(simpleDBMS-InitSystemUserApp PRIVATE ws2_32 wsock32)
+endif()
 
 set(RESET_SYSTEM_USER_APP_SRC "${SERVER_SOURCE_DIR}/app/ResetSystemUserApp.cpp")
 add_executable(simpleDBMS-ResetSystemUserApp
@@ -139,3 +148,6 @@ target_link_libraries(simpleDBMS-ResetSystemUserApp
     PRIVATE
         ${SERVER_VCPKG_TARGETS}
 )
+if(WIN32)
+    target_link_libraries(simpleDBMS-ResetSystemUserApp PRIVATE ws2_32 wsock32)
+endif()

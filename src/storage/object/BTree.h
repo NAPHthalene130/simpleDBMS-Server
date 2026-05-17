@@ -585,6 +585,7 @@ private:
         if (!child->leaf) {
             for (auto& c : sibling->children) child->children.push_back(std::move(c));
         }
+        markDirty(sibling);
         node->children.erase(node->children.begin() + static_cast<std::ptrdiff_t>(idx + 1));
         markDirty(node); markDirty(child);
     }

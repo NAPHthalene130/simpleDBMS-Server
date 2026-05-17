@@ -527,6 +527,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             // 作者：NAPH130
             ExecutionContext executionContext;
             NetworkExecutionContext *networkExecutionContext = nullptr;
+            std::string sessionDbName;
             if (core->getNetworkManager() != nullptr
                 && core->getNetworkManager()->getClientSessionManager() != nullptr
                 && clientSocket != nullptr) {
@@ -535,6 +536,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 if (networkExecutionContext != nullptr) {
                     executionContext.setConnectionId(networkExecutionContext->getConnectionId());
                     executionContext.setCurrentUser(networkExecutionContext->getCurrentUser());
+                    const std::string sessionDbName = networkExecutionContext->getCurrentDbName();
                     executionContext.setCurrentDbName(networkExecutionContext->getCurrentDbName());
                 }
             }
@@ -542,8 +544,8 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             if (!networkTransferData.getId().empty()) {
                 executionContext.setCurrentUser(networkTransferData.getId());
             }
-            if (!networkTransferData.getDbName().empty()) {
-                executionContext.setCurrentDbName(networkTransferData.getDbName());
+            if (!requestDbName.empty()) {
+                executionContext.setCurrentDbName(requestDbName);
             }
 
             // 4. 逐条执行每一条语句
@@ -715,11 +717,18 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
 
                     if (executionResult.getStatus() == ExecutionStatus::Success
                         && networkExecutionContext != nullptr
-                        && !executionResult.getDbName().empty()) {
+                        && !executionResult.getDbName().empty()
+                        && (statementType == ExecutionStatementType::UseDatabase
+                            || statementType == ExecutionStatementType::Use)) {
                         networkExecutionContext->setCurrentDbName(executionResult.getDbName());
                     }
-                    if (!executionResult.getDbName().empty()) {
+                    if (!executionResult.getDbName().empty()
+                        && (statementType == ExecutionStatementType::UseDatabase
+                            || statementType == ExecutionStatementType::Use)) {
                         executionContext.setCurrentDbName(executionResult.getDbName());
+                    } else if (!sessionDbName.empty()
+                               && executionContext.getCurrentDbName() != sessionDbName) {
+                        executionContext.setCurrentDbName(sessionDbName);
                     }
 
                     if (executionResult.getDbName().empty()) {

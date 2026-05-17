@@ -171,6 +171,25 @@ ExecutionResult InsertExecutor::executeInsert(const InsertStmt *insertStmt, Exec
                 }
 
                 table.insert(fullValues);
+
+                // 逐行记录插入日志 — NAPH130
+                if (core != nullptr && core->getDbLogManager() != nullptr) {
+                    nlohmann::json insertSnapshot;
+                    insertSnapshot["__primary_key__"] = fullValues.front();
+                    insertSnapshot["values"] = fullValues;
+                    if (!columnNames.empty()) {
+                        nlohmann::json columnMap;
+                        for (std::size_t i = 0; i < columnNames.size() && i < values.size(); ++i) {
+                            columnMap[columnNames[i]] = values[i];
+                        }
+                        insertSnapshot["columns"] = columnMap;
+                    }
+                    core->getDbLogManager()->logInsert(
+                        dbName, tableName,
+                        insertSnapshot.dump(),
+                        "INSERT INTO " + tableName + " VALUES (...)"
+                    );
+                }
             } catch (const std::exception &exception) {
                 LogWriter::error("executor", "InsertExecutor", "executeInsert",
                                  std::string("Insert into ") + dbName + "." + tableName + " failed: " + exception.what());
@@ -178,21 +197,6 @@ ExecutionResult InsertExecutor::executeInsert(const InsertStmt *insertStmt, Exec
             }
         }
         ++totalInserted;
-    }
-
-    // 记录插入日志
-    if (core != nullptr && core->getDbLogManager() != nullptr) {
-        const std::vector<std::string> &insertValues = insertStmt->getValues();
-        const std::vector<std::string> &insertColumns = insertStmt->getColumnNames();
-        nlohmann::json insertSnapshot;
-        for (std::size_t i = 0; i < insertColumns.size() && i < insertValues.size(); ++i) {
-            insertSnapshot[insertColumns[i]] = insertValues[i];
-        }
-        core->getDbLogManager()->logInsert(
-            dbName, tableName,
-            insertSnapshot.dump(),
-            "INSERT INTO " + tableName + " VALUES (...)"
-        );
     }
 
     LogWriter::info("executor", "InsertExecutor", "executeInsert",

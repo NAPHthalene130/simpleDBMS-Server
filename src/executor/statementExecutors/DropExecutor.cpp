@@ -1,8 +1,12 @@
 #include "DropExecutor.h"
 
+#include <filesystem>
+
 #include "Core.h"
 #include "dbLog/DbLogManager.h"
 #include "log/LogWriter.h"
+#include "storage/manager/SystemCatalogManager.h"
+#include "storage/object/Table.h"
 
 namespace {
 ExecutionResult buildFailureResult(const std::string &message,
@@ -98,20 +102,40 @@ ExecutionResult DropExecutor::execute(const SQLStatement *statement, ExecutionCo
         if (databaseManager == nullptr) {
             return buildFailureResult("Database manager is not initialized.", dbName);
         }
+
+        // 删除前记录日志，包含真实表结构快照以便恢复 — NAPH130
+        if (core != nullptr && core->getDbLogManager() != nullptr) {
+            try {
+                const auto dbRootPath = SystemCatalogManager::getDataRootPath();
+                const auto dbPath = dbRootPath / dbName;
+                if (std::filesystem::exists(dbPath / (targetName + ".tdf"))) {
+                    auto table = storage::Table::load(dbPath, targetName);
+                    const auto &schema = table.schema();
+                    nlohmann::json tableSnapshot;
+                    tableSnapshot["table_name"] = targetName;
+                    tableSnapshot["columns"] = schema.columns;
+                    tableSnapshot["create_sql"] = "CREATE TABLE " + targetName + " (...)";
+                    tableSnapshot["column_count"] = schema.columns.size();
+                    core->getDbLogManager()->logDropTable(
+                        dbName, targetName,
+                        tableSnapshot.dump(),
+                        "DROP TABLE " + targetName
+                    );
+                }
+            } catch (...) {
+                // 如果读取失败，回退到简单记录
+                core->getDbLogManager()->logDropTable(
+                    dbName, targetName,
+                    R"({"table_name":")" + targetName + R"("})",
+                    "DROP TABLE " + targetName
+                );
+            }
+        }
+
         if (!databaseManager->dropTable(targetName)) {
             LogWriter::error("executor", "DropExecutor", "execute",
                              "Failed to drop table " + targetName + " in " + dbName + ".");
             return buildFailureResult("Failed to drop table.", dbName);
-        }
-
-        // 记录删除表日志
-        if (core != nullptr && core->getDbLogManager() != nullptr) {
-            core->getDbLogManager()->logDropTable(
-                dbName,
-                targetName,
-                "Table metadata snapshot for: " + dbName + "." + targetName,
-                "DROP TABLE " + targetName
-            );
         }
 
         LogWriter::info("executor", "DropExecutor", "execute",

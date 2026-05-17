@@ -183,17 +183,31 @@ ExecutionResult UpdateExecutor::executeUpdate(const UpdateStmt *updateStmt,
             rowsToUpdate.push_back(RowUpdate{row.values.front(), std::move(newValues)});
         }
 
-        // 记录更新日志 -- NAPH130
+        // 记录更新日志 — 先记录beforeData（旧值），再执行更新 — NAPH130
         if (core != nullptr && core->getDbLogManager() != nullptr && !rowsToUpdate.empty()) {
             for (const auto &rowUpdate : rowsToUpdate) {
-                nlohmann::json updateSnapshot;
-                updateSnapshot["primary_key"] = rowUpdate.primaryKey;
-                updateSnapshot["new_values"] = rowUpdate.newValues;
+                // 从原始行中找到旧值
+                std::vector<std::string> oldValues;
+                for (const auto &row : allRows) {
+                    if (row.values.front() == rowUpdate.primaryKey) {
+                        oldValues = row.values;
+                        break;
+                    }
+                }
+
+                nlohmann::json beforeSnapshot;
+                beforeSnapshot["primary_key"] = rowUpdate.primaryKey;
+                beforeSnapshot["old_values"] = oldValues;
+
+                nlohmann::json afterSnapshot;
+                afterSnapshot["primary_key"] = rowUpdate.primaryKey;
+                afterSnapshot["new_values"] = rowUpdate.newValues;
+
                 core->getDbLogManager()->logUpdate(
                     dbName, tableName,
-                    "",
-                    updateSnapshot.dump(),
-                    "UPDATE " + tableName + " SET ... WHERE ..."
+                    beforeSnapshot.dump(),
+                    afterSnapshot.dump(),
+                    "UPDATE " + tableName + " WHERE primary_key=" + rowUpdate.primaryKey
                 );
             }
         }

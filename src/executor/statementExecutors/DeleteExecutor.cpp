@@ -147,16 +147,23 @@ ExecutionResult DeleteExecutor::executeDelete(const DeleteStmt *deleteStmt,
             keysToDelete.push_back(row.values.front());
         }
 
-        // 记录删除日志 -- NAPH130
+        // 记录删除日志 — 逐行记录完整数据，便于恢复 — NAPH130
         if (core != nullptr && core->getDbLogManager() != nullptr && !keysToDelete.empty()) {
-            nlohmann::json deleteSnapshot;
-            deleteSnapshot["deleted_keys"] = keysToDelete;
-            deleteSnapshot["deleted_count"] = static_cast<std::int32_t>(keysToDelete.size());
-            core->getDbLogManager()->logDelete(
-                dbName, tableName,
-                deleteSnapshot.dump(),
-                "DELETE FROM " + tableName + " WHERE ..."
-            );
+            for (const auto &row : allRows) {
+                if (std::find(keysToDelete.begin(), keysToDelete.end(), row.values.front())
+                    == keysToDelete.end()) {
+                    continue;
+                }
+                nlohmann::json deleteSnapshot;
+                deleteSnapshot["primary_key"] = row.values.front();
+                deleteSnapshot["values"] = row.values;
+                deleteSnapshot["columns"] = schema.columns;
+                core->getDbLogManager()->logDelete(
+                    dbName, tableName,
+                    deleteSnapshot.dump(),
+                    "DELETE FROM " + tableName + " WHERE primary_key=" + row.values.front()
+                );
+            }
         }
 
         std::int32_t deletedCount = 0;

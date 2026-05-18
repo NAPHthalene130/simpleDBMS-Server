@@ -76,6 +76,10 @@ std::string buildResponseType(const std::string &requestType, ExecutionStatement
         return NetworkTransferData::DB_VERSION_RESPONSE;
     }
 
+    if (requestType == NetworkTransferData::SQL_TEMP_EXEC_REQUEST) {
+        return NetworkTransferData::SQL_TEMP_EXEC_RESPONSE;
+    }
+
     return NetworkTransferData::ERROR_RESPONSE;
 }
 
@@ -780,6 +784,8 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
              * @brief 处理临时 SQL 执行请求（不修改当前会话数据库上下文）
              * @author Qi
              * @details 从请求中提取目标 dbName 执行查询，返回结果但不更新会话 currentDbName。
+             *          新增数据库版本号核验逻辑，与 SQL_EXEC_REQUEST 保持一致。
+             * @author NAPH130
              */
             const std::string tempSql = networkTransferData.getSql();
             const std::string tempDbName = networkTransferData.getDbName();
@@ -795,11 +801,47 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 return;
             }
 
+            // 数据库版本号核验
+            // 作者：NAPH130
+            const std::uint64_t clientVersion = networkTransferData.getDbVersion();
+            std::uint64_t serverVersion = 0;
+            bool versionChecked = false;
+            if (!tempDbName.empty() && core->getStorageManager() != nullptr
+                && core->getStorageManager()->getSystemCatalogManager() != nullptr) {
+                serverVersion = core->getStorageManager()->getSystemCatalogManager()
+                                    ->getDatabaseVersion(tempDbName);
+                if (clientVersion != serverVersion) {
+                    // 客户端首次请求(dbVersion=0)允许通过
+                    // 作者：NAPH130
+                    if (clientVersion != 0) {
+                        NetworkTransferData versionError(
+                            NetworkTransferData::SQL_TEMP_EXEC_RESPONSE,
+                            networkTransferData.getId());
+                        versionError.setSuccess(false);
+                        versionError.setDbName(tempDbName);
+                        versionError.setDbVersion(serverVersion);
+                        versionError.setMessage("Database version mismatch: client="
+                            + std::to_string(clientVersion) + ", server="
+                            + std::to_string(serverVersion)
+                            + ". Please refresh the directory.");
+                        LogWriter::warning("network", "NetReceiver", "processMsg",
+                                           std::string("Database version mismatch for ")
+                                               + tempDbName + ": client="
+                                               + std::to_string(clientVersion)
+                                               + ", server=" + std::to_string(serverVersion));
+                        sendResponse(versionError);
+                        return;
+                    }
+                }
+                versionChecked = true;
+            }
+
             Tokenizer tokenizer(core, tempSql);
             const std::vector<Token> tokens = tokenizer.tokenize();
             const ParseResult parseResult = core->getParserManager()->getParser()->parse(tokens);
             if (!parseResult.success || parseResult.statement == nullptr) {
-                sendFailureResponse("Parse failed: " + parseResult.errorMessage);
+                sendFailureResponse("Parse failed: " + parseResult.errorMessage,
+                                    &networkTransferData, serverVersion, versionChecked);
                 return;
             }
 
@@ -807,12 +849,24 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             tempContext.setCurrentDbName(tempDbName);
             tempContext.setConnectionId("temp_query");
 
+            const ExecutionStatementType stmtType = parseResult.statement->getStmtType();
+
             const ExecutionResult execResult =
                 core->getExecutorManager()->getExecutorEngine()->execute(
                     parseResult.statement.get(), &tempContext);
 
-            const ExecutionStatementType stmtType = parseResult.statement->getStmtType();
-            NetworkTransferData responseData = buildExecutionResponse(execResult, networkTransferData, stmtType);
+            // DDL/DML 操作成功后递增版本号
+            // 作者：NAPH130
+            if (versionChecked && !isQueryStatementType(stmtType)
+                && execResult.getStatus() == ExecutionStatus::Success) {
+                core->getStorageManager()->getSystemCatalogManager()
+                    ->addDatabaseVersion(tempDbName);
+                serverVersion = core->getStorageManager()->getSystemCatalogManager()
+                                    ->getDatabaseVersion(tempDbName);
+            }
+
+            NetworkTransferData responseData = buildExecutionResponse(
+                execResult, networkTransferData, stmtType, serverVersion);
             if (isQueryStatementType(stmtType)) {
                 std::vector<std::string> resultCols = execResult.getColumns();
                 if (resultCols.empty()) resultCols = buildQueryColumns(parseResult.statement.get());

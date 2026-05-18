@@ -492,9 +492,9 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 serverVersion = core->getStorageManager()->getSystemCatalogManager()
                                     ->getDatabaseVersion(requestDbName);
                 if (clientVersion != serverVersion) {
-                    // 客户端首次请求(dbVersion=0)允许通过
+                    // 仅当两者均为 0 时（数据库尚无版本记录）允许首次请求通过
                     // 作者：NAPH130
-                    if (clientVersion != 0) {
+                    if (!(clientVersion == 0 && serverVersion == 0)) {
                         NetworkTransferData versionError(NetworkTransferData::SQL_EXEC_RESPONSE,
                                                           networkTransferData.getId());
                         versionError.setSuccess(false);
@@ -811,9 +811,9 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 serverVersion = core->getStorageManager()->getSystemCatalogManager()
                                     ->getDatabaseVersion(tempDbName);
                 if (clientVersion != serverVersion) {
-                    // 客户端首次请求(dbVersion=0)允许通过
+                    // 仅当两者均为 0 时（数据库尚无版本记录）允许首次请求通过
                     // 作者：NAPH130
-                    if (clientVersion != 0) {
+                    if (!(clientVersion == 0 && serverVersion == 0)) {
                         NetworkTransferData versionError(
                             NetworkTransferData::SQL_TEMP_EXEC_RESPONSE,
                             networkTransferData.getId());

@@ -841,7 +841,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             const ParseResult parseResult = core->getParserManager()->getParser()->parse(tokens);
             if (!parseResult.success || parseResult.statement == nullptr) {
                 sendFailureResponse("Parse failed: " + parseResult.errorMessage,
-                                    &networkTransferData, serverVersion, versionChecked);
+                                    serverVersion, versionChecked);
                 return;
             }
 

@@ -511,9 +511,10 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 auto serverIt = fullVersionMap.find(requestDbName);
                 const std::uint64_t serverVersion = (serverIt != fullVersionMap.end()) ? serverIt->second : 0;
                 if (clientVersion != serverVersion) {
-                    // 仅当两者均为 0 时（数据库尚无版本记录）允许首次请求通过
+                    // clientVersion==0 表示不校验版本（SELECT等查询），直接放行
+                    // 仅当两者均为 0 时（数据库尚无版本记录）也允许首次请求通过
                     // 作者：NAPH130
-                    if (clientVersion > 0 && !(clientVersion == 0 && serverVersion == 0)) {
+                    if (clientVersion > 0) {
                         NetworkTransferData versionError(NetworkTransferData::SQL_EXEC_RESPONSE,
                                                           networkTransferData.getId());
                         versionError.setSuccess(false);
@@ -832,9 +833,10 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 auto serverIt = fullVersionMap.find(tempDbName);
                 const std::uint64_t serverVersion = (serverIt != fullVersionMap.end()) ? serverIt->second : 0;
                 if (clientVersion != serverVersion) {
-                    // 仅当两者均为 0 时（数据库尚无版本记录）允许首次请求通过
+                    // clientVersion==0 表示不校验版本（SELECT等查询），直接放行
+                    // 仅当两者均为 0 时（数据库尚无版本记录）也允许首次请求通过
                     // 作者：NAPH130
-                    if (clientVersion > 0 && !(clientVersion == 0 && serverVersion == 0)) {
+                    if (clientVersion > 0) {
                         NetworkTransferData versionError(
                             NetworkTransferData::SQL_TEMP_EXEC_RESPONSE,
                             networkTransferData.getId());

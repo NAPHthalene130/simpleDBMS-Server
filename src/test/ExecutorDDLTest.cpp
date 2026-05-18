@@ -9,6 +9,7 @@
 #include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <map>
 #include <string>
 #include <thread>
 #include <vector>
@@ -46,9 +47,16 @@ int main(){
     try{
         recv=std::make_unique<NetReceiver>(&core,TEST_PORT);recv->start();
         asio::io_context ctx;asio::ip::tcp::socket sock(ctx);cnct(&sock,TEST_PORT);
-        auto ex=[&](const std::string&sql,const std::string&db="",uint64_t v=0){
+        auto ex=[&](const std::string&sql,const std::string&db="",std::uint64_t v=0){
             NetworkTransferData r(NetworkTransferData::SQL_EXEC_REQUEST,UID);r.setSql(sql);
-            if(!db.empty()){r.setDbName(db);r.setDbVersion(v);}return sndrcv(&sock,r);};
+            if(!db.empty()){
+                r.setDbName(db);
+                std::map<std::string,std::uint64_t> vm;
+                vm[db]=v;
+                r.setDbVersionMap(vm);
+            }return sndrcv(&sock,r);};
+        auto exv=[&](const NetworkTransferData&r,const std::string&db)->std::uint64_t{
+            const auto&m=r.getDbVersionMap();auto it=m.find(db);return it!=m.end()?it->second:0;};
 
         ex("DROP DATABASE "+DB+";");
         int seq=1;

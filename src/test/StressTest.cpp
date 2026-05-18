@@ -70,8 +70,19 @@ int main() {
 
         auto exec = [&](const std::string &sql, const std::string &db = "", uint64_t ver=0) {
             NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setSql(sql); if (!db.empty()) { req.setDbName(db); req.setDbVersion(ver); }
+            req.setSql(sql);
+            if (!db.empty()) {
+                req.setDbName(db);
+                std::map<std::string, std::uint64_t> vm;
+                vm[db] = ver;
+                req.setDbVersionMap(vm);
+            }
             return sendRecv(&sock, req);
+        };
+        auto extractVer = [](const NetworkTransferData &r, const std::string &db) -> std::uint64_t {
+            const auto &m = r.getDbVersionMap();
+            auto it = m.find(db);
+            return it != m.end() ? it->second : 0;
         };
 
         // cleanup
@@ -83,45 +94,45 @@ int main() {
         uint64_t ver = 0;
 
         // ===================== CREATE TABLE variations for stress =====================
-        { auto r=exec("CREATE TABLE t1 (id INT PRIMARY KEY, name VARCHAR(50), age INT, score FLOAT);",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE t1 basic",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("CREATE TABLE t2 (id INT PRIMARY KEY, data VARCHAR(200), flag BOOLEAN, amt DOUBLE);",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE t2 with BOOLEAN/DOUBLE",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("CREATE TABLE t3 (id INT AUTO_INCREMENT PRIMARY KEY, msg TEXT);",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE t3 AUTO_INCREMENT TEXT",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("CREATE TABLE wide_tbl (c1 INT, c2 INT, c3 INT, c4 INT, c5 INT, c6 INT, c7 INT, c8 INT, c9 INT, c10 INT);",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE 10 columns",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("CREATE TABLE pk_only (id INT PRIMARY KEY);",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE single PK column",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("CREATE TABLE t1 (id INT PRIMARY KEY, name VARCHAR(50), age INT, score FLOAT);",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE t1 basic",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("CREATE TABLE t2 (id INT PRIMARY KEY, data VARCHAR(200), flag BOOLEAN, amt DOUBLE);",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE t2 with BOOLEAN/DOUBLE",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("CREATE TABLE t3 (id INT AUTO_INCREMENT PRIMARY KEY, msg TEXT);",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE t3 AUTO_INCREMENT TEXT",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("CREATE TABLE wide_tbl (c1 INT, c2 INT, c3 INT, c4 INT, c5 INT, c6 INT, c7 INT, c8 INT, c9 INT, c10 INT);",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE 10 columns",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("CREATE TABLE pk_only (id INT PRIMARY KEY);",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE single PK column",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
         // ===================== Bulk INSERT stress =====================
         // Insert 10 rows individually
         for (int i=1;i<=10;i++) {
             auto r=exec("INSERT INTO t1 VALUES ("+std::to_string(i)+",'User"+std::to_string(i)+"',"+std::to_string(20+i)+","+std::to_string(50.0+i*1.5)+");",DB,ver);
-            if(r.getSuccess())ver=r.getDbVersion();
+            if(r.getSuccess())ver=extractVer(r,DB);
         }
         { auto r=exec("SELECT COUNT(*) FROM t1;",DB,ver); bool p=r.getSuccess() && r.getRows().size()>=1; appendStep(steps,seq++,"INSERT 10 rows individually",p,"rows="+std::to_string(r.getRows().size())); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
         // Insert 50 rows individually
         for (int i=11;i<=60;i++) {
             auto r=exec("INSERT INTO t1 VALUES ("+std::to_string(i)+",'Bulk"+std::to_string(i)+"',"+std::to_string(20+i)+","+std::to_string(50.0+i*1.5)+");",DB,ver);
-            if(r.getSuccess())ver=r.getDbVersion();
+            if(r.getSuccess())ver=extractVer(r,DB);
         }
         { auto r=exec("SELECT COUNT(*) FROM t1;",DB,ver); bool p=r.getSuccess() && r.getRows().size()>=1; appendStep(steps,seq++,"INSERT 50 more rows (60 total)",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
         // Insert 50 rows into t2
         for (int i=1;i<=50;i++) {
             auto r=exec("INSERT INTO t2 VALUES ("+std::to_string(i)+",'Data"+std::to_string(i)+"',"+(i%2==0?"TRUE":"FALSE")+","+std::to_string(100.5+i)+");",DB,ver);
-            if(r.getSuccess())ver=r.getDbVersion();
+            if(r.getSuccess())ver=extractVer(r,DB);
         }
         { auto r=exec("SELECT COUNT(*) FROM t2;",DB,ver); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT 50 rows into t2",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
         // AUTO_INCREMENT inserts
         for (int i=1;i<=30;i++) {
             auto r=exec("INSERT INTO t3 (msg) VALUES ('Message "+std::to_string(i)+"');",DB,ver);
-            if(r.getSuccess())ver=r.getDbVersion();
+            if(r.getSuccess())ver=extractVer(r,DB);
         }
         { auto r=exec("SELECT COUNT(*) FROM t3;",DB,ver); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT 30 rows AUTO_INCREMENT",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
         // Wide table inserts
         for (int i=1;i<=20;i++) {
             auto r=exec("INSERT INTO wide_tbl VALUES ("+std::to_string(i)+","+std::to_string(i*2)+","+std::to_string(i*3)+","+std::to_string(i*4)+","+std::to_string(i*5)+","+std::to_string(i*6)+","+std::to_string(i*7)+","+std::to_string(i*8)+","+std::to_string(i*9)+","+std::to_string(i*10)+");",DB,ver);
-            if(r.getSuccess())ver=r.getDbVersion();
+            if(r.getSuccess())ver=extractVer(r,DB);
         }
         { auto r=exec("SELECT COUNT(*) FROM wide_tbl;",DB,ver); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT 20 rows into 10-col table",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
@@ -143,10 +154,10 @@ int main() {
         { auto r=exec("SELECT * FROM t1 WHERE id >= 10 AND id <= 20;",DB,ver); bool p=r.getSuccess() && r.getRows().size()==11; appendStep(steps,seq++,"SELECT range 10-20 returns 11",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
         // ===================== JOIN stress on larger tables =====================
-        { auto r=exec("CREATE TABLE t4 (id INT PRIMARY KEY, t1_id INT, info VARCHAR(100));",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE t4 for JOIN",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("CREATE TABLE t4 (id INT PRIMARY KEY, t1_id INT, info VARCHAR(100));",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE t4 for JOIN",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
         for (int i=1;i<=40;i++) {
             auto r=exec("INSERT INTO t4 VALUES ("+std::to_string(i)+","+std::to_string(i)+",'Info"+std::to_string(i)+"');",DB,ver);
-            if(r.getSuccess())ver=r.getDbVersion();
+            if(r.getSuccess())ver=extractVer(r,DB);
         }
         { auto r=exec("SELECT COUNT(*) FROM t4;",DB,ver); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT 40 rows into t4",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
@@ -166,19 +177,19 @@ int main() {
         // Rapid UPDATE cycles
         for (int i=1;i<=10;i++) {
             auto r=exec("UPDATE t1 SET score = score + 1 WHERE id = "+std::to_string(i)+";",DB,ver);
-            if(r.getSuccess())ver=r.getDbVersion();
+            if(r.getSuccess())ver=extractVer(r,DB);
         }
         { auto r=exec("SELECT score FROM t1 WHERE id = 1;",DB,ver); bool p=r.getSuccess() && r.getRows().size()>=1; appendStep(steps,seq++,"Rapid UPDATE 10 rows",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
         // Rapid DELETE + INSERT cycles
         for (int i=61;i<=70;i++) {
             auto r=exec("INSERT INTO t1 VALUES ("+std::to_string(i)+",'Temp"+std::to_string(i)+"',99,0.0);",DB,ver);
-            if(r.getSuccess())ver=r.getDbVersion();
+            if(r.getSuccess())ver=extractVer(r,DB);
         }
         { auto r=exec("SELECT COUNT(*) FROM t1;",DB,ver); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT 10 more rows (70 total)",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
         for (int i=61;i<=70;i++) {
             auto r=exec("DELETE FROM t1 WHERE id = "+std::to_string(i)+";",DB,ver);
-            if(r.getSuccess())ver=r.getDbVersion();
+            if(r.getSuccess())ver=extractVer(r,DB);
         }
         { auto r=exec("SELECT COUNT(*) FROM t1;",DB,ver); bool p=r.getSuccess(); appendStep(steps,seq++,"DELETE 10 rows back to 60",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
@@ -186,28 +197,28 @@ int main() {
         { auto r=exec("SELECT * FROM wide_tbl;",DB,ver); bool p=r.getSuccess() && r.getRows().size()==20; appendStep(steps,seq++,"SELECT * 10-col table 20 rows",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
         { auto r=exec("SELECT c1, c5, c10 FROM wide_tbl WHERE c1 > 10;",DB,ver); bool p=r.getSuccess(); appendStep(steps,seq++,"SELECT subset columns wide table",p,"rows="+std::to_string(r.getRows().size())); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
         { auto r=exec("SELECT SUM(c1), SUM(c2), SUM(c3), SUM(c4), SUM(c5) FROM wide_tbl;",DB,ver); bool p=r.getSuccess(); appendStep(steps,seq++,"Multiple aggregates on wide table",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("UPDATE wide_tbl SET c10 = c10 + 1 WHERE c1 <= 5;",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"UPDATE wide table 5 rows",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("UPDATE wide_tbl SET c10 = c10 + 1 WHERE c1 <= 5;",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"UPDATE wide table 5 rows",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
         // ===================== Data type edge cases =====================
-        { auto r=exec("CREATE TABLE edge_tbl (id INT PRIMARY KEY, long_str VARCHAR(200), big_num INT);",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE for edge cases",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO edge_tbl VALUES (1, 'Short', 0);",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT edge case 0 int",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO edge_tbl VALUES (2, 'A very long string with many characters to test varchar handling', 999999);",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT long string large int",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO edge_tbl VALUES (3, '', -100);",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT empty string negative int",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO edge_tbl VALUES (4, 'Special chars: !@#$%^&*()_+-=[]{}|;:,.<>?', 42);",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT special characters",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("CREATE TABLE edge_tbl (id INT PRIMARY KEY, long_str VARCHAR(200), big_num INT);",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE for edge cases",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO edge_tbl VALUES (1, 'Short', 0);",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT edge case 0 int",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO edge_tbl VALUES (2, 'A very long string with many characters to test varchar handling', 999999);",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT long string large int",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO edge_tbl VALUES (3, '', -100);",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT empty string negative int",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO edge_tbl VALUES (4, 'Special chars: !@#$%^&*()_+-=[]{}|;:,.<>?', 42);",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT special characters",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
         { auto r=exec("SELECT * FROM edge_tbl WHERE id = 2;",DB,ver); bool p=r.getSuccess() && r.getRows().size()==1; appendStep(steps,seq++,"SELECT edge case long string",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
         { auto r=exec("SELECT * FROM edge_tbl WHERE big_num = -100;",DB,ver); bool p=r.getSuccess() && r.getRows().size()==1; appendStep(steps,seq++,"SELECT edge case negative int",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
         // ===================== Empty / single row table operations =====================
-        { auto r=exec("CREATE TABLE empty_tbl (id INT PRIMARY KEY, val VARCHAR(10));",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE empty_tbl",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("CREATE TABLE empty_tbl (id INT PRIMARY KEY, val VARCHAR(10));",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE empty_tbl",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
         { auto r=exec("SELECT * FROM empty_tbl;",DB,ver); bool p=r.getSuccess() && r.getRows().empty(); appendStep(steps,seq++,"SELECT empty table returns 0 rows",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
         { auto r=exec("SELECT COUNT(*) FROM empty_tbl;",DB,ver); bool p=r.getSuccess(); appendStep(steps,seq++,"COUNT(*) on empty table",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
         { auto r=exec("SELECT SUM(val) FROM empty_tbl;",DB,ver); bool p=r.getSuccess(); appendStep(steps,seq++,"SUM on empty table",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO empty_tbl VALUES (1, 'only');",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT single row into empty",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO empty_tbl VALUES (1, 'only');",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT single row into empty",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
         { auto r=exec("SELECT * FROM empty_tbl;",DB,ver); bool p=r.getSuccess() && r.getRows().size()==1; appendStep(steps,seq++,"SELECT 1 row from previously empty",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("UPDATE empty_tbl SET val = 'updated' WHERE id = 1;",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"UPDATE single row table",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("DELETE FROM empty_tbl WHERE id = 1;",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"DELETE only row from table",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("UPDATE empty_tbl SET val = 'updated' WHERE id = 1;",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"UPDATE single row table",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("DELETE FROM empty_tbl WHERE id = 1;",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"DELETE only row from table",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
         { auto r=exec("SELECT * FROM empty_tbl;",DB,ver); bool p=r.getSuccess() && r.getRows().empty(); appendStep(steps,seq++,"SELECT empty after DELETE only row",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("DROP TABLE empty_tbl;",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP empty_tbl",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("DROP TABLE empty_tbl;",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP empty_tbl",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
         // ===================== Connection / rapid request stress =====================
         { auto r=exec("SHOW TABLES;",DB,ver); bool p=r.getSuccess() && r.getRows().size()>=5; appendStep(steps,seq++,"SHOW TABLES after many creates",p,"tables="+std::to_string(r.getRows().size())); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
@@ -228,11 +239,11 @@ int main() {
         { auto r=exec("SELECT COUNT(*), AVG(score), MIN(age), MAX(age) FROM t1 WHERE id <= 30;",DB,ver); bool p=r.getSuccess(); appendStep(steps,seq++,"Aggregates on first 30 rows",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
         // ===================== Drop and recreate stress =====================
-        { auto r=exec("DROP TABLE edge_tbl;",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP edge_tbl",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("CREATE TABLE edge_tbl (id INT PRIMARY KEY, val INT);",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"RECREATE edge_tbl",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO edge_tbl VALUES (1, 100);",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT into recreated table",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("DROP TABLE edge_tbl;",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP edge_tbl",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("CREATE TABLE edge_tbl (id INT PRIMARY KEY, val INT);",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"RECREATE edge_tbl",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO edge_tbl VALUES (1, 100);",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT into recreated table",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
         { auto r=exec("SELECT * FROM edge_tbl;",DB,ver); bool p=r.getSuccess() && r.getRows().size()==1; appendStep(steps,seq++,"SELECT from recreated table",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("DROP TABLE edge_tbl;",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP recreated edge_tbl",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("DROP TABLE edge_tbl;",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP recreated edge_tbl",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
         // ===================== UNION stress =====================
         { auto r=exec("SELECT id FROM t1 WHERE id <= 10 UNION SELECT id FROM t1 WHERE id >= 51;",DB,ver); bool p=r.getSuccess(); appendStep(steps,seq++,"UNION two ranges from same table",p,"rows="+std::to_string(r.getRows().size())); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
@@ -243,12 +254,12 @@ int main() {
         { auto r=exec("SELECT * FROM t1 WHERE EXISTS (SELECT 1 FROM t4 WHERE t4.t1_id = t1.id);",DB,ver); bool p=r.getSuccess(); appendStep(steps,seq++,"SELECT with EXISTS subquery",p,"rows="+std::to_string(r.getRows().size())); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
         // ===================== Cleanup =====================
-        { auto r=exec("DROP TABLE t4;",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP t4",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("DROP TABLE t3;",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP t3",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("DROP TABLE t2;",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP t2",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("DROP TABLE wide_tbl;",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP wide_tbl",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("DROP TABLE t1;",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP t1",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
-        { auto r=exec("DROP TABLE pk_only;",DB,ver); if(r.getSuccess())ver=r.getDbVersion(); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP pk_only",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("DROP TABLE t4;",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP t4",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("DROP TABLE t3;",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP t3",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("DROP TABLE t2;",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP t2",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("DROP TABLE wide_tbl;",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP wide_tbl",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("DROP TABLE t1;",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP t1",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
+        { auto r=exec("DROP TABLE pk_only;",DB,ver); if(r.getSuccess())ver=extractVer(r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP pk_only",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
         { auto r=exec("DROP DATABASE "+DB+";"); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP DATABASE cleanup",p,r.getMessage()); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" ST-"<<(seq-1)<<"\n"; }
 
         sock.shutdown(asio::ip::tcp::socket::shutdown_both); sock.close();

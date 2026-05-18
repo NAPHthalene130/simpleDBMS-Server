@@ -138,13 +138,18 @@ std::string NetworkTransferData::toJson() const
     jsonObject["affectedRows"] = affectedRows;
     jsonObject["columns"] = columns;
     jsonObject["rows"] = rows;
-    jsonObject["dbVersion"] = dbVersion;
 
     nlohmann::json databasesJson = nlohmann::json::array();
     for (const DatabaseNode &databaseNode : databases) {
         databasesJson.push_back(nlohmann::json::parse(databaseNode.toJson()));
     }
     jsonObject["databases"] = databasesJson;
+
+    nlohmann::json versionMapJson;
+    for (const auto &entry : dbVersionMap) {
+        versionMapJson[entry.first] = entry.second;
+    }
+    jsonObject["dbVersionMap"] = versionMapJson;
 
     return jsonObject.dump();
 }
@@ -162,7 +167,6 @@ NetworkTransferData NetworkTransferData::fromJson(const std::string &jsonStr)
     networkTransferData.setAffectedRows(jsonObject.value("affectedRows", 0));
     networkTransferData.setColumns(jsonObject.value("columns", std::vector<std::string> {}));
     networkTransferData.setRows(jsonObject.value("rows", std::vector<std::vector<std::string>> {}));
-    networkTransferData.setDbVersion(jsonObject.value("dbVersion", std::uint64_t(0)));
 
     std::vector<DatabaseNode> databaseNodes;
     if (jsonObject.contains("databases") && jsonObject["databases"].is_array()) {
@@ -171,6 +175,15 @@ NetworkTransferData NetworkTransferData::fromJson(const std::string &jsonStr)
         }
     }
     networkTransferData.setDatabases(databaseNodes);
+
+    std::map<std::string, std::uint64_t> versionMap;
+    if (jsonObject.contains("dbVersionMap") && jsonObject["dbVersionMap"].is_object()) {
+        for (const auto &entry : jsonObject["dbVersionMap"].items()) {
+            versionMap[entry.key()] = entry.value().get<std::uint64_t>();
+        }
+    }
+    networkTransferData.setDbVersionMap(versionMap);
+
     return networkTransferData;
 }
 
@@ -284,12 +297,12 @@ void NetworkTransferData::setDatabases(const std::vector<DatabaseNode> &database
     this->databases = databases;
 }
 
-std::uint64_t NetworkTransferData::getDbVersion() const
+const std::map<std::string, std::uint64_t> &NetworkTransferData::getDbVersionMap() const
 {
-    return dbVersion;
+    return dbVersionMap;
 }
 
-void NetworkTransferData::setDbVersion(std::uint64_t dbVersion)
+void NetworkTransferData::setDbVersionMap(const std::map<std::string, std::uint64_t> &dbVersionMap)
 {
-    this->dbVersion = dbVersion;
+    this->dbVersionMap = dbVersionMap;
 }

@@ -29,6 +29,7 @@
 | `columns` | `std::vector<std::string>` | 查询结果的列名列表 |
 | `rows` | `std::vector<std::vector<std::string>>` | 查询结果的二维数据 |
 | `databases` | `std::vector<DatabaseNode>` | 数据库目录结构，包含数据库、表、字段三级信息 |
+| `dbVersionMap` | `std::map<std::string, std::uint64_t>` | 全量数据库版本号映射表 |
 
 ---
 
@@ -60,12 +61,14 @@
 |---|---|---|
 | `name` | `std::string` | 数据库名 |
 | `tables` | `std::vector<TableNode>` | 当前数据库下的数据表列表 |
+| `dbVersion` | `std::uint64_t` | 该数据库的当前版本号 |
 
 示例：
 
 ```json
 {
   "name": "school",
+  "dbVersion": 3,
   "tables": [
     {
       "name": "student",
@@ -97,8 +100,12 @@ USE_DATABASE_RESPONSE
 SQL_EXEC_REQUEST
 SQL_EXEC_RESPONSE
 SQL_QUERY_RESPONSE
+SQL_TEMP_EXEC_REQUEST
+SQL_TEMP_EXEC_RESPONSE
 DIRECTORY_REQUEST
 DIRECTORY_RESPONSE
+DB_VERSION_REQUEST
+DB_VERSION_RESPONSE
 ERROR_RESPONSE
 ```
 
@@ -263,6 +270,7 @@ ERROR_RESPONSE
 | `id` | 用户 id |
 | `dbName` | 当前数据库名 |
 | `sql` | SQL 语句 |
+| `dbVersionMap` | 包含当前目标数据库版本的单条映射 `{"dbName": version}` |
 
 示例（查询）：
 
@@ -271,7 +279,10 @@ ERROR_RESPONSE
   "type": "SQL_EXEC_REQUEST",
   "id": "1001",
   "dbName": "school",
-  "sql": "SELECT * FROM student;"
+  "sql": "SELECT * FROM student;",
+  "dbVersionMap": {
+    "school": 3
+  }
 }
 ```
 
@@ -282,7 +293,10 @@ ERROR_RESPONSE
   "type": "SQL_EXEC_REQUEST",
   "id": "1001",
   "dbName": "school",
-  "sql": "INSERT INTO student VALUES (1, 'Tom', 18);"
+  "sql": "INSERT INTO student VALUES (1, 'Tom', 18);",
+  "dbVersionMap": {
+    "school": 3
+  }
 }
 ```
 
@@ -298,25 +312,37 @@ ERROR_RESPONSE
 | `success` | SQL 是否执行成功 |
 | `message` | 执行结果提示或错误信息 |
 | `affectedRows` | 影响行数 |
+| `dbName` | 影响的数据库名 |
+| `dbVersionMap` | 服务端全量数据库版本号映射表 |
 
-非查询成功示例：
+成功示例：
 
 ```json
 {
   "type": "SQL_EXEC_RESPONSE",
   "success": true,
   "message": "Execute success.",
-  "affectedRows": 1
+  "affectedRows": 1,
+  "dbName": "school",
+  "dbVersionMap": {
+    "school": 4,
+    "system": 0
+  }
 }
 ```
 
-非查询失败示例：
+失败示例：
 
 ```json
 {
   "type": "SQL_EXEC_RESPONSE",
   "success": false,
-  "message": "Database already exists."
+  "message": "Database version mismatch: client=3, server=4. Please refresh the directory.",
+  "dbName": "school",
+  "dbVersionMap": {
+    "school": 4,
+    "system": 0
+  }
 }
 ```
 
@@ -333,8 +359,10 @@ ERROR_RESPONSE
 | `message` | 执行结果提示或错误信息 |
 | `columns` | 查询结果列名列表 |
 | `rows` | 查询结果二维数据，每一行为一个 `std::vector<std::string>` |
+| `dbName` | 查询所在的数据库名 |
+| `dbVersionMap` | 服务端全量数据库版本号映射表 |
 
-查询成功示例：
+示例：
 
 ```json
 {
@@ -345,23 +373,79 @@ ERROR_RESPONSE
   "rows": [
     ["1", "Tom", "18"],
     ["2", "Jerry", "19"]
-  ]
-}
-```
-
-查询失败示例：
-
-```json
-{
-  "type": "SQL_QUERY_RESPONSE",
-  "success": false,
-  "message": "Table does not exist."
+  ],
+  "dbName": "school",
+  "dbVersionMap": {
+    "school": 4,
+    "system": 0
+  }
 }
 ```
 
 ---
 
-### 5.10 DIRECTORY_REQUEST
+### 5.10 SQL_TEMP_EXEC_REQUEST
+
+客户端发送临时 SQL 执行请求（不改变当前会话的数据库上下文）。
+
+| 字段 | 说明 |
+|---|---|
+| `type` | 固定为 `SQL_TEMP_EXEC_REQUEST` |
+| `id` | 用户 id |
+| `dbName` | 目标数据库名（必填） |
+| `sql` | SQL 语句 |
+| `dbVersionMap` | 包含目标数据库版本的单条映射 `{"dbName": version}` |
+
+示例：
+
+```json
+{
+  "type": "SQL_TEMP_EXEC_REQUEST",
+  "id": "1001",
+  "dbName": "school",
+  "sql": "SELECT * FROM student;",
+  "dbVersionMap": {
+    "school": 3
+  }
+}
+```
+
+---
+
+### 5.11 SQL_TEMP_EXEC_RESPONSE
+
+服务端返回临时 SQL 执行结果。
+
+| 字段 | 说明 |
+|---|---|
+| `type` | 固定为 `SQL_TEMP_EXEC_RESPONSE` |
+| `success` | 是否执行成功 |
+| `message` | 执行结果提示或错误信息 |
+| `columns` | 查询结果列名列表 |
+| `rows` | 查询结果二维数据 |
+| `affectedRows` | 非查询 SQL 影响的行数 |
+| `dbName` | 目标数据库名 |
+| `dbVersionMap` | 服务端全量数据库版本号映射表 |
+
+示例：
+
+```json
+{
+  "type": "SQL_TEMP_EXEC_RESPONSE",
+  "success": true,
+  "columns": ["id", "name", "age"],
+  "rows": [["1", "Tom", "18"]],
+  "dbName": "school",
+  "dbVersionMap": {
+    "school": 4,
+    "system": 0
+  }
+}
+```
+
+---
+
+### 5.12 DIRECTORY_REQUEST
 
 客户端请求数据库目录。
 
@@ -369,7 +453,6 @@ ERROR_RESPONSE
 |---|---|
 | `type` | 固定为 `DIRECTORY_REQUEST` |
 | `id` | 用户 id，可选 |
-| `dbName` | 当前数据库名，可选 |
 
 示例：
 
@@ -382,7 +465,7 @@ ERROR_RESPONSE
 
 ---
 
-### 5.11 DIRECTORY_RESPONSE
+### 5.13 DIRECTORY_RESPONSE
 
 服务端返回数据库目录。
 
@@ -392,6 +475,7 @@ ERROR_RESPONSE
 | `success` | 获取目录是否成功 |
 | `message` | 提示信息 |
 | `databases` | 数据库目录三级结构 |
+| `dbVersionMap` | 服务端全量数据库版本号映射表 |
 
 示例：
 
@@ -403,18 +487,19 @@ ERROR_RESPONSE
   "databases": [
     {
       "name": "school",
+      "dbVersion": 4,
       "tables": [
         {
           "name": "student",
           "fields": ["id", "name", "age"]
-        },
-        {
-          "name": "teacher",
-          "fields": ["id", "name", "course"]
         }
       ]
     }
-  ]
+  ],
+  "dbVersionMap": {
+    "school": 4,
+    "system": 0
+  }
 }
 ```
 
@@ -434,15 +519,53 @@ school
     id
     name
     age
-  teacher
-    id
-    name
-    course
 ```
 
 ---
 
-### 5.12 ERROR_RESPONSE
+### 5.14 DB_VERSION_REQUEST
+
+客户端请求获取所有数据库的当前版本号。
+
+| 字段 | 说明 |
+|---|---|
+| `type` | 固定为 `DB_VERSION_REQUEST` |
+| `id` | 用户 id |
+
+---
+
+### 5.15 DB_VERSION_RESPONSE
+
+服务端返回所有数据库的版本号。
+
+| 字段 | 说明 |
+|---|---|
+| `type` | 固定为 `DB_VERSION_RESPONSE` |
+| `success` | 是否成功 |
+| `message` | 提示信息 |
+| `databases` | 数据库版本列表（每个 DatabaseNode 包含 name 和 dbVersion） |
+| `dbVersionMap` | 服务端全量数据库版本号映射表 |
+
+示例：
+
+```json
+{
+  "type": "DB_VERSION_RESPONSE",
+  "success": true,
+  "databases": [
+    {"name": "school", "dbVersion": 4},
+    {"name": "system", "dbVersion": 0}
+  ],
+  "dbVersionMap": {
+    "school": 4,
+    "system": 0
+  }
+}
+```
+
+---
+
+### 5.16 ERROR_RESPONSE
 
 服务端返回通用错误信息。
 
@@ -451,6 +574,8 @@ school
 | `type` | 固定为 `ERROR_RESPONSE` |
 | `success` | 固定为 `false` |
 | `message` | 错误信息 |
+| `dbName` | 可选，错误的数据库上下文 |
+| `dbVersionMap` | 可选，服务端全量数据库版本号映射表（版本冲突时返回） |
 
 示例：
 
@@ -458,50 +583,126 @@ school
 {
   "type": "ERROR_RESPONSE",
   "success": false,
-  "message": "Invalid request type."
+  "message": "Database version mismatch.",
+  "dbName": "school",
+  "dbVersionMap": {
+    "school": 4,
+    "system": 0
+  }
 }
 ```
 
 ---
 
-## 6. 使用示例
+## 6. 数据库版本号核验机制
 
-### 6.1 构造 SQL 执行请求
+### 6.1 核验流程
+
+1. 客户端在本地维护一份数据库版本号缓存（`DirectoryWidget::dbVersionMap`）
+2. DDL/DML 请求发送时，客户端将目标数据库的版本号放入 `dbVersionMap` 字段发送给服务端
+3. 服务端收到请求后，从 `dbVersionMap` 中提取该数据库的版本号，与本地存储（`.ver` 文件）中的版本号对比
+4. 若版本号匹配，则执行请求；若不匹配（且非双方均为 0），则返回 `success=false` 并附带服务端当前全量版本映射表
+5. 客户端收到版本不匹配响应后，自动刷新本地版本缓存并提示用户刷新目录
+
+### 6.2 版本号管理
+
+- 每个数据库的版本号存储在 `<dataRoot>/<dbName>/<dbName>.ver` 文件中
+- 初始未创建时版本号为 0
+- 每次 DDL（CREATE、DROP、ALTER）或 DML（INSERT、UPDATE、DELETE）操作成功后自动递增版本号
+- SELECT、SHOW 等查询操作不递增版本号
+
+### 6.3 服务端请求核验流程
+
+```
+客户端请求（含 dbVersionMap） → 服务端提取客户端版本号
+    ↓
+对比服务端本地版本号
+    ↓
+匹配 → 执行 SQL → DDL/DML 成功后递增版本号 → 全量 dbVersionMap 返回
+    ↓
+不匹配（且非首次初始状态） → 返回错误 + 服务端全量 dbVersionMap
+    ↓
+首次初始状态（双方版本号为 0） → 允许执行
+```
+
+### 6.4 异常场景处理
+
+| 场景 | 处理方式 |
+|---|---|
+| 客户端版本 < 服务端版本 | 拒绝执行，返回全量版本映射，客户端刷新缓存 |
+| 客户端版本 > 服务端版本 | 拒绝执行（理论不应发生），返回全量版本映射 |
+| 双方版本均为 0（新数据库） | 允许执行（首次请求通融） |
+| 请求中未携带 dbVersionMap | 进行版本核验，从 map 中查找不到该 db 时客户端版本视为 0 |
+
+---
+
+## 7. 使用示例
+
+### 7.1 构造 SQL 执行请求（含版本号）
 
 ```cpp
 NetworkTransferData data;
 data.setType(NetworkTransferData::SQL_EXEC_REQUEST);
 data.setId("1001");
 data.setDbName("school");
-data.setSql("SELECT * FROM student;");
+data.setSql("INSERT INTO student VALUES (1, 'Tom', 18);");
+
+// 携带当前数据库版本号
+std::map<std::string, std::uint64_t> vm;
+vm["school"] = 3;
+data.setDbVersionMap(vm);
 
 std::string jsonStr = data.toJson();
 ```
 
----
-
-### 6.2 解析 SQL 执行响应
+### 7.2 解析 SQL 执行响应（含版本映射表）
 
 ```cpp
 NetworkTransferData data = NetworkTransferData::fromJson(jsonStr);
 
-if (data.getType() == NetworkTransferData::SQL_EXEC_RESPONSE && data.getSuccess()) {
-    // 查询结果使用 columns 和 rows
-    const std::vector<std::string> &columns = data.getColumns();
-    const std::vector<std::vector<std::string>> &rows = data.getRows();
+if (data.getType() == NetworkTransferData::SQL_EXEC_RESPONSE) {
+    // 获取全量版本映射表
+    const auto &versionMap = data.getDbVersionMap();
 
-    // 非查询结果使用 affectedRows
-    int affectedRows = data.getAffectedRows();
+    if (data.getSuccess()) {
+        int affectedRows = data.getAffectedRows();
+        // 更新本地版本缓存
+        for (const auto &entry : versionMap) {
+            directoryWidget->setDbVersion(
+                QString::fromStdString(entry.first), entry.second);
+        }
+    } else {
+        // 版本不匹配等错误
+        const std::string &errMsg = data.getMessage();
+    }
 }
+```
+
+### 7.3 解析目录响应
+
+```cpp
+NetworkTransferData data = NetworkTransferData::fromJson(jsonStr);
+
+const auto &databases = data.getDatabases();
+for (const auto &db : databases) {
+    const std::string &dbName = db.getName();
+    std::uint64_t version = db.getDbVersion();  // 目录中的版本号
+    const auto &tables = db.getTables();
+    // ...
+}
+
+// 也可通过 dbVersionMap 获取全量版本
+const auto &versionMap = data.getDbVersionMap();
 ```
 
 ---
 
-## 7. 注意事项
+## 8. 注意事项
 
 1. `type` 字符串必须使用类中定义的常量，不建议手写字符串。
 2. 所有 SQL 语句（包括查询和非查询）统一使用 `SQL_EXEC_REQUEST` 类型发送，服务端会自动根据语句类型返回对应格式的响应。
 3. 查询结果统一使用字符串保存，即使原始数据是数字，也可以转为字符串后放入 `rows`。
 4. 该类只负责存储和 JSON 转换，不负责 SQL 执行和 UI 显示。
 5. `DIRECTORY_RESPONSE` 中的目录结构为数据库、表、字段三级结构。
-6. 如果项目中其它位置使用 `userID` 命名，需要说明本类中的 `id` 表示同一含义。
+6. `dbVersionMap` 字段是全量映射表，服务端在每个响应中都返回完整的版本号映射，客户端维护本地缓存。
+7. `DatabaseNode` 中的 `dbVersion` 是单个数据库的版本号，与 `dbVersionMap` 中的信息冗余但提供更便捷的单数据库版本访问。

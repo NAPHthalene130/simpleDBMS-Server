@@ -57,8 +57,11 @@ void writeReportLog(const std::string &suite, const std::vector<TestStepResult> 
     for (auto &s : steps) ofs << "[" << (s.passed?"YES":"NO") << "]" << s.name << "\n";
 }
 
-void syncVer(uint64_t &ver, const NetworkTransferData &r) {
-    if (r.getDbVersion() > 0) ver = r.getDbVersion();
+void syncVer(uint64_t &ver, const NetworkTransferData &r, const std::string &db) {
+    const auto &m = r.getDbVersionMap();
+    auto it = m.find(db);
+    auto v = it != m.end() ? it->second : 0;
+    if (v > 0) ver = v;
     else if (!r.getSuccess()) ver++;
 }
 
@@ -76,8 +79,14 @@ int main() {
 
         auto exec = [&](const std::string &sql, const std::string &db = "", uint64_t ver=0) {
             NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
-            req.setSql(sql); if (!db.empty()) { req.setDbName(db); req.setDbVersion(ver); }
+            req.setSql(sql); if (!db.empty()) { req.setDbName(db); std::unordered_map<std::string,std::uint64_t> vm; vm[db]=ver; req.setDbVersionMap(vm); }
             return sendRecv(&sock, req);
+        };
+
+        auto getVer = [](const NetworkTransferData &r, const std::string &db) -> std::uint64_t {
+            const auto &m = r.getDbVersionMap();
+            auto it = m.find(db);
+            return it != m.end() ? it->second : 0;
         };
 
         exec("DROP DATABASE " + DB + ";");
@@ -88,42 +97,42 @@ int main() {
         uint64_t ver = 0;
 
         // ===================== Complex schema setup =====================
-        { auto r=exec("CREATE TABLE employees (id INT PRIMARY KEY, name VARCHAR(50), dept_id INT, salary INT, age INT, manager_id INT);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE employees",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("CREATE TABLE departments (id INT PRIMARY KEY, dept_name VARCHAR(50), location VARCHAR(50), budget INT);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE departments",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("CREATE TABLE projects (id INT PRIMARY KEY, proj_name VARCHAR(50), dept_id INT, cost INT);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE projects",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("CREATE TABLE assignments (emp_id INT, proj_id INT, hours INT);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE assignments",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("CREATE TABLE employees (id INT PRIMARY KEY, name VARCHAR(50), dept_id INT, salary INT, age INT, manager_id INT);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE employees",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("CREATE TABLE departments (id INT PRIMARY KEY, dept_name VARCHAR(50), location VARCHAR(50), budget INT);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE departments",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("CREATE TABLE projects (id INT PRIMARY KEY, proj_name VARCHAR(50), dept_id INT, cost INT);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE projects",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("CREATE TABLE assignments (emp_id INT, proj_id INT, hours INT);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"CREATE TABLE assignments",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
 
         // Insert employees
-        { auto r=exec("INSERT INTO employees VALUES (1, 'Alice', 1, 8000, 30, 3);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Alice",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO employees VALUES (2, 'Bob', 1, 7000, 25, 3);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Bob",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO employees VALUES (3, 'Carol', 2, 12000, 45, NULL);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Carol",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO employees VALUES (4, 'Dave', 2, 6000, 28, 3);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Dave",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO employees VALUES (5, 'Eve', 3, 9000, 35, 3);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Eve",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO employees VALUES (6, 'Frank', 3, 5000, 22, 3);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Frank",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO employees VALUES (7, 'Grace', 1, 7500, 29, 3);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Grace",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO employees VALUES (8, 'Henry', 2, 6500, 32, 3);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Henry",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO employees VALUES (1, 'Alice', 1, 8000, 30, 3);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Alice",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO employees VALUES (2, 'Bob', 1, 7000, 25, 3);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Bob",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO employees VALUES (3, 'Carol', 2, 12000, 45, NULL);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Carol",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO employees VALUES (4, 'Dave', 2, 6000, 28, 3);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Dave",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO employees VALUES (5, 'Eve', 3, 9000, 35, 3);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Eve",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO employees VALUES (6, 'Frank', 3, 5000, 22, 3);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Frank",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO employees VALUES (7, 'Grace', 1, 7500, 29, 3);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Grace",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO employees VALUES (8, 'Henry', 2, 6500, 32, 3);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Henry",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
 
         // Insert departments
-        { auto r=exec("INSERT INTO departments VALUES (1, 'Engineering', 'Building A', 500000);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Eng dept",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO departments VALUES (2, 'Sales', 'Building B', 300000);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Sales dept",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO departments VALUES (3, 'HR', 'Building C', 150000);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT HR dept",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO departments VALUES (1, 'Engineering', 'Building A', 500000);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Eng dept",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO departments VALUES (2, 'Sales', 'Building B', 300000);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Sales dept",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO departments VALUES (3, 'HR', 'Building C', 150000);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT HR dept",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
 
         // Insert projects
-        { auto r=exec("INSERT INTO projects VALUES (1, 'Alpha', 1, 100000);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Alpha",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO projects VALUES (2, 'Beta', 1, 80000);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Beta",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO projects VALUES (3, 'Gamma', 2, 60000);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Gamma",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO projects VALUES (4, 'Delta', 3, 45000);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Delta",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO projects VALUES (1, 'Alpha', 1, 100000);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Alpha",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO projects VALUES (2, 'Beta', 1, 80000);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Beta",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO projects VALUES (3, 'Gamma', 2, 60000);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Gamma",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO projects VALUES (4, 'Delta', 3, 45000);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT Delta",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
 
         // Insert assignments
-        { auto r=exec("INSERT INTO assignments VALUES (1, 1, 40);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 1-1",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO assignments VALUES (1, 2, 20);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 1-2",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO assignments VALUES (2, 1, 35);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 2-1",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO assignments VALUES (3, 3, 50);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 3-3",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO assignments VALUES (4, 2, 25);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 4-2",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO assignments VALUES (5, 4, 30);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 5-4",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO assignments VALUES (6, 4, 15);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 6-4",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO assignments VALUES (7, 1, 40);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 7-1",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("INSERT INTO assignments VALUES (8, 3, 20);",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 8-3",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO assignments VALUES (1, 1, 40);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 1-1",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO assignments VALUES (1, 2, 20);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 1-2",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO assignments VALUES (2, 1, 35);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 2-1",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO assignments VALUES (3, 3, 50);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 3-3",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO assignments VALUES (4, 2, 25);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 4-2",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO assignments VALUES (5, 4, 30);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 5-4",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO assignments VALUES (6, 4, 15);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 6-4",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO assignments VALUES (7, 1, 40);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 7-1",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("INSERT INTO assignments VALUES (8, 3, 20);",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"INSERT assign 8-3",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
 
         // ===================== Complex WHERE conditions =====================
         { auto r=exec("SELECT * FROM employees WHERE salary > 6000 AND age < 35;",DB,ver); bool p=r.getSuccess() && r.getRows().size()==5; appendStep(steps,seq++,"WHERE salary>6000 AND age<35",p,"rows="+std::to_string(r.getRows().size())); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
@@ -229,10 +238,10 @@ int main() {
         { auto r=exec("SELECT d.dept_name, (SELECT COUNT(*) FROM employees e WHERE e.dept_id = d.id) AS emp_count FROM departments d;",DB,ver); bool p=r.getSuccess(); appendStep(steps,seq++,"Scalar subquery in SELECT list",p,"rows="+std::to_string(r.getRows().size())); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
 
         // ===================== Cleanup =====================
-        { auto r=exec("DROP TABLE assignments;",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP TABLE assignments",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("DROP TABLE projects;",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP TABLE projects",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("DROP TABLE employees;",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP TABLE employees",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
-        { auto r=exec("DROP TABLE departments;",DB,ver); syncVer(ver,r); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP TABLE departments",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("DROP TABLE assignments;",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP TABLE assignments",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("DROP TABLE projects;",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP TABLE projects",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("DROP TABLE employees;",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP TABLE employees",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
+        { auto r=exec("DROP TABLE departments;",DB,ver); syncVer(ver,r,DB); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP TABLE departments",p); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
         { auto r=exec("DROP DATABASE "+DB+";"); bool p=r.getSuccess(); appendStep(steps,seq++,"DROP DATABASE cleanup",p,r.getMessage()); std::cout<<"  "<<(p?"[PASS]":"[FAIL]")<<" CQ-"<<(seq-1)<<"\n"; }
 
         sock.shutdown(asio::ip::tcp::socket::shutdown_both); sock.close();

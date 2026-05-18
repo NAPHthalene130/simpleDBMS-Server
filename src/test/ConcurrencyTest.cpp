@@ -122,17 +122,18 @@ void writeReportLog(const std::string &suite, const std::vector<TestStepResult> 
 uint64_t getServerVersion(asio::ip::tcp::socket *sock, const std::string &dbName, const std::string &uid) {
     NetworkTransferData probeReq(NetworkTransferData::SQL_EXEC_REQUEST, uid);
     probeReq.setDbName(dbName);
-    probeReq.setDbVersion(999999);
+    probeReq.setDbVersionMap({{dbName, 999999}});
     probeReq.setSql("SHOW TABLES;");
     auto probeResp = sendRecv(sock, probeReq);
-    return probeResp.getDbVersion();
+    auto vm = probeResp.getDbVersionMap();
+    return vm.empty() ? 0 : vm.begin()->second;
 }
 
 NetworkTransferData execOnSocket(asio::ip::tcp::socket *sock, const std::string &sql,
                                  const std::string &db, uint64_t ver, const std::string &uid) {
     NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, uid);
     req.setSql(sql);
-    if (!db.empty()) { req.setDbName(db); req.setDbVersion(ver); }
+    if (!db.empty()) { req.setDbName(db); req.setDbVersionMap({{db, ver}}); }
     return sendRecv(sock, req);
 }
 
@@ -164,7 +165,7 @@ int main() {
         auto exec = [&](const std::string &sql, const std::string &db = "", uint64_t ver = 0) {
             NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
             req.setSql(sql);
-            if (!db.empty()) { req.setDbName(db); req.setDbVersion(ver); }
+            if (!db.empty()) { req.setDbName(db); req.setDbVersionMap({{db, ver}}); }
             return sendRecv(&sock, req);
         };
 

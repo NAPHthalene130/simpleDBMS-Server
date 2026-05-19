@@ -46,6 +46,8 @@ public:
         std::string value;
         std::string secondValue;
         std::vector<std::string> values;
+        JoinColumnRef rightColumn;
+        bool isColumnCompare = false;
     };
 
     struct JoinSpec {

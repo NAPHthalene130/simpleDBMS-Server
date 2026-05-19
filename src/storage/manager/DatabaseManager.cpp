@@ -370,6 +370,16 @@ bool evaluateJoinFilter(const JoinedRecord &record,
     if (it == record.end()) {
         return false;
     }
+
+    if (filter.isColumnCompare) {
+        const std::string rightKey = resolveJoinKey(filter.rightColumn, aliasColumns);
+        const auto rightIt = record.find(rightKey);
+        if (rightIt == record.end()) {
+            return false;
+        }
+        return storage::Table::compareValue(it->second, filter.op, rightIt->second);
+    }
+
     if (filter.op == storage::Table::CompareOp::IN) {
         return std::find(filter.values.begin(), filter.values.end(), it->second) != filter.values.end();
     }

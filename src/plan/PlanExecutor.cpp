@@ -502,7 +502,14 @@ DatabaseManager::JoinResult PlanExecutor::executeJoinPlan(std::shared_ptr<PlanNo
                 filter.column.source = (leftDot != std::string::npos) ? leftOp.substr(0, leftDot) : "";
                 filter.column.column = (leftDot != std::string::npos) ? leftOp.substr(leftDot + 1) : leftOp;
                 filter.op = mapCompare(op);
-                filter.value = rightOp;
+                const auto rightDot = rightOp.find('.');
+                if (rightDot != std::string::npos) {
+                    filter.isColumnCompare = true;
+                    filter.rightColumn.source = rightOp.substr(0, rightDot);
+                    filter.rightColumn.column = rightOp.substr(rightDot + 1);
+                } else {
+                    filter.value = rightOp;
+                }
                 query.postFilters.push_back(std::move(filter));
             }
         };

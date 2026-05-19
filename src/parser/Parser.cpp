@@ -1080,6 +1080,24 @@ std::shared_ptr<ConditionNode> Parser::parsePredicate(TokenStream &tokenStream) 
     std::string leftOperand;
     const Token &leftFirst = tokenStream.peek();
 
+    // 处理 EXISTS / NOT EXISTS 无左操作数形式
+    // 作者：NAPH130
+    if (leftFirst.getType() == SqlTokenType::Keyword) {
+        const std::string upperVal = leftFirst.getValue();
+        if (upperVal == "EXISTS") {
+            return parseInOrExists(tokenStream, "");
+        }
+        if (upperVal == "NOT") {
+            const Token &second = tokenStream.peek(1);
+            if (second.getType() == SqlTokenType::Keyword && second.getValue() == "EXISTS") {
+                tokenStream.advance(); // 消费 NOT
+                auto node = parseInOrExists(tokenStream, "");
+                node->setNegated(true);
+                return node;
+            }
+        }
+    }
+
     // 聚合函数作为左操作数（如 HAVING COUNT(*) > 1）
     // 作者：NAPH130
     bool isAggFuncFirst = false;
@@ -1299,12 +1317,18 @@ std::shared_ptr<ConditionNode> Parser::parseInOrExists(TokenStream &tokenStream,
     const std::shared_ptr<ConditionNode> node = std::make_shared<ConditionNode>();
     node->setLeftOperand(leftOperand);
 
-    const std::string keyword = tokenStream.peek().getValue();
-    node->setOperator(keyword);
-
-    if (tokenStream.match(SqlTokenType::Keyword, "NOT")) {
+    // NOT 前缀处理（如 NOT EXISTS / NOT IN）
+    // 作者：NAPH130
+    bool isNot = tokenStream.match(SqlTokenType::Keyword, "NOT");
+    if (isNot) {
         node->setNegated(true);
     }
+
+    // 获取实际操作关键字（IN 或 EXISTS）
+    // 作者：NAPH130
+    const Token &opToken = tokenStream.peek();
+    const std::string keyword = opToken.getValue();
+    node->setOperator(keyword);
 
     if (tokenStream.match(SqlTokenType::Keyword, "EXISTS")) {
         tokenStream.expect(SqlTokenType::Symbol, "(", "EXISTS requires '('.");

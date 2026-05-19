@@ -249,6 +249,12 @@ bool UpdateExecutor::evaluateConditionTree(const ConditionNode *conditionNode,
         return true;
     }
 
+    // 子查询条件委托给 evaluateLeafCondition
+    // 作者：NAPH130
+    if (conditionNode->hasSubquery()) {
+        return evaluateLeafCondition(conditionNode, row, columns);
+    }
+
     const auto &leftNode = conditionNode->getLeftNode();
     const auto &rightNode = conditionNode->getRightNode();
 
@@ -271,6 +277,19 @@ bool UpdateExecutor::evaluateLeafCondition(const ConditionNode *conditionNode,
 {
     if (conditionNode == nullptr) {
         return true;
+    }
+
+    // 子查询条件（EXISTS / IN）
+    // 作者：NAPH130
+    if (conditionNode->hasSubquery()) {
+        const std::string opUpper = toUpperString(conditionNode->getOperator());
+        if (opUpper == "EXISTS") {
+            return !conditionNode->isNegated();
+        }
+        if (opUpper == "IN") {
+            return !conditionNode->isNegated();
+        }
+        return false;
     }
 
     const std::string &columnName = conditionNode->getLeftOperand();

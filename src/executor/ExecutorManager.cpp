@@ -2,8 +2,10 @@
 
 #include "Core.h"
 #include "ExecutorEngine.h"
+#include "statementExecutors/AlterTableExecutor.h"
 #include "statementExecutors/CreateDbExecutor.h"
 #include "statementExecutors/CreateTableExecutor.h"
+#include "statementExecutors/DclExecutor.h"
 #include "statementExecutors/DeleteExecutor.h"
 #include "statementExecutors/DropExecutor.h"
 #include "statementExecutors/InsertExecutor.h"
@@ -30,7 +32,9 @@ ExecutorManager::ExecutorManager(Core *core)
       showExecutor(new ShowExecutor(core, getSystemCatalogManager(), getDatabaseManager())),
       dropExecutor(new DropExecutor(core, getSystemCatalogManager(), getDatabaseManager())),
       deleteExecutor(new DeleteExecutor(core, getDatabaseManager())),
-      updateExecutor(new UpdateExecutor(core, getDatabaseManager()))
+      updateExecutor(new UpdateExecutor(core, getDatabaseManager())),
+      alterTableExecutor(new AlterTableExecutor(core, getDatabaseManager())),
+      dclExecutor(new DclExecutor(core, getDatabaseManager()))
 {
     LogWriter::info("executor", "ExecutorManager", "ExecutorManager", "Executor manager initialized.");
     executorEngine->registerExecutor(createDbExecutor);
@@ -44,11 +48,15 @@ ExecutorManager::ExecutorManager(Core *core)
     executorEngine->registerExecutor(dropExecutor);
     executorEngine->registerExecutor(deleteExecutor);
     executorEngine->registerExecutor(updateExecutor);
+    executorEngine->registerExecutor(alterTableExecutor);
+    executorEngine->registerExecutor(dclExecutor);
 }
 
 ExecutorManager::~ExecutorManager()
 {
     LogWriter::info("executor", "ExecutorManager", "~ExecutorManager", "Executor manager is being destroyed.");
+    delete dclExecutor;
+    delete alterTableExecutor;
     delete useDbExecutor;
     delete updateExecutor;
     delete deleteExecutor;
@@ -71,6 +79,8 @@ ExecutorManager::~ExecutorManager()
     createTableExecutor = nullptr;
     createDbExecutor = nullptr;
     useDbExecutor = nullptr;
+    alterTableExecutor = nullptr;
+    dclExecutor = nullptr;
     executorEngine = nullptr;
 }
 
@@ -127,6 +137,16 @@ DeleteExecutor *ExecutorManager::getDeleteExecutor() const
 UpdateExecutor *ExecutorManager::getUpdateExecutor() const
 {
     return updateExecutor;
+}
+
+AlterTableExecutor *ExecutorManager::getAlterTableExecutor() const
+{
+    return alterTableExecutor;
+}
+
+DclExecutor *ExecutorManager::getDclExecutor() const
+{
+    return dclExecutor;
 }
 
 SystemCatalogManager *ExecutorManager::getSystemCatalogManager() const

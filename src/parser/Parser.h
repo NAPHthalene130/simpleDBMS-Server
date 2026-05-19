@@ -9,6 +9,7 @@
 #include "models/parser/ConditionNode.h"
 #include "models/parser/CreateDbStmt.h"
 #include "models/parser/CreateTableStmt.h"
+#include "models/parser/DclStmt.h"
 #include "models/parser/DeleteStmt.h"
 #include "models/parser/DropStmt.h"
 #include "models/parser/InsertStmt.h"
@@ -154,6 +155,16 @@ private:
      * @return ALTER 语句 AST 节点
      */
     std::shared_ptr<SQLStatement> parseAlterStatement(TokenStream &tokenStream) const;
+
+    /**
+     * @brief 解析 DCL 语句（GRANT / REVOKE）
+     * @author NAPH130
+     * @param tokenStream token 游标流
+     * @param operationType 操作类型
+     * @return DCL 语句 AST 节点
+     */
+    std::shared_ptr<SQLStatement> parseDclStatement(TokenStream &tokenStream,
+                                                     DclOperationType operationType) const;
 
     /**
      * @brief 解析 UPDATE SET 赋值列表

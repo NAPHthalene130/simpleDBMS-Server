@@ -15,6 +15,8 @@ class TableDefManager;
 class UpdateExecutor;
 class UseDbExecutor;
 class UseExecutor;
+class AlterTableExecutor;
+class DclExecutor;
 
 /**
  * @class ExecutorManager
@@ -50,6 +52,9 @@ public:
     DeleteExecutor *getDeleteExecutor() const;
     UpdateExecutor *getUpdateExecutor() const;
 
+    AlterTableExecutor *getAlterTableExecutor() const;
+    DclExecutor *getDclExecutor() const;
+
     SystemCatalogManager *getSystemCatalogManager() const;
     DatabaseManager *getDatabaseManager() const;
     TableDefManager *getTableDefManager() const;
@@ -68,4 +73,6 @@ private:
     DropExecutor *dropExecutor;
     DeleteExecutor *deleteExecutor;
     UpdateExecutor *updateExecutor;
+    AlterTableExecutor *alterTableExecutor;
+    DclExecutor *dclExecutor;
 };

@@ -9,6 +9,8 @@
 #include <unordered_set>
 
 #include "log/LogWriter.h"
+#include "models/parser/AlterTableStmt.h"
+#include "models/parser/DclStmt.h"
 #include "models/parser/ParserException.h"
 #include "models/parser/UnionStmt.h"
 
@@ -26,6 +28,7 @@ constexpr std::int32_t FIELD_TYPE_CHAR = 4;
 constexpr std::int32_t FIELD_TYPE_VARCHAR = 5;
 constexpr std::int32_t FIELD_TYPE_DATE = 6;
 constexpr std::int32_t FIELD_TYPE_DECIMAL = 7;
+constexpr std::int32_t FIELD_TYPE_TEXT = 8;
 
 /**
  * @brief 支持的比较运算符集合
@@ -227,6 +230,14 @@ std::shared_ptr<SQLStatement> Parser::parseStatement(TokenStream &tokenStream) c
 
     if (tokenStream.match(SqlTokenType::Keyword, "ALTER")) {
         return parseAlterStatement(tokenStream);
+    }
+
+    if (tokenStream.match(SqlTokenType::Keyword, "GRANT")) {
+        return parseDclStatement(tokenStream, DclOperationType::Grant);
+    }
+
+    if (tokenStream.match(SqlTokenType::Keyword, "REVOKE")) {
+        return parseDclStatement(tokenStream, DclOperationType::Revoke);
     }
 
     LogWriter::warning("parser", "Parser", "parseStatement", "Encountered unsupported statement type.");
@@ -869,7 +880,8 @@ std::shared_ptr<SQLStatement> Parser::parseTruncateStatement(TokenStream &tokenS
  * @brief 解析 ALTER TABLE 语句
  * @author NAPH130
  * @param tokenStream token 游标流
- * @return ALTER 语句节点
+ * @return ALTER 语句 AST 节点
+ * @details 支持 ADD COLUMN / DROP COLUMN / RENAME COLUMN / ALTER COLUMN TYPE
  */
 std::shared_ptr<SQLStatement> Parser::parseAlterStatement(TokenStream &tokenStream) const
 {
@@ -878,38 +890,127 @@ std::shared_ptr<SQLStatement> Parser::parseAlterStatement(TokenStream &tokenStre
         SqlTokenType::Identifier,
         "ALTER TABLE requires a table identifier.");
 
-    // 暂仅支持 ADD COLUMN / DROP COLUMN / RENAME COLUMN
     if (tokenStream.match(SqlTokenType::Keyword, "ADD")) {
         tokenStream.consumeOptional(SqlTokenType::Keyword, "COLUMN");
-        FieldBlock fieldBlock = parseFieldDefinition(tokenStream, 0);
-        auto stmt = std::make_shared<CreateTableStmt>();
-        stmt->setTableName(toFixedNameArray(tableNameToken.getValue()));
-        stmt->setFields({fieldBlock});
+        const Token &colNameToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "ADD COLUMN requires a column identifier.");
+
+        std::string columnType;
+        std::uint16_t varcharLen = 0;
+        const Token &typeToken = tokenStream.peek();
+        if (typeToken.getType() == SqlTokenType::Keyword) {
+            const std::string upperType = typeToken.getValue();
+            columnType = upperType;
+            tokenStream.advance();
+            if (upperType == "VARCHAR" || upperType == "CHAR") {
+                tokenStream.expect(SqlTokenType::Symbol, "(", upperType + " requires '(' before length.");
+                const Token &lenToken = tokenStream.expect(
+                    SqlTokenType::Number, upperType + " length must be a number.");
+                varcharLen = static_cast<std::uint16_t>(
+                    std::stoul(lenToken.getValue()));
+                tokenStream.expect(SqlTokenType::Symbol, ")", upperType + " requires ')' after length.");
+            } else if (upperType == "DECIMAL") {
+                if (tokenStream.match(SqlTokenType::Symbol, "(")) {
+                    tokenStream.expect(SqlTokenType::Number, "DECIMAL type requires precision.");
+                    if (tokenStream.match(SqlTokenType::Symbol, ",")) {
+                        tokenStream.expect(SqlTokenType::Number,
+                                           "DECIMAL type requires scale after ','.");
+                    }
+                    tokenStream.expect(SqlTokenType::Symbol, ")", "DECIMAL type requires ')'.");
+                }
+            }
+        } else {
+            throw ParserException("ADD COLUMN requires a type keyword.", tokenStream.position());
+        }
+
+        std::string defaultValue;
+        if (tokenStream.match(SqlTokenType::Keyword, "DEFAULT")) {
+            const Token &defaultToken = tokenStream.peek();
+            if (defaultToken.getType() == SqlTokenType::Number
+                || defaultToken.getType() == SqlTokenType::String
+                || defaultToken.getType() == SqlTokenType::Identifier
+                || defaultToken.getType() == SqlTokenType::Keyword) {
+                defaultValue = defaultToken.getValue();
+                tokenStream.advance();
+            }
+        }
+
+        auto stmt = std::make_shared<AlterTableStmt>();
+        stmt->setTableName(tableNameToken.getValue());
+        stmt->setTargetType(AlterTableTargetType::AddColumn);
+        stmt->setColumnName(colNameToken.getValue());
+        stmt->setColumnType(columnType);
+        stmt->setVarcharLen(varcharLen);
+        stmt->setDefaultValue(defaultValue);
+        return stmt;
+    }
+
+    if (tokenStream.match(SqlTokenType::Keyword, "ALTER")) {
+        tokenStream.consumeOptional(SqlTokenType::Keyword, "COLUMN");
+        const Token &colNameToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "ALTER COLUMN requires a column identifier.");
+
+        const Token &typeToken = tokenStream.peek();
+        if (typeToken.getType() != SqlTokenType::Keyword) {
+            throw ParserException("ALTER COLUMN requires a type keyword.", tokenStream.position());
+        }
+        std::string newType = typeToken.getValue();
+        std::uint16_t varcharLen = 0;
+        tokenStream.advance();
+        if (newType == "VARCHAR" || newType == "CHAR") {
+            tokenStream.expect(SqlTokenType::Symbol, "(", newType + " requires '(' before length.");
+            const Token &lenToken = tokenStream.expect(
+                SqlTokenType::Number, newType + " length must be a number.");
+            varcharLen = static_cast<std::uint16_t>(std::stoul(lenToken.getValue()));
+            tokenStream.expect(SqlTokenType::Symbol, ")", newType + " requires ')' after length.");
+        }
+
+        auto stmt = std::make_shared<AlterTableStmt>();
+        stmt->setTableName(tableNameToken.getValue());
+        stmt->setTargetType(AlterTableTargetType::AlterColumnType);
+        stmt->setColumnName(colNameToken.getValue());
+        stmt->setColumnType(newType);
+        stmt->setVarcharLen(varcharLen);
         return stmt;
     }
 
     if (tokenStream.match(SqlTokenType::Keyword, "DROP")) {
         tokenStream.consumeOptional(SqlTokenType::Keyword, "COLUMN");
-        tokenStream.expect(SqlTokenType::Identifier, "DROP COLUMN requires a column identifier.");
-        // 暂按未知类型返回，后续执行器需处理
-        auto stmt = std::make_shared<DropStmt>();
-        stmt->setTargetType(DropTargetType::Table);
-        stmt->setTargetName(tableNameToken.getValue());
+        const Token &colNameToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "DROP COLUMN requires a column identifier.");
+
+        auto stmt = std::make_shared<AlterTableStmt>();
+        stmt->setTableName(tableNameToken.getValue());
+        stmt->setTargetType(AlterTableTargetType::DropColumn);
+        stmt->setColumnName(colNameToken.getValue());
         return stmt;
     }
 
     if (tokenStream.match(SqlTokenType::Keyword, "RENAME")) {
         tokenStream.consumeOptional(SqlTokenType::Keyword, "COLUMN");
-        tokenStream.expect(SqlTokenType::Identifier, "RENAME COLUMN requires old column name.");
-        tokenStream.expect(SqlTokenType::Keyword, "TO", "RENAME COLUMN requires TO keyword.");
-        tokenStream.expect(SqlTokenType::Identifier, "RENAME COLUMN requires new column name.");
-        auto stmt = std::make_shared<DropStmt>();
-        stmt->setTargetType(DropTargetType::Table);
-        stmt->setTargetName(tableNameToken.getValue());
+        const Token &oldNameToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "RENAME COLUMN requires old column name.");
+        tokenStream.expect(SqlTokenType::Keyword, "TO",
+                           "RENAME COLUMN requires TO keyword.");
+        const Token &newNameToken = tokenStream.expect(
+            SqlTokenType::Identifier,
+            "RENAME COLUMN requires new column name.");
+
+        auto stmt = std::make_shared<AlterTableStmt>();
+        stmt->setTableName(tableNameToken.getValue());
+        stmt->setTargetType(AlterTableTargetType::RenameColumn);
+        stmt->setColumnName(oldNameToken.getValue());
+        stmt->setNewColumnName(newNameToken.getValue());
         return stmt;
     }
 
-    throw ParserException("ALTER TABLE only supports ADD/DROP/RENAME COLUMN.", tokenStream.position());
+    throw ParserException(
+        "ALTER TABLE only supports ADD/DROP/RENAME/ALTER COLUMN.",
+        tokenStream.position());
 }
 
 /**
@@ -1339,7 +1440,7 @@ void Parser::parseFieldType(TokenStream &tokenStream, FieldBlock &fieldBlock) co
     }
 
     if (tokenStream.match(SqlTokenType::Keyword, "TEXT")) {
-        fieldBlock.setType(FIELD_TYPE_INT);
+        fieldBlock.setType(FIELD_TYPE_TEXT);
         fieldBlock.setParam(0);
         return;
     }
@@ -1572,6 +1673,53 @@ std::vector<std::string> Parser::parseValueList(TokenStream &tokenStream) const
     }
 
     return values;
+}
+
+/**
+ * @brief 解析 DCL 语句（GRANT / REVOKE）
+ * @author NAPH130
+ * @param tokenStream token 游标流
+ * @param operationType GRANT 或 REVOKE
+ * @return DCL 语句 AST 节点
+ * @details 当前阶段仅支持 GRANT ALL PRIVILEGES TO user IDENTIFIED BY password
+ *          与 REVOKE ALL PRIVILEGES FROM user。
+ */
+std::shared_ptr<SQLStatement> Parser::parseDclStatement(TokenStream &tokenStream,
+                                                         DclOperationType operationType) const
+{
+    const std::shared_ptr<DclStmt> statement = std::make_shared<DclStmt>();
+    statement->setOperationType(operationType);
+
+    tokenStream.expect(SqlTokenType::Keyword, "ALL",
+                       "GRANT/REVOKE requires ALL keyword.");
+    tokenStream.expect(SqlTokenType::Keyword, "PRIVILEGES",
+                       "GRANT/REVOKE requires PRIVILEGES keyword.");
+
+    if (operationType == DclOperationType::Grant) {
+        tokenStream.expect(SqlTokenType::Keyword, "TO",
+                           "GRANT requires TO keyword.");
+    } else {
+        tokenStream.expect(SqlTokenType::Keyword, "FROM",
+                           "REVOKE requires FROM keyword.");
+    }
+
+    const Token &userNameToken = tokenStream.expect(
+        SqlTokenType::Identifier,
+        "DCL statement requires a user identifier.");
+    statement->setUserName(userNameToken.getValue());
+
+    if (operationType == DclOperationType::Grant) {
+        if (tokenStream.match(SqlTokenType::Keyword, "IDENTIFIED")) {
+            tokenStream.expect(SqlTokenType::Keyword, "BY",
+                               "IDENTIFIED requires BY keyword.");
+            const Token &passwordToken = tokenStream.expect(
+                SqlTokenType::Identifier,
+                "IDENTIFIED BY requires a password.");
+            statement->setPassword(passwordToken.getValue());
+        }
+    }
+
+    return statement;
 }
 
 /**

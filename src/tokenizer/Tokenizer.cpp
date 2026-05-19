@@ -163,7 +163,18 @@ void Tokenizer::initializeKeywords()
         "REFERENCES",
         "FOREIGN",
         "DECIMAL",
-        "TEXT"
+        "TEXT",
+        "ADD",
+        "COLUMN",
+        "RENAME",
+        "TO",
+        "IS",
+        "CHECK",
+        "GRANT",
+        "REVOKE",
+        "PRIVILEGES",
+        "OPTION",
+        "IDENTIFIED"
     };
 }
 

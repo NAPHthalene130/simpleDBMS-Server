@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <numeric>
 #include <set>
@@ -72,6 +73,62 @@ double parseDoubleSafe(const std::string &s) {
     }
 }
 
+bool containsSubqueryCondition(const ConditionNode *node) {
+    if (node == nullptr) {
+        return false;
+    }
+    if (node->hasSubquery()) {
+        return true;
+    }
+    return containsSubqueryCondition(node->getLeftNode().get())
+        || containsSubqueryCondition(node->getRightNode().get());
+}
+
+bool tryResolveValueFromRow(const std::string &operand,
+                            const std::vector<std::string> &row,
+                            const std::vector<std::string> &columns,
+                            std::string &outValue) {
+    auto exactIt = std::find(columns.begin(), columns.end(), operand);
+    if (exactIt != columns.end()) {
+        const std::size_t idx = static_cast<std::size_t>(std::distance(columns.begin(), exactIt));
+        if (idx < row.size()) {
+            outValue = row[idx];
+            return true;
+        }
+    }
+
+    const auto dotPos = operand.find('.');
+    const std::string targetCol = dotPos == std::string::npos ? operand : operand.substr(dotPos + 1);
+    if (targetCol.empty()) {
+        return false;
+    }
+
+    std::size_t foundIdx = 0;
+    bool found = false;
+    for (std::size_t i = 0; i < columns.size(); ++i) {
+        const std::string &colRef = columns[i];
+        std::string colName = colRef;
+        const auto colDotPos = colRef.find('.');
+        if (colDotPos != std::string::npos) {
+            colName = colRef.substr(colDotPos + 1);
+        }
+        if (colName == targetCol) {
+            if (found) {
+                return false;
+            }
+            found = true;
+            foundIdx = i;
+        }
+    }
+
+    if (!found || foundIdx >= row.size()) {
+        return false;
+    }
+
+    outValue = row[foundIdx];
+    return true;
+}
+
 } // namespace
 
 PlanExecutor::PlanExecutor(Core *core) {
@@ -121,7 +178,12 @@ ExecutionResult PlanExecutor::execute(std::shared_ptr<PlanNode> root,
         if (hasJoin) {
             // 使用 JOIN 执行路径
             // 作者：NAPH130
-            auto joinResult = executeJoinPlan(root, dbName, selectStmt);
+            const bool whereHasSubquery = containsSubqueryCondition(whereCond.get());
+            auto joinResult = executeJoinPlan(root,
+                                              dbName,
+                                              selectStmt,
+                                              !whereHasSubquery,
+                                              !whereHasSubquery);
             if (joinResult.columns.empty() && joinResult.rows.empty()) {
                 return buildFailure("join query returned empty result schema", dbName);
             }
@@ -131,6 +193,24 @@ ExecutionResult PlanExecutor::execute(std::shared_ptr<PlanNode> root,
                 resultSet.push_back(row.values);
             }
             columns = joinResult.columns;
+
+            if (whereHasSubquery && whereCond != nullptr) {
+                std::vector<std::vector<std::string>> filteredSet;
+                filteredSet.reserve(resultSet.size());
+                for (const auto &row : resultSet) {
+                    if (evaluateConditionTreeWithDb(whereCond.get(), row, columns, dbName)) {
+                        filteredSet.push_back(row);
+                    }
+                }
+                resultSet = std::move(filteredSet);
+
+                joinResult.rows.clear();
+                joinResult.rows.reserve(resultSet.size());
+                for (const auto &row : resultSet) {
+                    joinResult.rows.push_back({row});
+                }
+                joinResult.columns = columns;
+            }
 
             // 检测是否有聚合节点
             // 作者：NAPH130
@@ -160,6 +240,52 @@ ExecutionResult PlanExecutor::execute(std::shared_ptr<PlanNode> root,
                 columns = aggResult.getColumns();
                 resultMessage = "Join aggregation succeeded.";
             } else {
+                if (whereHasSubquery && selectStmt != nullptr && !selectStmt->getSelectAllFields()) {
+                    const ProjectionPlanNode *projNode = nullptr;
+                    {
+                        std::function<const ProjectionPlanNode *(const PlanNode *)> findProj;
+                        findProj = [&](const PlanNode *node) -> const ProjectionPlanNode * {
+                            if (node == nullptr) return nullptr;
+                            if (node->getNodeType() == PlanNodeType::Projection) {
+                                return static_cast<const ProjectionPlanNode *>(node);
+                            }
+                            for (const auto &child : node->getChildren()) {
+                                const auto *found = findProj(child.get());
+                                if (found) return found;
+                            }
+                            return nullptr;
+                        };
+                        projNode = findProj(root.get());
+                    }
+
+                    if (projNode != nullptr && !projNode->projectedColumns.empty()) {
+                        std::vector<std::size_t> projIndexes;
+                        std::vector<std::string> projCols;
+                        for (const auto &colName : projNode->projectedColumns) {
+                            if (colName.find('(') != std::string::npos) continue;
+                            auto it = std::find(columns.begin(), columns.end(), colName);
+                            if (it != columns.end()) {
+                                projIndexes.push_back(
+                                    static_cast<std::size_t>(std::distance(columns.begin(), it)));
+                                projCols.push_back(colName);
+                            }
+                        }
+                        if (!projIndexes.empty()) {
+                            std::vector<std::vector<std::string>> projectedRows;
+                            projectedRows.reserve(resultSet.size());
+                            for (const auto &row : resultSet) {
+                                std::vector<std::string> projectedRow;
+                                projectedRow.reserve(projIndexes.size());
+                                for (const auto idx : projIndexes) {
+                                    projectedRow.push_back(idx < row.size() ? row[idx] : "");
+                                }
+                                projectedRows.push_back(std::move(projectedRow));
+                            }
+                            resultSet = std::move(projectedRows);
+                            columns = std::move(projCols);
+                        }
+                    }
+                }
                 resultMessage = "Join query succeeded.";
             }
         } else {
@@ -351,7 +477,9 @@ std::vector<storage::Row> PlanExecutor::executeSeqScan(const SeqScanPlanNode *no
 
 DatabaseManager::JoinResult PlanExecutor::executeJoinPlan(std::shared_ptr<PlanNode> root,
                                                             const std::string &dbName,
-                                                            const SelectStmt *selectStmt) {
+                                                            const SelectStmt *selectStmt,
+                                                            const bool applyProjection,
+                                                            const bool applyPostFilters) {
     DatabaseManager::JoinResult result;
     if (selectStmt == nullptr || databaseManager == nullptr) return result;
 
@@ -429,7 +557,7 @@ DatabaseManager::JoinResult PlanExecutor::executeJoinPlan(std::shared_ptr<PlanNo
         projNode = findProj(root.get());
     }
 
-    if (projNode != nullptr && !projNode->projectedColumns.empty()) {
+    if (applyProjection && projNode != nullptr && !projNode->projectedColumns.empty()) {
         std::vector<DatabaseManager::JoinProjection> nonAggProjs;
         for (const auto &colName : projNode->projectedColumns) {
             // 跳过聚合函数列名（如 COUNT(*)、SUM(col)）
@@ -480,7 +608,7 @@ DatabaseManager::JoinResult PlanExecutor::executeJoinPlan(std::shared_ptr<PlanNo
         filterNode = findFilter(root.get());
     }
 
-    if (filterNode != nullptr && filterNode->condition != nullptr) {
+    if (applyPostFilters && filterNode != nullptr && filterNode->condition != nullptr) {
         // 递归收集所有叶子条件为 JoinFilter
         // 作者：NAPH130
         std::function<void(const ConditionNode *)> collectFilter;
@@ -779,17 +907,12 @@ bool PlanExecutor::evaluateLeafCondition(const ConditionNode *node,
     if (node->hasSubquery()) {
         const auto subResult = evaluateSubquery(node->getSubquery().get(), dbName, row, columns);
         const std::string opUpper = toUpperString(node->getOperator());
-        const std::string &colName = node->getLeftOperand();
-        auto it = std::find(columns.begin(), columns.end(), colName);
         std::string leftValue;
-        if (it != columns.end()) {
-            const std::size_t colIdx = static_cast<std::size_t>(std::distance(columns.begin(), it));
-            if (colIdx < row.size()) {
-                leftValue = row[colIdx];
-            }
-        }
 
         if (opUpper == "IN" || opUpper == "=") {
+            if (!tryResolveValueFromRow(node->getLeftOperand(), row, columns, leftValue)) {
+                return false;
+            }
             bool found = std::find(subResult.begin(), subResult.end(), leftValue) != subResult.end();
             return node->isNegated() ? !found : found;
         }
@@ -803,11 +926,8 @@ bool PlanExecutor::evaluateLeafCondition(const ConditionNode *node,
     const std::string &opStr = node->getOperator();
     const std::string &value = node->getRightOperand();
 
-    auto it = std::find(columns.begin(), columns.end(), columnName);
-    if (it == columns.end()) return false;
-
-    const std::size_t colIdx = static_cast<std::size_t>(std::distance(columns.begin(), it));
-    if (colIdx >= row.size()) return false;
+    std::string leftValue;
+    if (!tryResolveValueFromRow(columnName, row, columns, leftValue)) return false;
 
     const std::string upperOp = toUpperString(opStr);
 
@@ -819,8 +939,8 @@ bool PlanExecutor::evaluateLeafCondition(const ConditionNode *node,
         if (andPos == std::string::npos) return false;
         const std::string lowStr = range.substr(0, andPos);
         const std::string highStr = range.substr(andPos + 5);
-        const bool inRange = compareValues(row[colIdx], mapCompare(">="), lowStr)
-                             && compareValues(row[colIdx], mapCompare("<="), highStr);
+        const bool inRange = compareValues(leftValue, mapCompare(">="), lowStr)
+                             && compareValues(leftValue, mapCompare("<="), highStr);
         return upperOp == "BETWEEN" ? inRange : !inRange;
     }
 
@@ -839,7 +959,7 @@ bool PlanExecutor::evaluateLeafCondition(const ConditionNode *node,
             std::string trimmed = item;
             trimmed.erase(0, trimmed.find_first_not_of(" \t\r\n"));
             trimmed.erase(trimmed.find_last_not_of(" \t\r\n") + 1);
-            if (compareValues(row[colIdx], mapCompare("="), trimmed)) {
+            if (compareValues(leftValue, mapCompare("="), trimmed)) {
                 found = true;
                 break;
             }
@@ -847,7 +967,12 @@ bool PlanExecutor::evaluateLeafCondition(const ConditionNode *node,
         return upperOp == "IN" ? found : !found;
     }
 
-    return compareValues(row[colIdx], mapCompare(opStr), value);
+    std::string resolvedRight = value;
+    std::string rightValueFromRow;
+    if (tryResolveValueFromRow(value, row, columns, rightValueFromRow)) {
+        resolvedRight = rightValueFromRow;
+    }
+    return compareValues(leftValue, mapCompare(opStr), resolvedRight);
 }
 
 std::vector<std::string> PlanExecutor::evaluateSubquery(const SQLStatement *subquery,
@@ -887,13 +1012,13 @@ std::vector<std::string> PlanExecutor::evaluateSubquery(const SQLStatement *subq
             // 引用同一张表 → 不替换
             if (refTable == tableName) return val;
             // 引用外表 → 从当前外部行查找列值
+            std::string resolved;
+            if (tryResolveValueFromRow(val, outerRow, outerColumns, resolved)) {
+                return resolved;
+            }
             const std::string refCol = val.substr(dotPos + 1);
-            auto it = std::find(outerColumns.begin(), outerColumns.end(), refCol);
-            if (it != outerColumns.end()) {
-                const std::size_t idx = static_cast<std::size_t>(std::distance(outerColumns.begin(), it));
-                if (idx < outerRow.size()) {
-                    return outerRow[idx];
-                }
+            if (tryResolveValueFromRow(refCol, outerRow, outerColumns, resolved)) {
+                return resolved;
             }
             return val;
         };
@@ -930,11 +1055,20 @@ std::vector<std::string> PlanExecutor::evaluateSubquery(const SQLStatement *subq
         }
 
         auto rows = table.select({}, whereConditions);
+        std::size_t projectedIndex = 0;
+        if (!selStmt->getSelectAllFields() && !selStmt->getTargetFields().empty()) {
+            const std::string projectedName = stripTablePrefix(selStmt->getTargetFields().front());
+            auto projectedIt = std::find(schema.columns.begin(), schema.columns.end(), projectedName);
+            if (projectedIt != schema.columns.end()) {
+                projectedIndex =
+                    static_cast<std::size_t>(std::distance(schema.columns.begin(), projectedIt));
+            }
+        }
         std::vector<std::string> result;
         result.reserve(rows.size());
         for (const auto &row : rows) {
-            if (!row.values.empty()) {
-                result.push_back(row.values[0]);
+            if (projectedIndex < row.values.size()) {
+                result.push_back(row.values[projectedIndex]);
             }
         }
         return result;

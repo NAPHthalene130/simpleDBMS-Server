@@ -63,7 +63,9 @@ private:
      */
     DatabaseManager::JoinResult executeJoinPlan(std::shared_ptr<PlanNode> root,
                                                   const std::string &dbName,
-                                                  const SelectStmt *selectStmt);
+                                                  const SelectStmt *selectStmt,
+                                                  bool applyProjection = true,
+                                                  bool applyPostFilters = true);
 
     /**
      * @brief 执行聚合计算

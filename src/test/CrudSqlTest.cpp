@@ -107,6 +107,19 @@ int main()
     check(sendSql("INSERT INTO items (id, name) VALUES (1, 'Widget');").value("success", false),
           "INSERT with NULLs (optional cols omitted)");
 
+    // SELECT should still return rows whose trailing columns are NULL
+    {
+        auto j = sendSql("SELECT * FROM items WHERE id = 1;");
+        bool ok = j.value("success", false);
+        auto rs = j.value("resultSet", nlohmann::json::array());
+        ok = ok && rs.size() == 1 && rs[0].is_array() && rs[0].size() == 4
+              && rs[0][0].get<std::string>() == "1"
+              && rs[0][1].get<std::string>() == "Widget"
+              && rs[0][2].get<std::string>().empty()
+              && rs[0][3].get<std::string>().empty();
+        check(ok, "SELECT row with trailing NULL columns");
+    }
+
     // INSERT multi-row VALUES
     check(sendSql("INSERT INTO items VALUES (2,'a',1.0,'t1'), (3,'b',2.0,'t2');").value("success", false),
           "INSERT multi-row VALUES (2 rows)");

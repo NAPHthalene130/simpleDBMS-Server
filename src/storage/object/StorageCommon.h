@@ -128,10 +128,15 @@ inline std::string join(const std::vector<std::string>& items, const std::string
  */
 inline std::vector<std::string> split(const std::string& text, char delim) {
     std::vector<std::string> result;
-    std::stringstream ss(text);
-    std::string item;
-    while (std::getline(ss, item, delim)) {
-        result.push_back(item);
+    std::size_t start = 0;
+    while (start <= text.size()) {
+        const std::size_t pos = text.find(delim, start);
+        if (pos == std::string::npos) {
+            result.push_back(text.substr(start));
+            break;
+        }
+        result.push_back(text.substr(start, pos - start));
+        start = pos + 1;
     }
     return result;
 }

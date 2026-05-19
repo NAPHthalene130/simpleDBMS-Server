@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <map>
 #include <system_error>
 
@@ -11,6 +12,7 @@
 #include "NetworkManager.h"
 #include "binder/Binder.h"
 #include "binder/BinderManager.h"
+#include "dbLog/DbLogManager.h"
 #include "executor/ExecutorEngine.h"
 #include "executor/ExecutorManager.h"
 #include "log/LogWriter.h"
@@ -23,6 +25,7 @@
 #include "models/parser/UnionStmt.h"
 #include "models/network/SqlData.h"
 #include "models/storage/DatabaseBlock.h"
+#include "models/storage/DateTime.h"
 #include "models/storage/TableBlock.h"
 #include "parser/Parser.h"
 #include "parser/ParserManager.h"
@@ -79,6 +82,10 @@ std::string buildResponseType(const std::string &requestType, ExecutionStatement
 
     if (requestType == NetworkTransferData::SQL_TEMP_EXEC_REQUEST) {
         return NetworkTransferData::SQL_TEMP_EXEC_RESPONSE;
+    }
+
+    if (requestType == NetworkTransferData::DBLOG_REQUEST) {
+        return NetworkTransferData::DBLOG_RESPONSE;
     }
 
     return NetworkTransferData::ERROR_RESPONSE;
@@ -954,6 +961,65 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                             "processMsg",
                             std::string("DIRECTORY_REQUEST returned ")
                                 + std::to_string(databaseNodes.size()) + " databases.");
+            sendResponse(responseData);
+            return;
+        }
+
+        if (networkTransferData.getType() == NetworkTransferData::DBLOG_REQUEST) {
+            const std::string dbName = networkTransferData.getDbName();
+            const std::string dbLogTime = networkTransferData.getDbLogTime();
+
+            if (dbName.empty()) {
+                sendFailureResponse("DBLOG_REQUEST: database name is empty.");
+                return;
+            }
+
+            if (dbLogTime.empty()) {
+                sendFailureResponse("DBLOG_REQUEST: target time is empty.");
+                return;
+            }
+
+            if (core == nullptr || core->getDbLogManager() == nullptr) {
+                sendFailureResponse("DBLOG_REQUEST: DbLogManager is not initialized.");
+                return;
+            }
+
+            int year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
+            if (sscanf_s(dbLogTime.c_str(), "%d-%d-%d %d:%d:%d",
+                         &year, &month, &day, &hour, &minute, &second) != 6) {
+                sendFailureResponse("DBLOG_REQUEST: invalid time format. Expected YYYY-MM-DD HH:MM:SS");
+                return;
+            }
+
+            DateTime targetTime;
+            targetTime.setYear(static_cast<std::uint16_t>(year));
+            targetTime.setMonth(static_cast<std::uint16_t>(month));
+            targetTime.setDay(static_cast<std::uint16_t>(day));
+            targetTime.setHour(static_cast<std::uint16_t>(hour));
+            targetTime.setMinute(static_cast<std::uint16_t>(minute));
+            targetTime.setSecond(static_cast<std::uint16_t>(second));
+            targetTime.setMilliseconds(0);
+
+            LogWriter::info("network", "NetReceiver", "processMsg",
+                std::string("DBLOG_REQUEST: recovering database ") + dbName
+                    + " to " + dbLogTime);
+
+            const bool recoverResult = core->getDbLogManager()->dbRecover(dbName, targetTime);
+
+            NetworkTransferData responseData(NetworkTransferData::DBLOG_RESPONSE,
+                                              networkTransferData.getId());
+            responseData.setSuccess(recoverResult);
+            responseData.setDbName(dbName);
+            responseData.setDbLogTime(dbLogTime);
+            if (recoverResult) {
+                responseData.setMessage("Database recovery succeeded.");
+                LogWriter::info("network", "NetReceiver", "processMsg",
+                    std::string("DBLOG_RESPONSE: recovery of ") + dbName + " succeeded.");
+            } else {
+                responseData.setMessage("Database recovery failed. Check server logs for details.");
+                LogWriter::error("network", "NetReceiver", "processMsg",
+                    std::string("DBLOG_RESPONSE: recovery of ") + dbName + " failed.");
+            }
             sendResponse(responseData);
             return;
         }

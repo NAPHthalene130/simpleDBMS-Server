@@ -165,12 +165,20 @@ ExecutionResult InsertExecutor::executeInsert(const InsertStmt *insertStmt, Exec
 
                 const std::vector<std::string> fullValues = buildFullValues(schema, columnNames, values);
 
+                LogWriter::info("executor", "InsertExecutor", "executeInsert",
+                                "Partial INSERT: columnNames=" + std::to_string(columnNames.size())
+                                + " fullValues=" + std::to_string(fullValues.size())
+                                + " firstVal=" + (fullValues.empty() ? "empty" : fullValues.front()));
+
                 const std::string notNullError = validateNotNull(schema, fullValues);
                 if (!notNullError.empty()) {
                     return buildFailureResult(notNullError, dbName, tableName);
                 }
 
                 table.insert(fullValues);
+
+                LogWriter::info("executor", "InsertExecutor", "executeInsert",
+                                "Partial INSERT succeeded: " + dbName + "." + tableName);
 
                 // 逐行记录插入日志 — NAPH130
                 if (core != nullptr && core->getDbLogManager() != nullptr) {

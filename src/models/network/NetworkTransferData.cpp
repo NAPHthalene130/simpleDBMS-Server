@@ -138,6 +138,7 @@ std::string NetworkTransferData::toJson() const
     jsonObject["affectedRows"] = affectedRows;
     jsonObject["columns"] = columns;
     jsonObject["rows"] = rows;
+    jsonObject["dbLogTime"] = dbLogTime;
 
     nlohmann::json databasesJson = nlohmann::json::array();
     for (const DatabaseNode &databaseNode : databases) {
@@ -167,6 +168,7 @@ NetworkTransferData NetworkTransferData::fromJson(const std::string &jsonStr)
     networkTransferData.setAffectedRows(jsonObject.value("affectedRows", 0));
     networkTransferData.setColumns(jsonObject.value("columns", std::vector<std::string> {}));
     networkTransferData.setRows(jsonObject.value("rows", std::vector<std::vector<std::string>> {}));
+    networkTransferData.setDbLogTime(jsonObject.value("dbLogTime", ""));
 
     std::vector<DatabaseNode> databaseNodes;
     if (jsonObject.contains("databases") && jsonObject["databases"].is_array()) {
@@ -305,4 +307,14 @@ const std::map<std::string, std::uint64_t> &NetworkTransferData::getDbVersionMap
 void NetworkTransferData::setDbVersionMap(const std::map<std::string, std::uint64_t> &dbVersionMap)
 {
     this->dbVersionMap = dbVersionMap;
+}
+
+const std::string &NetworkTransferData::getDbLogTime() const
+{
+    return dbLogTime;
+}
+
+void NetworkTransferData::setDbLogTime(const std::string &dbLogTime)
+{
+    this->dbLogTime = dbLogTime;
 }

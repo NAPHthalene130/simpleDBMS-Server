@@ -86,6 +86,8 @@ public:
     inline static const std::string DB_VERSION_RESPONSE = "DB_VERSION_RESPONSE";
     inline static const std::string SQL_TEMP_EXEC_REQUEST = "SQL_TEMP_EXEC_REQUEST";
     inline static const std::string SQL_TEMP_EXEC_RESPONSE = "SQL_TEMP_EXEC_RESPONSE";
+    inline static const std::string DBLOG_REQUEST = "DBLOG_REQUEST";
+    inline static const std::string DBLOG_RESPONSE = "DBLOG_RESPONSE";
 
     NetworkTransferData();
     NetworkTransferData(const std::string &type, const std::string &id);
@@ -129,6 +131,9 @@ public:
     const std::map<std::string, std::uint64_t> &getDbVersionMap() const;
     void setDbVersionMap(const std::map<std::string, std::uint64_t> &dbVersionMap);
 
+    const std::string &getDbLogTime() const;
+    void setDbLogTime(const std::string &dbLogTime);
+
 private:
     std::string type;
     std::string id;
@@ -142,4 +147,5 @@ private:
     std::vector<std::vector<std::string>> rows;
     std::vector<DatabaseNode> databases;
     std::map<std::string, std::uint64_t> dbVersionMap;
+    std::string dbLogTime;
 };

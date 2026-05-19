@@ -54,6 +54,7 @@ int main()
     check(sendSql("CREATE DATABASE complex_test_db;").value("success", false), "CREATE DATABASE complex_test_db");
     check(sendSql("USE DATABASE complex_test_db;").value("success", false), "USE DATABASE complex_test_db");
     check(sendSql("CREATE TABLE employees (id INT, name VARCHAR(50), dept VARCHAR(30), salary FLOAT);").value("success", false), "CREATE TABLE employees");
+    check(sendSql("CREATE TABLE bonuses (id INT, employee_id INT, amount FLOAT);").value("success", false), "CREATE TABLE bonuses");
 
     // ===== Data Insertion (10 rows) =====
     check(sendSql("INSERT INTO employees VALUES (1, 'Alice', 'Engineering', 75000);").value("success", false), "INSERT 1 Alice");
@@ -66,6 +67,9 @@ int main()
     check(sendSql("INSERT INTO employees VALUES (8, 'Henry', 'Marketing', 70000);").value("success", false), "INSERT 8 Henry");
     check(sendSql("INSERT INTO employees VALUES (9, 'Ivy', NULL, 45000);").value("success", false), "INSERT 9 Ivy (NULL dept)");
     check(sendSql("INSERT INTO employees VALUES (10, 'Aaron', 'Sales', 90000);").value("success", false), "INSERT 10 Aaron");
+    check(sendSql("INSERT INTO bonuses VALUES (1, 1, 5000);").value("success", false), "INSERT bonus for Alice");
+    check(sendSql("INSERT INTO bonuses VALUES (2, 2, 8000);").value("success", false), "INSERT bonus for Bob");
+    check(sendSql("INSERT INTO bonuses VALUES (3, 4, 2000);").value("success", false), "INSERT bonus for Diana");
 
     // ===== WHERE Clause Tests =====
 
@@ -132,6 +136,20 @@ int main()
         auto j = sendSql("SELECT * FROM employees WHERE (dept = 'Engineering' OR dept = 'Sales') AND salary > 50000;");
         bool ok = j.value("success", false) && j.value("resultSet", nlohmann::json::array()).size() == 6;
         check(ok, "SELECT nested AND/OR -> 6 rows");
+    }
+
+    // SELECT with correlated EXISTS
+    {
+        auto j = sendSql("SELECT * FROM employees WHERE EXISTS (SELECT employee_id FROM bonuses WHERE bonuses.employee_id = employees.id);");
+        bool ok = j.value("success", false) && j.value("resultSet", nlohmann::json::array()).size() == 3;
+        check(ok, "SELECT correlated EXISTS -> 3 rows");
+    }
+
+    // SELECT with correlated NOT EXISTS
+    {
+        auto j = sendSql("SELECT * FROM employees WHERE NOT EXISTS (SELECT employee_id FROM bonuses WHERE bonuses.employee_id = employees.id);");
+        bool ok = j.value("success", false) && j.value("resultSet", nlohmann::json::array()).size() == 7;
+        check(ok, "SELECT correlated NOT EXISTS -> 7 rows");
     }
 
     // ===== ORDER BY Tests =====
@@ -254,10 +272,34 @@ int main()
         check(ok, "UPDATE multiple(HR) -> success");
     }
 
+    // UPDATE with correlated EXISTS
+    {
+        auto j = sendSql("UPDATE employees SET dept = 'Rewarded' WHERE EXISTS (SELECT employee_id FROM bonuses WHERE bonuses.employee_id = employees.id);");
+        bool ok = j.value("success", false) && j.value("affectedRows", 0) == 3;
+        check(ok, "UPDATE correlated EXISTS -> 3 rows");
+    }
+    {
+        auto j = sendSql("SELECT * FROM employees WHERE dept = 'Rewarded';");
+        bool ok = j.value("success", false) && j.value("resultSet", nlohmann::json::array()).size() == 3;
+        check(ok, "VERIFY UPDATE EXISTS -> 3 rewarded rows");
+    }
+
     // ===== DELETE Tests =====
 
     // DELETE single row + verify count
     check(sendSql("DELETE FROM employees WHERE id = 5;").value("success", false), "DELETE id=5(Eve)");
+
+    // DELETE with correlated NOT EXISTS
+    {
+        auto j = sendSql("DELETE FROM employees WHERE NOT EXISTS (SELECT employee_id FROM bonuses WHERE bonuses.employee_id = employees.id) AND id >= 8;");
+        bool ok = j.value("success", false) && j.value("affectedRows", 0) == 3;
+        check(ok, "DELETE correlated NOT EXISTS -> 3 rows");
+    }
+    {
+        auto j = sendSql("SELECT * FROM employees WHERE id >= 8;");
+        bool ok = j.value("success", false) && j.value("resultSet", nlohmann::json::array()).empty();
+        check(ok, "VERIFY DELETE EXISTS -> ids >= 8 removed");
+    }
     {
         auto j = sendSql("SELECT COUNT(*) FROM employees;");
         bool ok = j.value("success", false);

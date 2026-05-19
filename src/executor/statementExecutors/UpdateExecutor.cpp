@@ -9,6 +9,7 @@
 #include <string>
 
 #include "Core.h"
+#include "SubqueryEvaluationUtils.h"
 #include "dbLog/DbLogManager.h"
 #include "log/LogWriter.h"
 #include "storage/manager/SystemCatalogManager.h"
@@ -171,7 +172,7 @@ ExecutionResult UpdateExecutor::executeUpdate(const UpdateStmt *updateStmt,
             }
 
             if (whereCondition != nullptr
-                && !evaluateConditionTree(whereCondition, row.values, schema.columns)) {
+                && !evaluateConditionTree(whereCondition, row.values, schema.columns, dbName, tableName)) {
                 continue;
             }
 
@@ -243,74 +244,22 @@ ExecutionResult UpdateExecutor::executeUpdate(const UpdateStmt *updateStmt,
 
 bool UpdateExecutor::evaluateConditionTree(const ConditionNode *conditionNode,
                                            const std::vector<std::string> &row,
-                                           const std::vector<std::string> &columns)
+                                           const std::vector<std::string> &columns,
+                                           const std::string &dbName,
+                                           const std::string &tableName)
 {
-    if (conditionNode == nullptr) {
-        return true;
-    }
-
-    // 子查询条件委托给 evaluateLeafCondition
-    // 作者：NAPH130
-    if (conditionNode->hasSubquery()) {
-        return evaluateLeafCondition(conditionNode, row, columns);
-    }
-
-    const auto &leftNode = conditionNode->getLeftNode();
-    const auto &rightNode = conditionNode->getRightNode();
-
-    if (leftNode != nullptr || rightNode != nullptr) {
-        const bool leftResult = evaluateConditionTree(leftNode.get(), row, columns);
-        const bool rightResult = evaluateConditionTree(rightNode.get(), row, columns);
-        const std::string opUpper = toUpperString(conditionNode->getOperator());
-        if (opUpper == "AND") {
-            return leftResult && rightResult;
-        }
-        return leftResult || rightResult;
-    }
-
-    return evaluateLeafCondition(conditionNode, row, columns);
+    return subquery_eval::evaluateConditionTree(
+        conditionNode, row, columns, dbName, tableName, {}, {}, "");
 }
 
 bool UpdateExecutor::evaluateLeafCondition(const ConditionNode *conditionNode,
                                            const std::vector<std::string> &row,
-                                           const std::vector<std::string> &columns)
+                                           const std::vector<std::string> &columns,
+                                           const std::string &dbName,
+                                           const std::string &tableName)
 {
-    if (conditionNode == nullptr) {
-        return true;
-    }
-
-    // 子查询条件（EXISTS / IN）
-    // 作者：NAPH130
-    if (conditionNode->hasSubquery()) {
-        const std::string opUpper = toUpperString(conditionNode->getOperator());
-        if (opUpper == "EXISTS") {
-            return !conditionNode->isNegated();
-        }
-        if (opUpper == "IN") {
-            return !conditionNode->isNegated();
-        }
-        return false;
-    }
-
-    const std::string &columnName = conditionNode->getLeftOperand();
-    const std::string &opStr = conditionNode->getOperator();
-    const std::string &value = conditionNode->getRightOperand();
-
-    auto it = std::find(columns.begin(), columns.end(), columnName);
-    if (it == columns.end()) {
-        LogWriter::warning("executor",
-                           "UpdateExecutor",
-                           "evaluateLeafCondition",
-                           "Unknown column in WHERE: " + columnName);
-        return false;
-    }
-
-    const std::size_t columnIndex = static_cast<std::size_t>(std::distance(columns.begin(), it));
-    if (columnIndex >= row.size()) {
-        return false;
-    }
-
-    return compareValues(row[columnIndex], mapCompareOp(opStr), value);
+    return subquery_eval::evaluateLeafCondition(
+        conditionNode, row, columns, dbName, tableName, {}, {}, "");
 }
 
 bool UpdateExecutor::compareValues(const std::string &leftValue,

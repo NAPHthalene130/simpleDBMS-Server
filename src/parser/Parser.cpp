@@ -1627,13 +1627,30 @@ std::vector<std::string> Parser::parseSelectTargetList(TokenStream &tokenStream)
             }
         }
 
+        // 数字常量 / 字符串常量 / NULL / TRUE / FALSE
+        // 作者：NAPH130
+        if (currentToken.getType() == SqlTokenType::Number
+            || currentToken.getType() == SqlTokenType::String) {
+            tokenStream.advance();
+            result.push_back(currentToken.getValue());
+            continue;
+        }
+        if (currentToken.getType() == SqlTokenType::Keyword) {
+            const std::string upperK = currentToken.getValue();
+            if (upperK == "NULL" || upperK == "TRUE" || upperK == "FALSE") {
+                tokenStream.advance();
+                result.push_back(currentToken.getValue());
+                continue;
+            }
+        }
+
         // 普通标识符或 table.column
         // 作者：NAPH130
         const Token &identifierToken = tokenStream.peek();
         if (identifierToken.getType() != SqlTokenType::Identifier
             && identifierToken.getType() != SqlTokenType::Keyword) {
-            throw ParserException("SELECT target list requires an identifier or aggregate function.",
-                                  tokenStream.position());
+            throw ParserException("SELECT target list requires an identifier, aggregate function, or constant.",
+                                   tokenStream.position());
         }
         tokenStream.advance();
 

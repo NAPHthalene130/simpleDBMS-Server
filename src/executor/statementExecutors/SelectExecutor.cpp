@@ -554,6 +554,12 @@ bool SelectExecutor::compareValues(const std::string &leftValue,
         return likeMatch(leftValue, rightValue);
     }
 
+    // NULL（空字符串）与任何值比较均返回 false
+    // 作者：NAPH130
+    if (leftValue.empty() || rightValue.empty()) {
+        return false;
+    }
+
     double leftNum = 0.0;
     double rightNum = 0.0;
     bool leftIsNum = false;

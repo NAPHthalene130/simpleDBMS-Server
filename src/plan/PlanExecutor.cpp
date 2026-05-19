@@ -943,6 +943,12 @@ bool PlanExecutor::compareValues(const std::string &left,
         return likeMatch(left, right);
     }
 
+    // NULL（空字符串）与任何值比较均返回 false
+    // 作者：NAPH130
+    if (left.empty() || right.empty()) {
+        return false;
+    }
+
     double lnum = 0.0, rnum = 0.0;
     bool lIsNum = false, rIsNum = false;
 

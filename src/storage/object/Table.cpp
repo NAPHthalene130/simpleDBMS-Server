@@ -2355,6 +2355,9 @@ std::vector<std::uint64_t> Table::mergeOffsetIntersection(const std::vector<std:
 
 bool Table::compareValue(const std::string& left, CompareOp op, const std::string& right) {
     if (op == CompareOp::LIKE) return likeMatch(left, right);
+    // NULL (空字符串) 与任何值比较均返回 false（SQL NULL 语义）
+    // 作者：NAPH130
+    if (left.empty() || right.empty()) return false;
     double lv=0, rv=0;
     bool li=false, ri=false;
     { errno=0; char* e=nullptr; lv=std::strtod(left.c_str(),&e); li=(e!=left.c_str()&&*e=='\0'&&errno!=ERANGE); }
@@ -2369,6 +2372,10 @@ bool Table::compareValue(const std::string& left, CompareOp op, const std::strin
 bool Table::compareTyped(std::size_t colIndex, const std::string& left, CompareOp op, const std::string& right) const {
     if (op == CompareOp::LIKE) return likeMatch(left, right);
     if (op == CompareOp::IN || op == CompareOp::BETWEEN) return false;
+
+    // NULL（空字符串）与任何值比较均返回 false
+    // 作者：NAPH130
+    if (left.empty() || right.empty()) return false;
 
     if (colIndex < schema_.columnMetas.size()) {
         DataType dt = schema_.columnMetas[colIndex].dataType;

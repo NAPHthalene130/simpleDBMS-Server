@@ -99,6 +99,7 @@ ExecutionResult PlanExecutor::execute(std::shared_ptr<PlanNode> root,
         std::vector<std::string> columns;
         std::string resultMessage;
         std::string tableName;
+        const auto whereCond = selectStmt != nullptr ? selectStmt->getWhereCondition() : nullptr;
 
         // 检测是否有 JOIN 节点
         // 作者：NAPH130
@@ -191,10 +192,38 @@ ExecutionResult PlanExecutor::execute(std::shared_ptr<PlanNode> root,
             const auto &schema = table.schema();
 
             std::vector<storage::Table::WhereCondition> whereConditions;
-            const auto whereCond = selectStmt != nullptr ? selectStmt->getWhereCondition() : nullptr;
             if (whereCond != nullptr) {
-                // 条件转换留在后续细化
+                // 将 ConditionNode 树转换为 WhereCondition 列表
                 // 作者：NAPH130
+                std::function<void(const ConditionNode *)> collectConditions;
+                collectConditions = [&](const ConditionNode *node) {
+                    if (node == nullptr) return;
+                    const auto &leftNode = node->getLeftNode();
+                    const auto &rightNode = node->getRightNode();
+                    if (leftNode != nullptr || rightNode != nullptr) {
+                        collectConditions(leftNode.get());
+                        collectConditions(rightNode.get());
+                        return;
+                    }
+                    const std::string &leftOp = node->getLeftOperand();
+                    const std::string &op = node->getOperator();
+                    const std::string &rightOp = node->getRightOperand();
+                    if (!leftOp.empty() && !op.empty()) {
+                        const std::string upperOp = toUpperString(op);
+                        // BETWEEN/IN/NOT BETWEEN/NOT IN 由后置条件过滤处理
+                        // 作者：NAPH130
+                        if (upperOp == "BETWEEN" || upperOp == "NOT BETWEEN"
+                            || upperOp == "IN" || upperOp == "NOT IN") {
+                            return;
+                        }
+                        storage::Table::WhereCondition wc;
+                        wc.column = leftOp;
+                        wc.op = mapCompare(op);
+                        wc.value = rightOp;
+                        whereConditions.push_back(wc);
+                    }
+                };
+                collectConditions(whereCond.get());
             }
 
             auto rows = table.select({}, whereConditions);
@@ -292,6 +321,18 @@ ExecutionResult PlanExecutor::execute(std::shared_ptr<PlanNode> root,
         // 作者：NAPH130
         if (selectStmt != nullptr) {
             applyOrderByAndLimit(resultSet, columns, selectStmt);
+        }
+
+        // 单表路径下的后置 WHERE 条件过滤
+        // 作者：NAPH130
+        if (!hasJoin && whereCond != nullptr) {
+            std::vector<std::vector<std::string>> filteredSet;
+            for (const auto &row : resultSet) {
+                if (evaluateConditionTreeWithDb(whereCond.get(), row, columns, dbName)) {
+                    filteredSet.push_back(row);
+                }
+            }
+            resultSet = std::move(filteredSet);
         }
 
         return buildSuccess(resultMessage, resultSet, columns, dbName, tableName);
@@ -440,18 +481,32 @@ DatabaseManager::JoinResult PlanExecutor::executeJoinPlan(std::shared_ptr<PlanNo
     }
 
     if (filterNode != nullptr && filterNode->condition != nullptr) {
-        const auto &leftOp = filterNode->condition->getLeftOperand();
-        const auto &op = filterNode->condition->getOperator();
-        const auto &rightOp = filterNode->condition->getRightOperand();
-        if (!leftOp.empty() && !rightOp.empty()) {
-            DatabaseManager::JoinFilter filter;
-            const auto leftDot = leftOp.find('.');
-            filter.column.source = (leftDot != std::string::npos) ? leftOp.substr(0, leftDot) : "";
-            filter.column.column = (leftDot != std::string::npos) ? leftOp.substr(leftDot + 1) : leftOp;
-            filter.op = mapCompare(op);
-            filter.value = rightOp;
-            query.postFilters.push_back(std::move(filter));
-        }
+        // 递归收集所有叶子条件为 JoinFilter
+        // 作者：NAPH130
+        std::function<void(const ConditionNode *)> collectFilter;
+        collectFilter = [&](const ConditionNode *node) {
+            if (node == nullptr) return;
+            const auto &l = node->getLeftNode();
+            const auto &r = node->getRightNode();
+            if (l != nullptr || r != nullptr) {
+                collectFilter(l.get());
+                collectFilter(r.get());
+                return;
+            }
+            const std::string &leftOp = node->getLeftOperand();
+            const std::string &op = node->getOperator();
+            const std::string &rightOp = node->getRightOperand();
+            if (!leftOp.empty() && !rightOp.empty()) {
+                DatabaseManager::JoinFilter filter;
+                const auto leftDot = leftOp.find('.');
+                filter.column.source = (leftDot != std::string::npos) ? leftOp.substr(0, leftDot) : "";
+                filter.column.column = (leftDot != std::string::npos) ? leftOp.substr(leftDot + 1) : leftOp;
+                filter.op = mapCompare(op);
+                filter.value = rightOp;
+                query.postFilters.push_back(std::move(filter));
+            }
+        };
+        collectFilter(filterNode->condition.get());
     }
 
     return databaseManager->selectJoinRows(dbName, query);
@@ -747,6 +802,44 @@ bool PlanExecutor::evaluateLeafCondition(const ConditionNode *node,
     const std::size_t colIdx = static_cast<std::size_t>(std::distance(columns.begin(), it));
     if (colIdx >= row.size()) return false;
 
+    const std::string upperOp = toUpperString(opStr);
+
+    // BETWEEN 处理
+    // 作者：NAPH130
+    if (upperOp == "BETWEEN" || upperOp == "NOT BETWEEN") {
+        const std::string &range = value;
+        const auto andPos = range.find(" AND ");
+        if (andPos == std::string::npos) return false;
+        const std::string lowStr = range.substr(0, andPos);
+        const std::string highStr = range.substr(andPos + 5);
+        const bool inRange = compareValues(row[colIdx], mapCompare(">="), lowStr)
+                             && compareValues(row[colIdx], mapCompare("<="), highStr);
+        return upperOp == "BETWEEN" ? inRange : !inRange;
+    }
+
+    // IN 处理
+    // 作者：NAPH130
+    if (upperOp == "IN" || upperOp == "NOT IN") {
+        const std::string &valList = value;
+        std::string inner = valList;
+        // 去掉外层括号
+        if (!inner.empty() && inner.front() == '(') inner = inner.substr(1);
+        if (!inner.empty() && inner.back() == ')') inner.pop_back();
+        const auto items = storage::split(inner, ',');
+        bool found = false;
+        for (const auto &item : items) {
+            // 手动去除前后空格
+            std::string trimmed = item;
+            trimmed.erase(0, trimmed.find_first_not_of(" \t\r\n"));
+            trimmed.erase(trimmed.find_last_not_of(" \t\r\n") + 1);
+            if (compareValues(row[colIdx], mapCompare("="), trimmed)) {
+                found = true;
+                break;
+            }
+        }
+        return upperOp == "IN" ? found : !found;
+    }
+
     return compareValues(row[colIdx], mapCompare(opStr), value);
 }
 
@@ -768,8 +861,34 @@ std::vector<std::string> PlanExecutor::evaluateSubquery(const SQLStatement *subq
 
         std::vector<storage::Table::WhereCondition> whereConditions;
         const auto whereCond = selStmt->getWhereCondition();
-        // 子查询 WHERE 条件暂按简单单层叶子处理
-        // 作者：NAPH130
+        if (whereCond != nullptr) {
+            std::function<void(const ConditionNode *)> collect;
+            collect = [&](const ConditionNode *node) {
+                if (node == nullptr) return;
+                const auto &l = node->getLeftNode();
+                const auto &r = node->getRightNode();
+                if (l != nullptr || r != nullptr) {
+                    collect(l.get()); collect(r.get());
+                    return;
+                }
+                const std::string &leftOp = node->getLeftOperand();
+                const std::string &op = node->getOperator();
+                const std::string &rightOp = node->getRightOperand();
+                if (!leftOp.empty() && !op.empty()) {
+                    const std::string upper = toUpperString(op);
+                    if (upper == "BETWEEN" || upper == "NOT BETWEEN"
+                        || upper == "IN" || upper == "NOT IN") {
+                        return;
+                    }
+                    storage::Table::WhereCondition wc;
+                    wc.column = leftOp;
+                    wc.op = mapCompare(op);
+                    wc.value = rightOp;
+                    whereConditions.push_back(wc);
+                }
+            };
+            collect(whereCond.get());
+        }
 
         auto rows = table.select({}, whereConditions);
         std::vector<std::string> result;
@@ -853,7 +972,15 @@ void PlanExecutor::applyOrderByAndLimit(std::vector<std::vector<std::string>> &r
     // 作者：NAPH130
     const std::string &orderByColumn = selectStmt->getOrderByColumn();
     if (!orderByColumn.empty() && !columns.empty()) {
-        auto it = std::find(columns.begin(), columns.end(), orderByColumn);
+        // 剥离 " DESC" / " ASC" 后缀
+        // 作者：NAPH130
+        std::string cleanCol = orderByColumn;
+        const auto descPos = cleanCol.find(" DESC");
+        const auto ascPos = cleanCol.find(" ASC");
+        if (descPos != std::string::npos) cleanCol = cleanCol.substr(0, descPos);
+        else if (ascPos != std::string::npos) cleanCol = cleanCol.substr(0, ascPos);
+
+        auto it = std::find(columns.begin(), columns.end(), cleanCol);
         if (it != columns.end()) {
             const std::size_t orderIdx = static_cast<std::size_t>(std::distance(columns.begin(), it));
             const bool desc = selectStmt->getOrderByDesc();

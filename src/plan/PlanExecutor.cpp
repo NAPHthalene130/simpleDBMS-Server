@@ -935,6 +935,15 @@ bool PlanExecutor::evaluateLeafCondition(const ConditionNode *node,
         if (opUpper == "EXISTS") {
             return node->isNegated() ? subResult.empty() : !subResult.empty();
         }
+        if (opUpper == "!=" || opUpper == "<>" || opUpper == ">"
+            || opUpper == ">=" || opUpper == "<" || opUpper == "<=") {
+            if (subResult.empty()
+                || !tryResolveValueFromRow(node->getLeftOperand(), row, columns, leftValue)) {
+                return false;
+            }
+            bool result = compareValues(leftValue, mapCompare(node->getOperator()), subResult.front());
+            return node->isNegated() ? !result : result;
+        }
         return false;
     }
 

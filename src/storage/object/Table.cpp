@@ -1294,6 +1294,11 @@ TupleRef Table::DataPageManager::allocate(const std::vector<std::string>& values
     for (std::uint32_t pg = 1; pg <= maxPg; ++pg) {
         std::string pageData = FileManager::readPage(path, pg);
         if (!pageData.empty()) {
+            // 确保 pageData 有完整的页缓冲区，避免越界写入
+            // 作者：NAPH130
+            if (pageData.size() < kDataPageSize) {
+                pageData.resize(kDataPageSize, '\0');
+            }
             DataPageHeader hdr;
             std::memcpy(&hdr, pageData.data(), sizeof(DataPageHeader));
             if (hdr.freeEnd - hdr.freeStart >= tupleData.size() + 1 + kSlotSize) {
@@ -1539,7 +1544,11 @@ void padToPageSize(std::ostream& os, std::uint32_t bytesWritten) {
 } // namespace
 
 void Table::syncIndexPages() {
-    if (!index_.hasPageIds()) {
+    // 清除旧页ID后全量重写，确保增量数据被持久化
+    // 作者：NAPH130
+    index_.clearPageIds();
+
+    {
         auto nodeRefs = index_.dumpNodeRefs();
         index_.clearDirtyFlags();
         nextPageId_ = 1;
@@ -1641,90 +1650,6 @@ void Table::syncIndexPages() {
         index_.clearDirtyFlags();
         return;
     }
-
-    auto dirtyPages = index_.collectDirtyPages(rootPageId_, nextPageId_);
-    if (dirtyPages.empty()) return;
-
-    if (rootPageId_ == 0) rootPageId_ = 1;
-
-    std::unordered_map<std::uint32_t, std::uint32_t> childToParent;
-    for (const auto& dp : dirtyPages) {
-        if (!dp.isLeaf) {
-            for (auto childId : dp.childPageIds) {
-                childToParent[childId] = dp.pageId;
-            }
-        }
-    }
-
-    std::string header;
-    {
-        std::ostringstream headerOss;
-        headerOss << "TID_PAGED_V3\npage_size=" << kTidPageSize << "\nroot_page=" << rootPageId_
-                  << "\nnext_page=" << nextPageId_ << '\n';
-        header = headerOss.str();
-    }
-    {
-        std::fstream fs(indexFilePath(), std::ios::in | std::ios::out | std::ios::binary);
-        if (!fs.good()) {
-            std::ofstream ofs(indexFilePath(), std::ios::trunc | std::ios::binary);
-            ensure(ofs.good(), "failed to create table index file: " + indexFilePath().string());
-            ofs.write(header.data(), static_cast<std::streamsize>(header.size()));
-            fs.open(indexFilePath(), std::ios::in | std::ios::out | std::ios::binary);
-            ensure(fs.good(), "failed to reopen index file");
-        }
-        fs.seekp(0, std::ios::beg);
-        fs.write(header.data(), static_cast<std::streamsize>(header.size()));
-    }
-
-    for (const auto& dp : dirtyPages) {
-        std::ostringstream pageOss;
-        std::uint32_t parentId = 0;
-        auto pit = childToParent.find(dp.pageId);
-        if (pit != childToParent.end()) parentId = pit->second;
-
-        pageOss << "PAGE|" << dp.pageId
-                << "|leaf=" << (dp.isLeaf ? 1 : 0)
-                << "|parent=" << parentId
-                << "|prev=0|next=0"
-                << "|entry_count=" << dp.keys.size() << '\n';
-
-        if (dp.isLeaf) {
-            for (const auto& key : dp.keys) {
-                std::uint64_t offset = 0;
-                auto it = primaryKeyOffsets_.find(key);
-                if (it != primaryKeyOffsets_.end()) offset = it->second;
-                pageOss << "ENTRY|" << key << "|" << offset << '\n';
-            }
-        } else {
-            if (dp.childPageIds.empty()) {
-                pageOss << "ENDPAGE\n";
-                continue;
-            }
-            pageOss << "CHILD|" << dp.childPageIds[0] << '\n';
-            for (std::size_t j = 0; j < dp.keys.size(); ++j) {
-                std::uint64_t offset = 0;
-                auto it = primaryKeyOffsets_.find(dp.keys[j]);
-                if (it != primaryKeyOffsets_.end()) offset = it->second;
-                pageOss << "ENTRY|" << dp.keys[j] << "|" << offset << '\n';
-                if (j + 1 < dp.childPageIds.size()) {
-                    pageOss << "CHILD|" << dp.childPageIds[j + 1] << '\n';
-                }
-            }
-        }
-        pageOss << "ENDPAGE\n";
-        std::string page = pageOss.str();
-        ensure(page.size() <= kTidPageSize, "page content exceeds page size");
-        const std::streamoff pageOffset = static_cast<std::streamoff>(dp.pageId) * kTidPageSize;
-        {
-            std::fstream fs(indexFilePath(), std::ios::in | std::ios::out | std::ios::binary);
-            if (fs.good()) {
-                fs.seekp(pageOffset, std::ios::beg);
-                fs.write(page.data(), static_cast<std::streamsize>(page.size()));
-            }
-        }
-    }
-
-    index_.clearDirtyFlags();
 }
 
 void Table::writeHeader(std::ostream& os) {

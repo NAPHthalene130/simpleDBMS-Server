@@ -346,6 +346,25 @@ public:
     bool hasPageIds() const { return root_ != nullptr && root_->pageId != 0; }
 
     /**
+     * @brief 清除所有节点的页ID，强制下次 syncIndexPages 全量重写
+     * @author NAPH130
+     */
+    void clearPageIds() {
+        if (root_ == nullptr) return;
+        std::function<void(Node*)> clear = [&](Node* node) {
+            node->pageId = 0;
+            node->dirty = true;
+            dirtyNodes_.insert(node);
+            if (!node->leaf) {
+                for (auto& child : node->children) {
+                    clear(child.get());
+                }
+            }
+        };
+        clear(root_.get());
+    }
+
+    /**
      * @brief 分配页ID到整棵树（全量写入时使用）
      * @author Startale
      */

@@ -1123,6 +1123,9 @@ std::shared_ptr<ConditionNode> Parser::parsePredicate(TokenStream &tokenStream) 
             throw ParserException("Aggregate function requires argument.", tokenStream.position());
         }
         tokenStream.expect(SqlTokenType::Symbol, ")", "Aggregate function requires ')'.");
+    } else if (leftFirst.getType() == SqlTokenType::Number) {
+        leftOperand = leftFirst.getValue();
+        tokenStream.advance();
     } else if (leftFirst.getType() != SqlTokenType::Identifier) {
         throw ParserException("Missing left operand in predicate.", tokenStream.position());
     } else {
@@ -1139,6 +1142,41 @@ std::shared_ptr<ConditionNode> Parser::parsePredicate(TokenStream &tokenStream) 
             }
             leftOperand += "." + colToken.getValue();
             tokenStream.advance();
+        }
+    }
+
+    // 解析算术表达式：+ - * /
+    {
+        const auto isArithOp = [](const Token &t) {
+            return t.getType() == SqlTokenType::Operator
+                && (t.getValue() == "+" || t.getValue() == "-"
+                    || t.getValue() == "*" || t.getValue() == "/");
+        };
+        while (isArithOp(tokenStream.peek())) {
+            leftOperand += " " + tokenStream.peek().getValue() + " ";
+            tokenStream.advance();
+            const Token &nextOp = tokenStream.peek();
+            if (nextOp.getType() == SqlTokenType::Number) {
+                leftOperand += nextOp.getValue();
+                tokenStream.advance();
+            } else if (nextOp.getType() == SqlTokenType::Identifier) {
+                leftOperand += nextOp.getValue();
+                tokenStream.advance();
+                if (tokenStream.peek().getType() == SqlTokenType::Symbol
+                    && tokenStream.peek().getValue() == ".") {
+                    tokenStream.advance();
+                    const Token &colToken = tokenStream.peek();
+                    if (colToken.getType() != SqlTokenType::Identifier) {
+                        throw ParserException("Expected column name after '.' in arithmetic expression.",
+                                              tokenStream.position());
+                    }
+                    leftOperand += "." + colToken.getValue();
+                    tokenStream.advance();
+                }
+            } else {
+                throw ParserException("Expected numeric or column operand after arithmetic operator.",
+                                      tokenStream.position());
+            }
         }
     }
 
@@ -1292,6 +1330,41 @@ std::shared_ptr<ConditionNode> Parser::parsePredicate(TokenStream &tokenStream) 
         }
         rightOperand += "." + rightColToken.getValue();
         tokenStream.advance();
+    }
+
+    // 解析右操作数算术表达式：+ - * /
+    {
+        const auto isArithOp = [](const Token &t) {
+            return t.getType() == SqlTokenType::Operator
+                && (t.getValue() == "+" || t.getValue() == "-"
+                    || t.getValue() == "*" || t.getValue() == "/");
+        };
+        while (isArithOp(tokenStream.peek())) {
+            rightOperand += " " + tokenStream.peek().getValue() + " ";
+            tokenStream.advance();
+            const Token &nextOp = tokenStream.peek();
+            if (nextOp.getType() == SqlTokenType::Number) {
+                rightOperand += nextOp.getValue();
+                tokenStream.advance();
+            } else if (nextOp.getType() == SqlTokenType::Identifier) {
+                rightOperand += nextOp.getValue();
+                tokenStream.advance();
+                if (tokenStream.peek().getType() == SqlTokenType::Symbol
+                    && tokenStream.peek().getValue() == ".") {
+                    tokenStream.advance();
+                    const Token &colToken = tokenStream.peek();
+                    if (colToken.getType() != SqlTokenType::Identifier) {
+                        throw ParserException("Expected column name after '.' in right arithmetic expression.",
+                                              tokenStream.position());
+                    }
+                    rightOperand += "." + colToken.getValue();
+                    tokenStream.advance();
+                }
+            } else {
+                throw ParserException("Expected numeric or column operand after arithmetic operator on right side.",
+                                      tokenStream.position());
+            }
+        }
     }
 
     const std::shared_ptr<ConditionNode> predicateNode = std::make_shared<ConditionNode>();

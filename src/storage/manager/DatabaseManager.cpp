@@ -361,33 +361,139 @@ bool evaluateJoinCondition(const JoinedRecord &record,
     return storage::Table::compareValue(leftIt->second, condition.op, rightIt->second);
 }
 
+std::string resolveExprToken(const std::string &token,
+                              const JoinedRecord &record,
+                              const std::unordered_map<std::string, std::vector<std::string>> &aliasColumns)
+{
+    if (token.find('.') != std::string::npos) {
+        const auto dot = token.find('.');
+        DatabaseManager::JoinColumnRef ref;
+        ref.source = token.substr(0, dot);
+        ref.column = token.substr(dot + 1);
+        const std::string key = resolveJoinKey(ref, aliasColumns);
+        const auto it = record.find(key);
+        if (it == record.end()) return "";
+        return it->second;
+    }
+    return token;
+}
+
+double tokenToNumber(const std::string &s, bool &ok)
+{
+    char *e = nullptr;
+    errno = 0;
+    double v = std::strtod(s.c_str(), &e);
+    ok = (e != s.c_str() && *e == '\0' && errno != ERANGE);
+    return v;
+}
+
+std::string evaluateArithmeticExpr(const std::string &expr,
+                                    const JoinedRecord &record,
+                                    const std::unordered_map<std::string, std::vector<std::string>> &aliasColumns)
+{
+    std::vector<std::string> tokens;
+    {
+        std::string cur;
+        for (char c : expr) {
+            if (c == ' ') {
+                if (!cur.empty()) { tokens.push_back(cur); cur.clear(); }
+            } else {
+                cur += c;
+            }
+        }
+        if (!cur.empty()) tokens.push_back(cur);
+    }
+    if (tokens.empty()) return "";
+
+    auto resolve = [&](const std::string &t) { return resolveExprToken(t, record, aliasColumns); };
+
+    if (tokens.size() == 1) return resolve(tokens[0]);
+
+    for (auto &t : tokens) {
+        if (t != "+" && t != "-" && t != "*" && t != "/") {
+            t = resolve(t);
+        }
+    }
+
+    auto applyOp = [](double a, const std::string &op, double b) -> double {
+        if (op == "+") return a + b;
+        if (op == "-") return a - b;
+        if (op == "*") return a * b;
+        if (op == "/") return (b != 0.0) ? a / b : 0.0;
+        return 0.0;
+    };
+
+    std::vector<double> nums;
+    std::vector<std::string> ops;
+    for (const auto &t : tokens) {
+        if (t == "+" || t == "-" || t == "*" || t == "/") {
+            ops.push_back(t);
+        } else {
+            bool ok = false;
+            double v = tokenToNumber(t, ok);
+            if (!ok) return "";
+            nums.push_back(v);
+        }
+    }
+    if (nums.empty()) return "";
+    if (nums.size() != ops.size() + 1) return "";
+
+    for (std::size_t i = 0; i < ops.size();) {
+        if (ops[i] == "*" || ops[i] == "/") {
+            nums[i] = applyOp(nums[i], ops[i], nums[i + 1]);
+            nums.erase(nums.begin() + static_cast<std::ptrdiff_t>(i + 1));
+            ops.erase(ops.begin() + static_cast<std::ptrdiff_t>(i));
+        } else {
+            ++i;
+        }
+    }
+
+    double result = nums[0];
+    for (std::size_t i = 0; i < ops.size(); ++i) {
+        result = applyOp(result, ops[i], nums[i + 1]);
+    }
+
+    std::ostringstream oss;
+    oss << result;
+    return oss.str();
+}
+
 bool evaluateJoinFilter(const JoinedRecord &record,
                         const DatabaseManager::JoinFilter &filter,
                         const std::unordered_map<std::string, std::vector<std::string>> &aliasColumns)
 {
-    const std::string key = resolveJoinKey(filter.column, aliasColumns);
-    const auto it = record.find(key);
-    if (it == record.end()) {
-        return false;
+    std::string leftVal;
+    if (filter.hasLeftExpr) {
+        leftVal = evaluateArithmeticExpr(filter.leftExpr, record, aliasColumns);
+        if (leftVal.empty()) return false;
+    } else {
+        const std::string key = resolveJoinKey(filter.column, aliasColumns);
+        const auto it = record.find(key);
+        if (it == record.end()) return false;
+        leftVal = it->second;
     }
 
-    if (filter.isColumnCompare) {
+    std::string rightVal;
+    if (filter.hasRightExpr) {
+        rightVal = evaluateArithmeticExpr(filter.rightExpr, record, aliasColumns);
+        if (rightVal.empty()) return false;
+    } else if (filter.isColumnCompare) {
         const std::string rightKey = resolveJoinKey(filter.rightColumn, aliasColumns);
         const auto rightIt = record.find(rightKey);
-        if (rightIt == record.end()) {
-            return false;
-        }
-        return storage::Table::compareValue(it->second, filter.op, rightIt->second);
+        if (rightIt == record.end()) return false;
+        rightVal = rightIt->second;
+    } else {
+        rightVal = filter.value;
     }
 
     if (filter.op == storage::Table::CompareOp::IN) {
-        return std::find(filter.values.begin(), filter.values.end(), it->second) != filter.values.end();
+        return std::find(filter.values.begin(), filter.values.end(), leftVal) != filter.values.end();
     }
     if (filter.op == storage::Table::CompareOp::BETWEEN) {
-        return storage::Table::compareValue(it->second, storage::Table::CompareOp::GE, filter.value)
-            && storage::Table::compareValue(it->second, storage::Table::CompareOp::LE, filter.secondValue);
+        return storage::Table::compareValue(leftVal, storage::Table::CompareOp::GE, filter.value)
+            && storage::Table::compareValue(leftVal, storage::Table::CompareOp::LE, filter.secondValue);
     }
-    return storage::Table::compareValue(it->second, filter.op, filter.value);
+    return storage::Table::compareValue(leftVal, filter.op, rightVal);
 }
 
 } // namespace

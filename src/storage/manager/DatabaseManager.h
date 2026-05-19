@@ -48,6 +48,10 @@ public:
         std::vector<std::string> values;
         JoinColumnRef rightColumn;
         bool isColumnCompare = false;
+        std::string leftExpr;
+        std::string rightExpr;
+        bool hasLeftExpr = false;
+        bool hasRightExpr = false;
     };
 
     struct JoinSpec {

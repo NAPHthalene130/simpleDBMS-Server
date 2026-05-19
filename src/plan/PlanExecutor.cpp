@@ -626,17 +626,33 @@ DatabaseManager::JoinResult PlanExecutor::executeJoinPlan(std::shared_ptr<PlanNo
             const std::string &rightOp = node->getRightOperand();
             if (!leftOp.empty() && !rightOp.empty()) {
                 DatabaseManager::JoinFilter filter;
-                const auto leftDot = leftOp.find('.');
-                filter.column.source = (leftDot != std::string::npos) ? leftOp.substr(0, leftDot) : "";
-                filter.column.column = (leftDot != std::string::npos) ? leftOp.substr(leftDot + 1) : leftOp;
                 filter.op = mapCompare(op);
-                const auto rightDot = rightOp.find('.');
-                if (rightDot != std::string::npos) {
-                    filter.isColumnCompare = true;
-                    filter.rightColumn.source = rightOp.substr(0, rightDot);
-                    filter.rightColumn.column = rightOp.substr(rightDot + 1);
+                const auto hasArith = [](const std::string &s) {
+                    return s.find(" + ") != std::string::npos
+                        || s.find(" - ") != std::string::npos
+                        || s.find(" * ") != std::string::npos
+                        || s.find(" / ") != std::string::npos;
+                };
+                if (hasArith(leftOp)) {
+                    filter.hasLeftExpr = true;
+                    filter.leftExpr = leftOp;
                 } else {
-                    filter.value = rightOp;
+                    const auto leftDot = leftOp.find('.');
+                    filter.column.source = (leftDot != std::string::npos) ? leftOp.substr(0, leftDot) : "";
+                    filter.column.column = (leftDot != std::string::npos) ? leftOp.substr(leftDot + 1) : leftOp;
+                }
+                if (hasArith(rightOp)) {
+                    filter.hasRightExpr = true;
+                    filter.rightExpr = rightOp;
+                } else {
+                    const auto rightDot = rightOp.find('.');
+                    if (rightDot != std::string::npos) {
+                        filter.isColumnCompare = true;
+                        filter.rightColumn.source = rightOp.substr(0, rightDot);
+                        filter.rightColumn.column = rightOp.substr(rightDot + 1);
+                    } else {
+                        filter.value = rightOp;
+                    }
                 }
                 query.postFilters.push_back(std::move(filter));
             }

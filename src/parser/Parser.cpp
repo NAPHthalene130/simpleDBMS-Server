@@ -1332,6 +1332,7 @@ std::shared_ptr<ConditionNode> Parser::parseInOrExists(TokenStream &tokenStream,
 
     if (tokenStream.match(SqlTokenType::Keyword, "EXISTS")) {
         tokenStream.expect(SqlTokenType::Symbol, "(", "EXISTS requires '('.");
+        tokenStream.expect(SqlTokenType::Keyword, "SELECT", "EXISTS subquery requires SELECT.");
         auto subSelect = parseSelectStatement(tokenStream);
         tokenStream.expect(SqlTokenType::Symbol, ")", "EXISTS subquery requires ')'.");
         node->setSubquery(subSelect);

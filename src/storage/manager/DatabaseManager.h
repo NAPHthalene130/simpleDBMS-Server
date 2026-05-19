@@ -148,6 +148,7 @@ public:
      * @note 需要删除表元数据记录及相关物理文件
      */
     bool dropTable(std::string tableName);
+    bool dropTable(const std::string &dbName, const std::string &tableName);
 
     /**
      * @brief 修改数据表信息

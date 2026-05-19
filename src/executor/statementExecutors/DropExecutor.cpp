@@ -4,6 +4,7 @@
 
 #include "Core.h"
 #include "dbLog/DbLogManager.h"
+#include "dbLog/DbLogSnapshotUtils.h"
 #include "log/LogWriter.h"
 #include "storage/manager/SystemCatalogManager.h"
 #include "storage/object/Table.h"
@@ -77,9 +78,11 @@ ExecutionResult DropExecutor::execute(const SQLStatement *statement, ExecutionCo
         // 导致后续 CREATE DATABASE 误判文件夹已存在。
         // 作者：NAPH130
         if (core != nullptr && core->getDbLogManager() != nullptr) {
+            const nlohmann::json databaseSnapshot =
+                dblog_snapshot::buildDatabaseSnapshot(databaseManager, targetName);
             core->getDbLogManager()->logDropDatabase(
                 targetName,
-                "Database metadata snapshot for: " + targetName,
+                databaseSnapshot.dump(),
                 "DROP DATABASE " + targetName
             );
         }
@@ -109,13 +112,7 @@ ExecutionResult DropExecutor::execute(const SQLStatement *statement, ExecutionCo
                 const auto dbRootPath = SystemCatalogManager::getDataRootPath();
                 const auto dbPath = dbRootPath / dbName;
                 if (std::filesystem::exists(dbPath / (targetName + ".tdf"))) {
-                    auto table = storage::Table::load(dbPath, targetName);
-                    const auto &schema = table.schema();
-                    nlohmann::json tableSnapshot;
-                    tableSnapshot["table_name"] = targetName;
-                    tableSnapshot["columns"] = schema.columns;
-                    tableSnapshot["create_sql"] = "CREATE TABLE " + targetName + " (...)";
-                    tableSnapshot["column_count"] = schema.columns.size();
+                    nlohmann::json tableSnapshot = dblog_snapshot::buildTableSnapshot(dbPath, targetName);
                     core->getDbLogManager()->logDropTable(
                         dbName, targetName,
                         tableSnapshot.dump(),
@@ -132,7 +129,7 @@ ExecutionResult DropExecutor::execute(const SQLStatement *statement, ExecutionCo
             }
         }
 
-        if (!databaseManager->dropTable(targetName)) {
+        if (!databaseManager->dropTable(dbName, targetName)) {
             LogWriter::error("executor", "DropExecutor", "execute",
                              "Failed to drop table " + targetName + " in " + dbName + ".");
             return buildFailureResult("Failed to drop table.", dbName);

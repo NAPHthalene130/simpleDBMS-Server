@@ -1,9 +1,13 @@
 #include "AlterTableExecutor.h"
 
 #include <exception>
+#include <filesystem>
 #include <string>
 
+#include "dbLog/DbLogManager.h"
+#include "dbLog/DbLogSnapshotUtils.h"
 #include "log/LogWriter.h"
+#include "storage/manager/SystemCatalogManager.h"
 
 namespace {
 ExecutionResult buildFailureResult(const std::string &message,
@@ -75,6 +79,37 @@ ExecutionResult AlterTableExecutor::execute(const SQLStatement *statement, Execu
     }
 
     try {
+        nlohmann::json beforeSnapshot;
+        const bool shouldLog = core != nullptr && core->getDbLogManager() != nullptr;
+        if (shouldLog) {
+            try {
+                const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+                if (std::filesystem::exists(dbPath / (tableName + ".tdf"))) {
+                    beforeSnapshot = dblog_snapshot::buildTableSnapshot(dbPath, tableName);
+                }
+            } catch (...) {
+                beforeSnapshot = nlohmann::json();
+            }
+        }
+
+        auto buildSuccessWithLog = [&](const std::string &message, const std::string &sqlText) {
+            if (shouldLog && !beforeSnapshot.is_null()) {
+                try {
+                    const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+                    const nlohmann::json afterSnapshot = dblog_snapshot::buildTableSnapshot(dbPath, tableName);
+                    core->getDbLogManager()->logAlterTable(
+                        dbName,
+                        tableName,
+                        beforeSnapshot.dump(),
+                        afterSnapshot.dump(),
+                        sqlText
+                    );
+                } catch (...) {
+                }
+            }
+            return buildSuccessResult(message, dbName, tableName);
+        };
+
         switch (alterStmt->getTargetType()) {
         case AlterTableTargetType::AddColumn: {
             const std::string &colName = alterStmt->getColumnName();
@@ -91,7 +126,7 @@ ExecutionResult AlterTableExecutor::execute(const SQLStatement *statement, Execu
             }
             LogWriter::info("executor", "AlterTableExecutor", "execute",
                             "Column added: " + dbName + "." + tableName + "." + colName);
-            return buildSuccessResult("Add column succeeded.", dbName, tableName);
+            return buildSuccessWithLog("Add column succeeded.", "ALTER TABLE " + tableName + " ADD COLUMN " + colName);
         }
 
         case AlterTableTargetType::DropColumn: {
@@ -106,7 +141,7 @@ ExecutionResult AlterTableExecutor::execute(const SQLStatement *statement, Execu
             }
             LogWriter::info("executor", "AlterTableExecutor", "execute",
                             "Column dropped: " + dbName + "." + tableName + "." + colName);
-            return buildSuccessResult("Drop column succeeded.", dbName, tableName);
+            return buildSuccessWithLog("Drop column succeeded.", "ALTER TABLE " + tableName + " DROP COLUMN " + colName);
         }
 
         case AlterTableTargetType::RenameColumn: {
@@ -123,7 +158,8 @@ ExecutionResult AlterTableExecutor::execute(const SQLStatement *statement, Execu
             LogWriter::info("executor", "AlterTableExecutor", "execute",
                             "Column renamed: " + dbName + "." + tableName + "."
                                 + oldName + " -> " + newName);
-            return buildSuccessResult("Rename column succeeded.", dbName, tableName);
+            return buildSuccessWithLog("Rename column succeeded.",
+                                       "ALTER TABLE " + tableName + " RENAME COLUMN " + oldName + " TO " + newName);
         }
 
         case AlterTableTargetType::AlterColumnType: {
@@ -140,7 +176,8 @@ ExecutionResult AlterTableExecutor::execute(const SQLStatement *statement, Execu
             }
             LogWriter::info("executor", "AlterTableExecutor", "execute",
                             "Column type altered: " + dbName + "." + tableName + "." + colName);
-            return buildSuccessResult("Alter column type succeeded.", dbName, tableName);
+            return buildSuccessWithLog("Alter column type succeeded.",
+                                       "ALTER TABLE " + tableName + " MODIFY COLUMN " + colName);
         }
 
         default:

@@ -17,6 +17,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifndef SERVER_PROJECT_ROOT
@@ -97,6 +98,31 @@ int main()
         check(ok, "SELECT after DELETE -> 2 rows");
     }
 
+    // DbLog recovery should undo UPDATE and DELETE to reach earlier point in time
+    {
+        const auto logsBeforeRecover = core.getDbLogManager()->getLogsForDatabase("crud_test_db");
+        bool ok = logsBeforeRecover.size() >= 6;
+        if (ok) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            ok = core.getDbLogManager()->dbRecover("crud_test_db", logsBeforeRecover[4].getTimestamp());
+        }
+        if (ok) {
+            auto rows = sendSql("SELECT * FROM students;");
+            auto resultSet = rows.value("resultSet", nlohmann::json::array());
+            ok = rows.value("success", false) && resultSet.size() == 3;
+        }
+        if (ok) {
+            auto bob = sendSql("SELECT age FROM students WHERE name = 'Bob';");
+            auto rs = bob.value("resultSet", nlohmann::json::array());
+            ok = bob.value("success", false)
+                 && rs.size() == 1
+                 && rs[0].is_array()
+                 && rs[0].size() == 1
+                 && rs[0][0].get<std::string>() == "22";
+        }
+        check(ok, "DBLOG recover restores students before UPDATE/DELETE");
+    }
+
     // ========== EXTENDED TEST CASES ==========
 
     // CREATE TABLE with INT/VARCHAR/FLOAT/TEXT types
@@ -123,6 +149,30 @@ int main()
     // INSERT multi-row VALUES
     check(sendSql("INSERT INTO items VALUES (2,'a',1.0,'t1'), (3,'b',2.0,'t2');").value("success", false),
           "INSERT multi-row VALUES (2 rows)");
+
+    // DbLog recovery should restore dropped table with its data
+    check(sendSql("CREATE TABLE recovery_items (id INT, name VARCHAR(50));").value("success", false),
+          "CREATE TABLE recovery_items");
+    check(sendSql("INSERT INTO recovery_items VALUES (1, 'keep');").value("success", false),
+          "INSERT recovery_items row");
+    const auto logsBeforeDrop = core.getDbLogManager()->getLogsForDatabase("crud_test_db");
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    check(sendSql("DROP TABLE recovery_items;").value("success", false), "DROP TABLE recovery_items");
+    {
+        bool ok = !logsBeforeDrop.empty()
+               && core.getDbLogManager()->dbRecover("crud_test_db", logsBeforeDrop.back().getTimestamp());
+        if (ok) {
+            auto restored = sendSql("SELECT * FROM recovery_items;");
+            auto rs = restored.value("resultSet", nlohmann::json::array());
+            ok = restored.value("success", false)
+                 && rs.size() == 1
+                 && rs[0].is_array()
+                 && rs[0].size() == 2
+                 && rs[0][0].get<std::string>() == "1"
+                 && rs[0][1].get<std::string>() == "keep";
+        }
+        check(ok, "DBLOG recover restores dropped table and rows");
+    }
 
     // SELECT with LIMIT
     {

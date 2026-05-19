@@ -1051,6 +1051,60 @@ bool DatabaseManager::dropTable(std::string tableName)
     return removedAny;
 }
 
+bool DatabaseManager::dropTable(const std::string &dbName, const std::string &tableName)
+{
+    if (dbName.empty() || tableName.empty()) {
+        LogWriter::warning("storage", "DatabaseManager", "dropTable", "Rejected empty database or table name.");
+        return false;
+    }
+
+    try {
+        const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
+            LogWriter::warning("storage",
+                               "DatabaseManager",
+                               "dropTable",
+                               std::string("Database directory not found: ") + dbName);
+            return false;
+        }
+
+        const std::vector<std::filesystem::path> candidates = {
+            dbPath / (tableName + ".tdf"),
+            dbPath / (tableName + ".trd"),
+            dbPath / (tableName + ".tic"),
+            dbPath / (tableName + ".tid")};
+
+        bool removedAny = false;
+        for (const auto &candidate : candidates) {
+            if (std::filesystem::exists(candidate)) {
+                removedAny = std::filesystem::remove(candidate) || removedAny;
+            }
+        }
+
+        if (!removeTableBlock(dbPath, tableName)) {
+            LogWriter::error("storage",
+                             "DatabaseManager",
+                             "dropTable",
+                             std::string("Failed to update .tb descriptor while dropping ")
+                                 + dbName + "." + tableName);
+            return false;
+        }
+
+        LogWriter::info("storage",
+                        "DatabaseManager",
+                        "dropTable",
+                        std::string("Drop table result for ") + dbName + "." + tableName + ": "
+                            + (removedAny ? "success" : "not found"));
+        return removedAny;
+    } catch (...) {
+        LogWriter::error("storage",
+                         "DatabaseManager",
+                         "dropTable",
+                         std::string("Unknown exception while dropping ") + dbName + "." + tableName);
+        return false;
+    }
+}
+
 bool DatabaseManager::modifyTable(std::string tableName, TableBlock newTbInfo)
 {
     if (tableName.empty()) {

@@ -1,19 +1,44 @@
 #include "DbLogManager.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <stdexcept>
 
 #include "Core.h"
+#include "DbLogSnapshotUtils.h"
 #include "log/LogWriter.h"
 #include "storage/manager/DatabaseManager.h"
 #include "storage/manager/StorageManager.h"
 #include "storage/manager/SystemCatalogManager.h"
 
 namespace {
+template <std::size_t N>
+std::array<char, N> stringToArray(const std::string &value)
+{
+    std::array<char, N> result{};
+    const auto copyLen = std::min<std::size_t>(value.size(), N - 1);
+    std::memcpy(result.data(), value.data(), copyLen);
+    return result;
+}
+
+const std::filesystem::path &getDbLogRootPath()
+{
+    static const std::filesystem::path dbLogRoot =
+        (SystemCatalogManager::getDataRootPath() / "_db_logs").lexically_normal();
+    return dbLogRoot;
+}
+
+std::filesystem::path getLegacyLogFilePath(const std::string &databaseName)
+{
+    return SystemCatalogManager::getDataRootPath() / databaseName / (databaseName + ".log");
+}
+
 void updateOperationCounterFromLogFile(const std::filesystem::path &logPath, std::int64_t &operationIdCounter)
 {
     if (!std::filesystem::exists(logPath)) {
@@ -32,6 +57,79 @@ void updateOperationCounterFromLogFile(const std::filesystem::path &logPath, std
         }
     }
 }
+
+bool createDatabaseIfMissing(SystemCatalogManager *systemCatalogManager, const std::string &dbName)
+{
+    if (systemCatalogManager == nullptr || dbName.empty()) {
+        return false;
+    }
+
+    if (systemCatalogManager->checkDbExists(dbName)) {
+        return true;
+    }
+
+    DatabaseBlock databaseBlock;
+    databaseBlock.setName(stringToArray<128>(dbName));
+    databaseBlock.setType(false);
+    return systemCatalogManager->createDatabase(databaseBlock);
+}
+
+bool restoreTableSnapshot(DatabaseManager *databaseManager,
+                          const std::string &dbName,
+                          const nlohmann::json &tableSnapshot)
+{
+    if (databaseManager == nullptr || dbName.empty()) {
+        return false;
+    }
+
+    const std::string tableName = tableSnapshot.value("table_name", "");
+    if (tableName.empty()) {
+        return false;
+    }
+
+    const std::vector<std::string> columns = dblog_snapshot::parseColumns(tableSnapshot);
+    std::vector<storage::ColumnMeta> columnMetas = dblog_snapshot::parseColumnMetas(tableSnapshot);
+    const auto rows = dblog_snapshot::parseRows(tableSnapshot);
+    if (columns.empty()) {
+        return false;
+    }
+    if (columnMetas.size() < columns.size()) {
+        columnMetas.resize(columns.size());
+    }
+
+    databaseManager->dropTable(dbName, tableName);
+    if (!databaseManager->createTable(dbName, tableName, columns, columnMetas)) {
+        return false;
+    }
+
+    for (const auto &rowValues : rows) {
+        if (!databaseManager->insertRow(dbName, tableName, rowValues)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool restoreDatabaseSnapshot(SystemCatalogManager *systemCatalogManager,
+                             DatabaseManager *databaseManager,
+                             const std::string &dbName,
+                             const nlohmann::json &databaseSnapshot)
+{
+    if (!createDatabaseIfMissing(systemCatalogManager, dbName)) {
+        return false;
+    }
+
+    if (!databaseSnapshot.contains("tables") || !databaseSnapshot["tables"].is_array()) {
+        return true;
+    }
+
+    for (const auto &tableSnapshot : databaseSnapshot["tables"]) {
+        if (!restoreTableSnapshot(databaseManager, dbName, tableSnapshot)) {
+            return false;
+        }
+    }
+    return true;
+}
 } // namespace
 
 // ──────────────────────────────────────────────
@@ -44,6 +142,7 @@ DbLogManager::DbLogManager(Core *core)
 {
     const auto &dataRootPath = SystemCatalogManager::getDataRootPath();
     std::filesystem::create_directories(dataRootPath);
+    std::filesystem::create_directories(getDbLogRootPath());
 
     if (std::filesystem::exists(dataRootPath)) {
         for (const auto &entry : std::filesystem::directory_iterator(dataRootPath)) {
@@ -52,7 +151,11 @@ DbLogManager::DbLogManager(Core *core)
             }
 
             const std::string databaseName = entry.path().filename().string();
-            updateOperationCounterFromLogFile(entry.path() / (databaseName + ".log"), operationIdCounter);
+            if (databaseName == "_db_logs") {
+                continue;
+            }
+            updateOperationCounterFromLogFile(getLegacyLogFilePath(databaseName), operationIdCounter);
+            updateOperationCounterFromLogFile(getDbLogRootPath() / (databaseName + ".log"), operationIdCounter);
         }
     }
 
@@ -277,10 +380,12 @@ bool DbLogManager::dbRecover(const std::string &databaseName, const DateTime &ta
     std::reverse(logsToUndo.begin(), logsToUndo.end());
 
     std::int64_t undoneCount = 0;
+    bool recoverySucceeded = true;
     for (const auto &log : logsToUndo) {
         try {
             const std::string tbName = log.getTableName();
             const DbLogOperationType opType = log.getOperationType();
+            bool undoResult = false;
 
             LogWriter::info("dbLog", "DbLogManager", "dbRecover",
                             "Undoing operation [" + std::to_string(log.getOperationId())
@@ -296,11 +401,11 @@ bool DbLogManager::dbRecover(const std::string &databaseName, const DateTime &ta
                             auto data = nlohmann::json::parse(log.getAfterData());
                             if (data.contains("__primary_key__")) {
                                 std::string pk = data["__primary_key__"].get<std::string>();
-                                databaseManager->deleteRowByPrimaryKey(databaseName, tbName, pk);
+                                undoResult = databaseManager->deleteRowByPrimaryKey(databaseName, tbName, pk);
                             } else if (data.contains("values") && data["values"].is_array()
                                        && !data["values"].empty()) {
                                 std::string pk = data["values"][0].get<std::string>();
-                                databaseManager->deleteRowByPrimaryKey(databaseName, tbName, pk);
+                                undoResult = databaseManager->deleteRowByPrimaryKey(databaseName, tbName, pk);
                             }
                         } catch (...) {
                             LogWriter::warning("dbLog", "DbLogManager", "dbRecover",
@@ -319,7 +424,7 @@ bool DbLogManager::dbRecover(const std::string &databaseName, const DateTime &ta
                                 for (const auto &v : data["values"]) {
                                     rowValues.push_back(v.get<std::string>());
                                 }
-                                databaseManager->insertRow(databaseName, tbName, rowValues);
+                                undoResult = databaseManager->insertRow(databaseName, tbName, rowValues);
                             }
                         } catch (...) {
                             LogWriter::warning("dbLog", "DbLogManager", "dbRecover",
@@ -340,7 +445,7 @@ bool DbLogManager::dbRecover(const std::string &databaseName, const DateTime &ta
                                 for (const auto &v : data["old_values"]) {
                                     oldValues.push_back(v.get<std::string>());
                                 }
-                                databaseManager->updateRowByPrimaryKey(databaseName, tbName, pk, oldValues);
+                                undoResult = databaseManager->updateRowByPrimaryKey(databaseName, tbName, pk, oldValues);
                             }
                         } catch (...) {
                             LogWriter::warning("dbLog", "DbLogManager", "dbRecover",
@@ -352,21 +457,18 @@ bool DbLogManager::dbRecover(const std::string &databaseName, const DateTime &ta
                 case DbLogOperationType::CreateTable: {
                     // 撤销 CREATE TABLE → DROP TABLE
                     if (!tbName.empty()) {
-                        databaseManager->dropTable(tbName);
+                        undoResult = databaseManager->dropTable(databaseName, tbName);
                     }
                     break;
                 }
                 case DbLogOperationType::DropTable: {
-                    // 撤销 DROP TABLE：根据 beforeData 中的 SQL 重建表
+                    // 撤销 DROP TABLE：根据完整快照重建表和数据
                     if (!tbName.empty() && !log.getBeforeData().empty()) {
                         try {
-                            auto data = nlohmann::json::parse(log.getBeforeData());
-                            if (data.contains("create_sql")) {
-                                // 通过执行原始 CREATE TABLE SQL 重建
-                                // 此处记录日志，实际重建需要 SQL 执行管道
-                                LogWriter::info("dbLog", "DbLogManager", "dbRecover",
-                                                "Replay CREATE TABLE for: " + databaseName + "." + tbName);
-                            }
+                            undoResult = restoreTableSnapshot(
+                                databaseManager,
+                                databaseName,
+                                nlohmann::json::parse(log.getBeforeData()));
                         } catch (...) {
                             LogWriter::warning("dbLog", "DbLogManager", "dbRecover",
                                                "Failed to undo DROP TABLE: bad beforeData format");
@@ -375,30 +477,61 @@ bool DbLogManager::dbRecover(const std::string &databaseName, const DateTime &ta
                     break;
                 }
                 case DbLogOperationType::CreateDatabase: {
-                    // 撤销 CREATE DATABASE → 不主动删除（安全考虑）
-                    LogWriter::info("dbLog", "DbLogManager", "dbRecover",
-                                    "Skipping undo of CREATE DATABASE for safety.");
+                    undoResult = systemCatalogManager != nullptr
+                                 && systemCatalogManager->dropDatabase(databaseName);
                     break;
                 }
                 case DbLogOperationType::DropDatabase: {
-                    // 撤销 DROP DATABASE → 需要重建，记录日志提示
-                    LogWriter::warning("dbLog", "DbLogManager", "dbRecover",
-                                       "Cannot undo DROP DATABASE via WAL alone: " + databaseName);
+                    try {
+                        undoResult = restoreDatabaseSnapshot(systemCatalogManager,
+                                                             databaseManager,
+                                                             databaseName,
+                                                             nlohmann::json::parse(log.getBeforeData()));
+                    } catch (...) {
+                        LogWriter::warning("dbLog", "DbLogManager", "dbRecover",
+                                           "Failed to undo DROP DATABASE: bad beforeData format");
+                    }
                     break;
                 }
                 case DbLogOperationType::AlterTable: {
-                    // 撤销 ALTER TABLE → 根据 beforeData 恢复
-                    LogWriter::info("dbLog", "DbLogManager", "dbRecover",
-                                    "Undo ALTER TABLE: " + databaseName + "." + tbName);
+                    if (!tbName.empty() && !log.getBeforeData().empty()) {
+                        try {
+                            undoResult = restoreTableSnapshot(
+                                databaseManager,
+                                databaseName,
+                                nlohmann::json::parse(log.getBeforeData()));
+                        } catch (...) {
+                            LogWriter::warning("dbLog", "DbLogManager", "dbRecover",
+                                               "Failed to undo ALTER TABLE: bad beforeData format");
+                        }
+                    }
                     break;
                 }
             }
+
+            if (!undoResult) {
+                recoverySucceeded = false;
+                LogWriter::error("dbLog", "DbLogManager", "dbRecover",
+                                 "Undo failed for operation [" + std::to_string(log.getOperationId())
+                                     + "] " + LogBlock::operationTypeToString(opType));
+                break;
+            }
             ++undoneCount;
         } catch (const std::exception &e) {
+            recoverySucceeded = false;
             LogWriter::error("dbLog", "DbLogManager", "dbRecover",
                              std::string("Exception during undo of operation ")
                                  + std::to_string(log.getOperationId()) + ": " + e.what());
+            break;
         }
+    }
+
+    if (!recoverySucceeded) {
+        return false;
+    }
+
+    if (systemCatalogManager != nullptr && systemCatalogManager->checkDbExists(databaseName)) {
+        systemCatalogManager->addDatabaseVersion(databaseName);
     }
 
     LogWriter::info("dbLog", "DbLogManager", "dbRecover",
@@ -410,25 +543,33 @@ bool DbLogManager::dbRecover(const std::string &databaseName, const DateTime &ta
 
 std::vector<LogBlock> DbLogManager::getLogsForDatabase(const std::string &databaseName)
 {
-    std::vector<LogBlock> result;
-    const std::string logPath = getLogFilePath(databaseName);
+    std::map<std::int64_t, LogBlock> mergedLogs;
+    const std::vector<std::filesystem::path> candidatePaths = {
+        std::filesystem::path(getLogFilePath(databaseName)),
+        getLegacyLogFilePath(databaseName)};
 
-    if (logPath.empty() || !std::filesystem::exists(logPath)) {
-        return result;
-    }
-
-    std::ifstream inFile(logPath);
-    std::string line;
-    while (std::getline(inFile, line)) {
-        if (line.empty()) {
+    for (const auto &logPath : candidatePaths) {
+        if (logPath.empty() || !std::filesystem::exists(logPath)) {
             continue;
         }
-        LogBlock block;
-        if (LogBlock::fromJsonString(line, block)) {
-            if (block.getDatabaseName() == databaseName) {
-                result.push_back(block);
+
+        std::ifstream inFile(logPath);
+        std::string line;
+        while (std::getline(inFile, line)) {
+            if (line.empty()) {
+                continue;
+            }
+            LogBlock block;
+            if (LogBlock::fromJsonString(line, block) && block.getDatabaseName() == databaseName) {
+                mergedLogs[block.getOperationId()] = block;
             }
         }
+    }
+
+    std::vector<LogBlock> result;
+    result.reserve(mergedLogs.size());
+    for (const auto &entry : mergedLogs) {
+        result.push_back(entry.second);
     }
 
     // 按时间戳升序排序，时间相同时按操作ID升序
@@ -491,8 +632,7 @@ std::string DbLogManager::getLogFilePath(const std::string &databaseName) const
         return "";
     }
 
-    const std::filesystem::path dbDir = SystemCatalogManager::getDataRootPath() / databaseName;
-    return (dbDir / (databaseName + ".log")).string();
+    return (getDbLogRootPath() / (databaseName + ".log")).string();
 }
 
 DateTime DbLogManager::buildCurrentDateTime()

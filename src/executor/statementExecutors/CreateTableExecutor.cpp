@@ -9,6 +9,7 @@
 
 #include "Core.h"
 #include "dbLog/DbLogManager.h"
+#include "dbLog/DbLogSnapshotUtils.h"
 #include "log/LogWriter.h"
 #include "storage/manager/SystemCatalogManager.h"
 
@@ -193,9 +194,8 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
 
     // 记录创建表日志
     if (core != nullptr && core->getDbLogManager() != nullptr) {
-        nlohmann::json tableSnapshot;
-        tableSnapshot["columns"] = columnNames;
-        tableSnapshot["field_count"] = fieldBlocks.size();
+        const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        const nlohmann::json tableSnapshot = dblog_snapshot::buildTableSnapshot(dbPath, tableName);
         core->getDbLogManager()->logCreateTable(
             dbName, tableName, tableSnapshot.dump(),
             "CREATE TABLE " + tableName + " (...)"

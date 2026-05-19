@@ -1011,6 +1011,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             responseData.setSuccess(recoverResult);
             responseData.setDbName(dbName);
             responseData.setDbLogTime(dbLogTime);
+            responseData.setDbVersionMap(buildFullVersionMap());
             if (recoverResult) {
                 responseData.setMessage("Database recovery succeeded.");
                 LogWriter::info("network", "NetReceiver", "processMsg",

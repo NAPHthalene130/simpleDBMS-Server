@@ -151,6 +151,17 @@ ExecutionResult InsertExecutor::executeInsert(const InsertStmt *insertStmt, Exec
                                  "Failed to insert row into " + dbName + "." + tableName + ".");
                 return buildFailureResult("Insert failed at row " + std::to_string(totalInserted + 1) + ".", dbName, tableName);
             }
+
+            if (core != nullptr && core->getDbLogManager() != nullptr) {
+                nlohmann::json insertSnapshot;
+                insertSnapshot["__primary_key__"] = values.front();
+                insertSnapshot["values"] = values;
+                core->getDbLogManager()->logInsert(
+                    dbName, tableName,
+                    insertSnapshot.dump(),
+                    "INSERT INTO " + tableName + " VALUES (...)"
+                );
+            }
         } else {
             try {
                 const auto &dbRootPath = SystemCatalogManager::getDataRootPath();

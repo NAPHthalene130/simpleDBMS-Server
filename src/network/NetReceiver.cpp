@@ -998,7 +998,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             targetTime.setHour(static_cast<std::uint16_t>(hour));
             targetTime.setMinute(static_cast<std::uint16_t>(minute));
             targetTime.setSecond(static_cast<std::uint16_t>(second));
-            targetTime.setMilliseconds(0);
+            targetTime.setMilliseconds(999);
 
             LogWriter::info("network", "NetReceiver", "processMsg",
                 std::string("DBLOG_REQUEST: recovering database ") + dbName

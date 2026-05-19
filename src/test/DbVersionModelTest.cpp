@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -66,166 +67,166 @@ int main() {
 
     std::cout << "\n========== DbVersion Model Test ==========\n";
 
-    // ====================== NetworkTransferData dbVersion (30+) ======================
+    // ====================== NetworkTransferData dbVersionMap (30+) ======================
     {
         NetworkTransferData data;
-        bool p = (data.getDbVersion() == 0);
-        appendStep(steps, seq++, "NetworkTransferData default dbVersion=0", p,
-                   p ? "ok" : "got " + std::to_string(data.getDbVersion()));
+        bool p = (data.getDbVersionMap().empty());
+        appendStep(steps, seq++, "NetworkTransferData default dbVersionMap empty", p,
+                   p ? "ok" : "map not empty");
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(42);
-        bool p = (data.getDbVersion() == 42);
-        appendStep(steps, seq++, "setDbVersion/getDbVersion normal value", p);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 42; data.setDbVersionMap(vm);
+        bool p = (data.getDbVersionMap().find("test_db")->second == 42);
+        appendStep(steps, seq++, "setDbVersionMap/getDbVersionMap normal value", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(100);
-        data.setDbVersion(0);
-        bool p = (data.getDbVersion() == 0);
-        appendStep(steps, seq++, "setDbVersion 0 after non-zero", p);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 100; data.setDbVersionMap(vm);
+        std::map<std::string, std::uint64_t> vm2; vm2["test_db"] = 0; data.setDbVersionMap(vm2);
+        bool p = (data.getDbVersionMap().find("test_db")->second == 0);
+        appendStep(steps, seq++, "setDbVersionMap 0 after non-zero", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(UINT64_MAX);
-        bool p = (data.getDbVersion() == UINT64_MAX);
-        appendStep(steps, seq++, "setDbVersion UINT64_MAX", p);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = UINT64_MAX; data.setDbVersionMap(vm);
+        bool p = (data.getDbVersionMap().find("test_db")->second == UINT64_MAX);
+        appendStep(steps, seq++, "setDbVersionMap UINT64_MAX", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(1);
-        bool p = (data.getDbVersion() == 1);
-        appendStep(steps, seq++, "setDbVersion minimum non-zero", p);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 1; data.setDbVersionMap(vm);
+        bool p = (data.getDbVersionMap().find("test_db")->second == 1);
+        appendStep(steps, seq++, "setDbVersionMap minimum non-zero", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(1234567890123ULL);
-        bool p = (data.getDbVersion() == 1234567890123ULL);
-        appendStep(steps, seq++, "setDbVersion large value", p);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 1234567890123ULL; data.setDbVersionMap(vm);
+        bool p = (data.getDbVersionMap().find("test_db")->second == 1234567890123ULL);
+        appendStep(steps, seq++, "setDbVersionMap large value", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(UINT64_MAX - 1);
-        bool p = (data.getDbVersion() == UINT64_MAX - 1);
-        appendStep(steps, seq++, "setDbVersion UINT64_MAX-1", p);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = UINT64_MAX - 1; data.setDbVersionMap(vm);
+        bool p = (data.getDbVersionMap().find("test_db")->second == UINT64_MAX - 1);
+        appendStep(steps, seq++, "setDbVersionMap UINT64_MAX-1", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(0);
-        bool p = (data.getDbVersion() == 0);
-        appendStep(steps, seq++, "setDbVersion explicit 0", p);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 0; data.setDbVersionMap(vm);
+        bool p = (data.getDbVersionMap().find("test_db")->second == 0);
+        appendStep(steps, seq++, "setDbVersionMap explicit 0", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(999999);
-        data.setDbVersion(1);
-        bool p = (data.getDbVersion() == 1);
-        appendStep(steps, seq++, "setDbVersion overwrite smaller", p);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 999999; data.setDbVersionMap(vm);
+        std::map<std::string, std::uint64_t> vm2; vm2["test_db"] = 1; data.setDbVersionMap(vm2);
+        bool p = (data.getDbVersionMap().find("test_db")->second == 1);
+        appendStep(steps, seq++, "setDbVersionMap overwrite smaller", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(1);
-        data.setDbVersion(999999);
-        bool p = (data.getDbVersion() == 999999);
-        appendStep(steps, seq++, "setDbVersion overwrite larger", p);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 1; data.setDbVersionMap(vm);
+        std::map<std::string, std::uint64_t> vm2; vm2["test_db"] = 999999; data.setDbVersionMap(vm2);
+        bool p = (data.getDbVersionMap().find("test_db")->second == 999999);
+        appendStep(steps, seq++, "setDbVersionMap overwrite larger", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data1;
-        data1.setDbVersion(0);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 0; data1.setDbVersionMap(vm);
         std::string json = data1.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getDbVersion() == 0);
-        appendStep(steps, seq++, "toJson/fromJson roundtrip dbVersion=0", p);
+        bool p = (data2.getDbVersionMap().find("test_db")->second == 0);
+        appendStep(steps, seq++, "toJson/fromJson roundtrip dbVersionMap=0", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data1;
-        data1.setDbVersion(12345);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 12345; data1.setDbVersionMap(vm);
         std::string json = data1.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getDbVersion() == 12345);
-        appendStep(steps, seq++, "toJson/fromJson roundtrip dbVersion=12345", p);
+        bool p = (data2.getDbVersionMap().find("test_db")->second == 12345);
+        appendStep(steps, seq++, "toJson/fromJson roundtrip dbVersionMap=12345", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data1;
-        data1.setDbVersion(UINT64_MAX);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = UINT64_MAX; data1.setDbVersionMap(vm);
         std::string json = data1.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getDbVersion() == UINT64_MAX);
-        appendStep(steps, seq++, "toJson/fromJson roundtrip dbVersion=UINT64_MAX", p);
+        bool p = (data2.getDbVersionMap().find("test_db")->second == UINT64_MAX);
+        appendStep(steps, seq++, "toJson/fromJson roundtrip dbVersionMap=UINT64_MAX", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data1;
-        data1.setDbVersion(777);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 777; data1.setDbVersionMap(vm);
         std::string json = data1.toJson();
-        bool p = (json.find("\"dbVersion\"") != std::string::npos);
-        appendStep(steps, seq++, "JSON contains dbVersion field", p);
+        bool p = (json.find("\"dbVersionMap\"") != std::string::npos);
+        appendStep(steps, seq++, "JSON contains dbVersionMap field", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         std::string oldJson = R"({"type":"TEST","id":"test","password":"","dbName":"","sql":"","success":false,"message":"","affectedRows":0,"columns":[],"rows":[],"databases":[]})";
         NetworkTransferData data = NetworkTransferData::fromJson(oldJson);
-        bool p = (data.getDbVersion() == 0);
-        appendStep(steps, seq++, "Old JSON without dbVersion defaults to 0", p);
+        bool p = (data.getDbVersionMap().empty());
+        appendStep(steps, seq++, "Old JSON without dbVersionMap defaults to empty", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(555);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 555; data.setDbVersionMap(vm);
         std::string json = data.toJson();
-        bool p = (json.find("\"dbVersion\":555") != std::string::npos);
-        appendStep(steps, seq++, "JSON dbVersion value serialized correctly", p);
+        bool p = (json.find("\"dbVersionMap\":{\"test_db\":555}") != std::string::npos);
+        appendStep(steps, seq++, "JSON dbVersionMap value serialized correctly", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(UINT64_MAX);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = UINT64_MAX; data.setDbVersionMap(vm);
         std::string json = data.toJson();
-        bool p = (json.find("18446744073709551615") != std::string::npos);
-        appendStep(steps, seq++, "JSON dbVersion UINT64_MAX serialized correctly", p);
+        bool p = (json.find("\"test_db\":18446744073709551615") != std::string::npos);
+        appendStep(steps, seq++, "JSON dbVersionMap UINT64_MAX serialized correctly", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData req(NetworkTransferData::DB_VERSION_REQUEST, "user1");
-        req.setDbVersion(10);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 10; req.setDbVersionMap(vm);
         std::string json = req.toJson();
         NetworkTransferData req2 = NetworkTransferData::fromJson(json);
-        bool p = (req2.getDbVersion() == 10 && req2.getType() == NetworkTransferData::DB_VERSION_REQUEST);
-        appendStep(steps, seq++, "DB_VERSION_REQUEST with dbVersion roundtrip", p);
+        bool p = (req2.getDbVersionMap().find("test_db")->second == 10 && req2.getType() == NetworkTransferData::DB_VERSION_REQUEST);
+        appendStep(steps, seq++, "DB_VERSION_REQUEST with dbVersionMap roundtrip", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData resp(NetworkTransferData::DB_VERSION_RESPONSE, "user1");
         resp.setSuccess(true);
-        resp.setDbVersion(20);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 20; resp.setDbVersionMap(vm);
         std::string json = resp.toJson();
         NetworkTransferData resp2 = NetworkTransferData::fromJson(json);
-        bool p = (resp2.getDbVersion() == 20 && resp2.getSuccess());
-        appendStep(steps, seq++, "DB_VERSION_RESPONSE with dbVersion roundtrip", p);
+        bool p = (resp2.getDbVersionMap().find("test_db")->second == 20 && resp2.getSuccess());
+        appendStep(steps, seq++, "DB_VERSION_RESPONSE with dbVersionMap roundtrip", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, "user1");
         req.setDbName("test_db");
         req.setSql("SELECT * FROM t;");
-        req.setDbVersion(42);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 42; req.setDbVersionMap(vm);
         std::string json = req.toJson();
         NetworkTransferData req2 = NetworkTransferData::fromJson(json);
-        bool p = (req2.getDbVersion() == 42 && req2.getDbName() == "test_db");
-        appendStep(steps, seq++, "SQL_EXEC_REQUEST full roundtrip with dbVersion", p);
+        bool p = (req2.getDbVersionMap().find("test_db")->second == 42 && req2.getDbName() == "test_db");
+        appendStep(steps, seq++, "SQL_EXEC_REQUEST full roundtrip with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
@@ -234,99 +235,99 @@ int main() {
         resp.setMessage("Query OK.");
         resp.setAffectedRows(0);
         resp.setDbName("test_db");
-        resp.setDbVersion(43);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 43; resp.setDbVersionMap(vm);
         std::string json = resp.toJson();
         NetworkTransferData resp2 = NetworkTransferData::fromJson(json);
-        bool p = (resp2.getDbVersion() == 43 && resp2.getSuccess());
-        appendStep(steps, seq++, "SQL_EXEC_RESPONSE full roundtrip with dbVersion", p);
+        bool p = (resp2.getDbVersionMap().find("test_db")->second == 43 && resp2.getSuccess());
+        appendStep(steps, seq++, "SQL_EXEC_RESPONSE full roundtrip with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData resp(NetworkTransferData::SQL_QUERY_RESPONSE, "user1");
         resp.setSuccess(true);
-        resp.setDbVersion(50);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 50; resp.setDbVersionMap(vm);
         std::vector<std::vector<std::string>> rows = {{"1", "a"}, {"2", "b"}};
         resp.setRows(rows);
         std::string json = resp.toJson();
         NetworkTransferData resp2 = NetworkTransferData::fromJson(json);
-        bool p = (resp2.getDbVersion() == 50 && resp2.getRows().size() == 2);
-        appendStep(steps, seq++, "SQL_QUERY_RESPONSE with dbVersion and rows roundtrip", p);
+        bool p = (resp2.getDbVersionMap().find("test_db")->second == 50 && resp2.getRows().size() == 2);
+        appendStep(steps, seq++, "SQL_QUERY_RESPONSE with dbVersionMap and rows roundtrip", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData resp(NetworkTransferData::DIRECTORY_RESPONSE, "");
         resp.setSuccess(true);
-        resp.setDbVersion(0);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 0; resp.setDbVersionMap(vm);
         std::string json = resp.toJson();
         NetworkTransferData resp2 = NetworkTransferData::fromJson(json);
-        bool p = (resp2.getDbVersion() == 0 && resp2.getType() == NetworkTransferData::DIRECTORY_RESPONSE);
-        appendStep(steps, seq++, "DIRECTORY_RESPONSE with dbVersion=0 roundtrip", p);
+        bool p = (resp2.getDbVersionMap().find("test_db")->second == 0 && resp2.getType() == NetworkTransferData::DIRECTORY_RESPONSE);
+        appendStep(steps, seq++, "DIRECTORY_RESPONSE with dbVersionMap=0 roundtrip", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(1);
-        data.setDbVersion(2);
-        data.setDbVersion(3);
-        bool p = (data.getDbVersion() == 3);
-        appendStep(steps, seq++, "Multiple sequential setDbVersion calls", p);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 1; data.setDbVersionMap(vm);
+        std::map<std::string, std::uint64_t> vm2; vm2["test_db"] = 2; data.setDbVersionMap(vm2);
+        std::map<std::string, std::uint64_t> vm3; vm3["test_db"] = 3; data.setDbVersionMap(vm3);
+        bool p = (data.getDbVersionMap().find("test_db")->second == 3);
+        appendStep(steps, seq++, "Multiple sequential setDbVersionMap calls", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(100);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 100; data.setDbVersionMap(vm);
         std::string json = data.toJson();
-        bool p = (json.find("\"dbVersion\":100") != std::string::npos);
-        appendStep(steps, seq++, "JSON dbVersion 100 serialized correctly", p);
+        bool p = (json.find("\"dbVersionMap\":{\"test_db\":100}") != std::string::npos);
+        appendStep(steps, seq++, "JSON dbVersionMap 100 serialized correctly", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(0);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 0; data.setDbVersionMap(vm);
         std::string json = data.toJson();
-        bool p = (json.find("\"dbVersion\":0") != std::string::npos);
-        appendStep(steps, seq++, "JSON dbVersion 0 serialized correctly", p);
+        bool p = (json.find("\"dbVersionMap\":{\"test_db\":0}") != std::string::npos);
+        appendStep(steps, seq++, "JSON dbVersionMap 0 serialized correctly", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(999);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 999; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getDbVersion() == 999);
-        appendStep(steps, seq++, "dbVersion 999 roundtrip", p);
+        bool p = (data2.getDbVersionMap().find("test_db")->second == 999);
+        appendStep(steps, seq++, "dbVersionMap 999 roundtrip", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(1);
-        data.setDbVersion(UINT64_MAX);
-        bool p = (data.getDbVersion() == UINT64_MAX);
-        appendStep(steps, seq++, "setDbVersion to max after min", p);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 1; data.setDbVersionMap(vm);
+        std::map<std::string, std::uint64_t> vm2; vm2["test_db"] = UINT64_MAX; data.setDbVersionMap(vm2);
+        bool p = (data.getDbVersionMap().find("test_db")->second == UINT64_MAX);
+        appendStep(steps, seq++, "setDbVersionMap to max after min", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(UINT64_MAX);
-        data.setDbVersion(0);
-        bool p = (data.getDbVersion() == 0);
-        appendStep(steps, seq++, "setDbVersion to 0 after max", p);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = UINT64_MAX; data.setDbVersionMap(vm);
+        std::map<std::string, std::uint64_t> vm2; vm2["test_db"] = 0; data.setDbVersionMap(vm2);
+        bool p = (data.getDbVersionMap().find("test_db")->second == 0);
+        appendStep(steps, seq++, "setDbVersionMap to 0 after max", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(500);
-        data.setDbVersion(500);
-        bool p = (data.getDbVersion() == 500);
-        appendStep(steps, seq++, "setDbVersion same value twice", p);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 500; data.setDbVersionMap(vm);
+        std::map<std::string, std::uint64_t> vm2; vm2["test_db"] = 500; data.setDbVersionMap(vm2);
+        bool p = (data.getDbVersionMap().find("test_db")->second == 500);
+        appendStep(steps, seq++, "setDbVersionMap same value twice", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(123);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 123; data.setDbVersionMap(vm);
         std::string json = data.toJson();
-        bool p = (json.find("\"dbVersion\"") != std::string::npos);
-        appendStep(steps, seq++, "dbVersion field present in JSON for all values", p);
+        bool p = (json.find("\"dbVersionMap\"") != std::string::npos);
+        appendStep(steps, seq++, "dbVersionMap field present in JSON for all values", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
 
@@ -489,101 +490,101 @@ int main() {
         NetworkTransferData data;
         data.setType("TEST");
         data.setId("user");
-        data.setDbVersion(10);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 10; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getType() == "TEST" && data2.getId() == "user" && data2.getDbVersion() == 10);
+        bool p = (data2.getType() == "TEST" && data2.getId() == "user" && data2.getDbVersionMap().find("test_db")->second == 10);
         appendStep(steps, seq++, "All fields preserved in JSON roundtrip", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setMessage("hello world");
-        data.setDbVersion(1);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 1; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getMessage() == "hello world" && data2.getDbVersion() == 1);
-        appendStep(steps, seq++, "Message field preserved with dbVersion", p);
+        bool p = (data2.getMessage() == "hello world" && data2.getDbVersionMap().find("test_db")->second == 1);
+        appendStep(steps, seq++, "Message field preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setMessage("special \"chars\" and \\ backslash");
-        data.setDbVersion(2);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 2; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getMessage() == "special \"chars\" and \\ backslash" && data2.getDbVersion() == 2);
+        bool p = (data2.getMessage() == "special \"chars\" and \\ backslash" && data2.getDbVersionMap().find("test_db")->second == 2);
         appendStep(steps, seq++, "Special characters in message preserved", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setMessage("");
-        data.setDbVersion(3);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 3; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getMessage().empty() && data2.getDbVersion() == 3);
-        appendStep(steps, seq++, "Empty message preserved with dbVersion", p);
+        bool p = (data2.getMessage().empty() && data2.getDbVersionMap().find("test_db")->second == 3);
+        appendStep(steps, seq++, "Empty message preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setDbName("my_database");
-        data.setDbVersion(4);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 4; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getDbName() == "my_database" && data2.getDbVersion() == 4);
-        appendStep(steps, seq++, "DbName field preserved with dbVersion", p);
+        bool p = (data2.getDbName() == "my_database" && data2.getDbVersionMap().find("test_db")->second == 4);
+        appendStep(steps, seq++, "DbName field preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setSql("SELECT * FROM users WHERE id = 1;");
-        data.setDbVersion(5);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 5; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getSql() == "SELECT * FROM users WHERE id = 1;" && data2.getDbVersion() == 5);
-        appendStep(steps, seq++, "SQL field preserved with dbVersion", p);
+        bool p = (data2.getSql() == "SELECT * FROM users WHERE id = 1;" && data2.getDbVersionMap().find("test_db")->second == 5);
+        appendStep(steps, seq++, "SQL field preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setSuccess(true);
-        data.setDbVersion(6);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 6; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getSuccess() == true && data2.getDbVersion() == 6);
-        appendStep(steps, seq++, "Success field preserved with dbVersion", p);
+        bool p = (data2.getSuccess() == true && data2.getDbVersionMap().find("test_db")->second == 6);
+        appendStep(steps, seq++, "Success field preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setAffectedRows(100);
-        data.setDbVersion(7);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 7; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getAffectedRows() == 100 && data2.getDbVersion() == 7);
-        appendStep(steps, seq++, "AffectedRows field preserved with dbVersion", p);
+        bool p = (data2.getAffectedRows() == 100 && data2.getDbVersionMap().find("test_db")->second == 7);
+        appendStep(steps, seq++, "AffectedRows field preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setColumns({"id", "name", "age"});
-        data.setDbVersion(8);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 8; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getColumns().size() == 3 && data2.getDbVersion() == 8);
-        appendStep(steps, seq++, "Columns field preserved with dbVersion", p);
+        bool p = (data2.getColumns().size() == 3 && data2.getDbVersionMap().find("test_db")->second == 8);
+        appendStep(steps, seq++, "Columns field preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setRows({{"1", "alice"}, {"2", "bob"}});
-        data.setDbVersion(9);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 9; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getRows().size() == 2 && data2.getDbVersion() == 9);
-        appendStep(steps, seq++, "Rows field preserved with dbVersion", p);
+        bool p = (data2.getRows().size() == 2 && data2.getDbVersionMap().find("test_db")->second == 9);
+        appendStep(steps, seq++, "Rows field preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
@@ -594,54 +595,54 @@ int main() {
         DatabaseNode db2; db2.setName("db2"); db2.setDbVersion(20);
         dbs.push_back(db2);
         data.setDatabases(dbs);
-        data.setDbVersion(99);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 99; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
         bool p = (data2.getDatabases().size() == 2
                && data2.getDatabases()[0].getDbVersion() == 10
                && data2.getDatabases()[1].getDbVersion() == 20
-               && data2.getDbVersion() == 99);
-        appendStep(steps, seq++, "Databases list preserved with dbVersion", p);
+               && data2.getDbVersionMap().find("test_db")->second == 99);
+        appendStep(steps, seq++, "Databases list preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setPassword("secret123");
-        data.setDbVersion(11);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 11; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getPassword() == "secret123" && data2.getDbVersion() == 11);
-        appendStep(steps, seq++, "Password field preserved with dbVersion", p);
+        bool p = (data2.getPassword() == "secret123" && data2.getDbVersionMap().find("test_db")->second == 11);
+        appendStep(steps, seq++, "Password field preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setId("user_with_unicode_\u4e2d\u6587");
-        data.setDbVersion(12);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 12; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getId() == "user_with_unicode_\u4e2d\u6587" && data2.getDbVersion() == 12);
-        appendStep(steps, seq++, "Unicode in id preserved with dbVersion", p);
+        bool p = (data2.getId() == "user_with_unicode_\u4e2d\u6587" && data2.getDbVersionMap().find("test_db")->second == 12);
+        appendStep(steps, seq++, "Unicode in id preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setMessage("line1\nline2\nline3");
-        data.setDbVersion(13);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 13; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getMessage() == "line1\nline2\nline3" && data2.getDbVersion() == 13);
-        appendStep(steps, seq++, "Newlines in message preserved with dbVersion", p);
+        bool p = (data2.getMessage() == "line1\nline2\nline3" && data2.getDbVersionMap().find("test_db")->second == 13);
+        appendStep(steps, seq++, "Newlines in message preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setDbName("db_with_\u00e9\u00e8\u00ea");
-        data.setDbVersion(14);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 14; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getDbName() == "db_with_\u00e9\u00e8\u00ea" && data2.getDbVersion() == 14);
-        appendStep(steps, seq++, "Unicode in dbName preserved with dbVersion", p);
+        bool p = (data2.getDbName() == "db_with_\u00e9\u00e8\u00ea" && data2.getDbVersionMap().find("test_db")->second == 14);
+        appendStep(steps, seq++, "Unicode in dbName preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
@@ -649,11 +650,11 @@ int main() {
         std::vector<std::string> cols;
         for (int i = 0; i < 100; ++i) cols.push_back("col" + std::to_string(i));
         data.setColumns(cols);
-        data.setDbVersion(15);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 15; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getColumns().size() == 100 && data2.getDbVersion() == 15);
-        appendStep(steps, seq++, "Large columns array preserved with dbVersion", p);
+        bool p = (data2.getColumns().size() == 100 && data2.getDbVersionMap().find("test_db")->second == 15);
+        appendStep(steps, seq++, "Large columns array preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
@@ -661,11 +662,11 @@ int main() {
         std::vector<std::vector<std::string>> rows;
         for (int i = 0; i < 50; ++i) rows.push_back({std::to_string(i), "val" + std::to_string(i)});
         data.setRows(rows);
-        data.setDbVersion(16);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 16; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getRows().size() == 50 && data2.getDbVersion() == 16);
-        appendStep(steps, seq++, "Large rows array preserved with dbVersion", p);
+        bool p = (data2.getRows().size() == 50 && data2.getDbVersionMap().find("test_db")->second == 16);
+        appendStep(steps, seq++, "Large rows array preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
@@ -678,11 +679,11 @@ int main() {
             dbs.push_back(db);
         }
         data.setDatabases(dbs);
-        data.setDbVersion(17);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 17; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getDatabases().size() == 20 && data2.getDbVersion() == 17);
-        appendStep(steps, seq++, "Large databases array preserved with dbVersion", p);
+        bool p = (data2.getDatabases().size() == 20 && data2.getDbVersionMap().find("test_db")->second == 17);
+        appendStep(steps, seq++, "Large databases array preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
@@ -692,57 +693,57 @@ int main() {
         data.setDbName("");
         data.setSql("");
         data.setMessage("");
-        data.setDbVersion(18);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 18; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getType().empty() && data2.getDbVersion() == 18);
-        appendStep(steps, seq++, "Empty strings preserved with dbVersion", p);
+        bool p = (data2.getType().empty() && data2.getDbVersionMap().find("test_db")->second == 18);
+        appendStep(steps, seq++, "Empty strings preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setSuccess(false);
-        data.setDbVersion(19);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 19; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getSuccess() == false && data2.getDbVersion() == 19);
-        appendStep(steps, seq++, "Success=false preserved with dbVersion", p);
+        bool p = (data2.getSuccess() == false && data2.getDbVersionMap().find("test_db")->second == 19);
+        appendStep(steps, seq++, "Success=false preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
         data.setAffectedRows(0);
-        data.setDbVersion(20);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 20; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getAffectedRows() == 0 && data2.getDbVersion() == 20);
-        appendStep(steps, seq++, "AffectedRows=0 preserved with dbVersion", p);
+        bool p = (data2.getAffectedRows() == 0 && data2.getDbVersionMap().find("test_db")->second == 20);
+        appendStep(steps, seq++, "AffectedRows=0 preserved with dbVersionMap", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(21);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 21; data.setDbVersionMap(vm);
         std::string json = data.toJson();
-        bool p = (json.find("dbVersion") != std::string::npos);
-        appendStep(steps, seq++, "dbVersion key present in JSON", p);
+        bool p = (json.find("\"dbVersionMap\"") != std::string::npos);
+        appendStep(steps, seq++, "dbVersionMap key present in JSON", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(22);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 22; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getDbVersion() == 22);
-        appendStep(steps, seq++, "dbVersion 22 roundtrip", p);
+        bool p = (data2.getDbVersionMap().find("test_db")->second == 22);
+        appendStep(steps, seq++, "dbVersionMap 22 roundtrip", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(1000000);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 1000000; data.setDbVersionMap(vm);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getDbVersion() == 1000000);
-        appendStep(steps, seq++, "dbVersion 1000000 roundtrip", p);
+        bool p = (data2.getDbVersionMap().find("test_db")->second == 1000000);
+        appendStep(steps, seq++, "dbVersionMap 1000000 roundtrip", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
     {
@@ -761,13 +762,13 @@ int main() {
     }
     {
         NetworkTransferData data;
-        data.setDbVersion(23);
-        data.setDbVersion(24);
-        data.setDbVersion(25);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 23; data.setDbVersionMap(vm);
+        std::map<std::string, std::uint64_t> vm2; vm2["test_db"] = 24; data.setDbVersionMap(vm2);
+        std::map<std::string, std::uint64_t> vm3; vm3["test_db"] = 25; data.setDbVersionMap(vm3);
         std::string json = data.toJson();
         NetworkTransferData data2 = NetworkTransferData::fromJson(json);
-        bool p = (data2.getDbVersion() == 25);
-        appendStep(steps, seq++, "Multiple setDbVersion before toJson", p);
+        bool p = (data2.getDbVersionMap().find("test_db")->second == 25);
+        appendStep(steps, seq++, "Multiple setDbVersionMap before toJson", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
 
@@ -848,13 +849,13 @@ int main() {
         NetworkTransferData errResp(NetworkTransferData::SQL_EXEC_RESPONSE, "user1");
         errResp.setSuccess(false);
         errResp.setDbName("test_db");
-        errResp.setDbVersion(10);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 10; errResp.setDbVersionMap(vm);
         errResp.setMessage("Database version mismatch: client=5, server=10. Please refresh the directory.");
         std::string json = errResp.toJson();
         NetworkTransferData err2 = NetworkTransferData::fromJson(json);
         bool p = (!err2.getSuccess()
                && err2.getDbName() == "test_db"
-               && err2.getDbVersion() == 10
+               && err2.getDbVersionMap().find("test_db")->second == 10
                && err2.getMessage().find("version mismatch") != std::string::npos);
         appendStep(steps, seq++, "Version mismatch error response format", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
@@ -862,11 +863,11 @@ int main() {
     {
         NetworkTransferData errResp(NetworkTransferData::SQL_EXEC_RESPONSE, "user1");
         errResp.setSuccess(false);
-        errResp.setDbVersion(99);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 99; errResp.setDbVersionMap(vm);
         errResp.setMessage("version mismatch");
         std::string json = errResp.toJson();
         NetworkTransferData err2 = NetworkTransferData::fromJson(json);
-        bool p = (!err2.getSuccess() && err2.getDbVersion() == 99);
+        bool p = (!err2.getSuccess() && err2.getDbVersionMap().find("test_db")->second == 99);
         appendStep(steps, seq++, "Short version mismatch message format", p);
         std::cout << "  " << (p ? "[PASS]" : "[FAIL]") << " M-" << (seq-1) << "\n";
     }
@@ -874,7 +875,7 @@ int main() {
         NetworkTransferData errResp(NetworkTransferData::SQL_EXEC_RESPONSE, "user1");
         errResp.setSuccess(false);
         errResp.setMessage("Table not found");
-        errResp.setDbVersion(0);
+        std::map<std::string, std::uint64_t> vm; vm["test_db"] = 0; errResp.setDbVersionMap(vm);
         std::string json = errResp.toJson();
         NetworkTransferData err2 = NetworkTransferData::fromJson(json);
         bool p = (!err2.getSuccess() && err2.getMessage() == "Table not found");

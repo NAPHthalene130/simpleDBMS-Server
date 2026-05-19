@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <map>
 #include <system_error>
 
 #include <asio/read.hpp>
@@ -76,13 +77,16 @@ std::string buildResponseType(const std::string &requestType, ExecutionStatement
         return NetworkTransferData::DB_VERSION_RESPONSE;
     }
 
+    if (requestType == NetworkTransferData::SQL_TEMP_EXEC_REQUEST) {
+        return NetworkTransferData::SQL_TEMP_EXEC_RESPONSE;
+    }
+
     return NetworkTransferData::ERROR_RESPONSE;
 }
 
 NetworkTransferData buildFailureResponse(const std::string &message,
                                          const NetworkTransferData *requestData = nullptr,
-                                         std::uint64_t dbVersion = 0,
-                                         bool hasVersionContext = false)
+                                         const std::map<std::string, std::uint64_t> &versionMap = {})
 {
     const std::string requestType = requestData != nullptr ? requestData->getType() : "";
     const std::string requestId = requestData != nullptr ? requestData->getId() : "";
@@ -92,8 +96,8 @@ NetworkTransferData buildFailureResponse(const std::string &message,
     if (requestData != nullptr) {
         responseData.setDbName(requestData->getDbName());
     }
-    if (hasVersionContext) {
-        responseData.setDbVersion(dbVersion);
+    if (!versionMap.empty()) {
+        responseData.setDbVersionMap(versionMap);
     }
     return responseData;
 }
@@ -101,7 +105,7 @@ NetworkTransferData buildFailureResponse(const std::string &message,
 NetworkTransferData buildExecutionResponse(const ExecutionResult &executionResult,
                                             const NetworkTransferData &requestData,
                                             ExecutionStatementType statementType,
-                                            std::uint64_t dbVersion = 0)
+                                            const std::map<std::string, std::uint64_t> &versionMap)
 {
     NetworkTransferData responseData(buildResponseType(requestData.getType(), statementType), requestData.getId());
     responseData.setSuccess(executionResult.getStatus() == ExecutionStatus::Success);
@@ -109,7 +113,7 @@ NetworkTransferData buildExecutionResponse(const ExecutionResult &executionResul
     responseData.setAffectedRows(executionResult.getAffectedRows());
     responseData.setDbName(executionResult.getDbName());
     responseData.setRows(executionResult.getResultSet());
-    responseData.setDbVersion(dbVersion);
+    responseData.setDbVersionMap(versionMap);
     return responseData;
 }
 
@@ -263,8 +267,23 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
         core->getNetworkManager()->getNetSender()->send(clientSocket, responseData.toJson());
     };
 
-    auto sendFailureResponse = [&](const std::string &message, std::uint64_t dbVer = 0, bool hasVer = false) {
-        sendResponse(buildFailureResponse(message, &networkTransferData, dbVer, hasVer));
+    auto sendFailureResponse = [&](const std::string &message,
+                                   const std::map<std::string, std::uint64_t> &versionMap = {}) {
+        sendResponse(buildFailureResponse(message, &networkTransferData, versionMap));
+    };
+
+    auto buildFullVersionMap = [&]() -> std::map<std::string, std::uint64_t> {
+        std::map<std::string, std::uint64_t> versionMap;
+        if (core != nullptr && core->getStorageManager() != nullptr
+            && core->getStorageManager()->getSystemCatalogManager() != nullptr) {
+            auto *systemCatalogManager = core->getStorageManager()->getSystemCatalogManager();
+            const auto databaseBlocks = systemCatalogManager->getAllDatabases();
+            for (const auto &db : databaseBlocks) {
+                const std::string dbName = fixedArrayToStr(db.getName());
+                versionMap[dbName] = systemCatalogManager->getDatabaseVersion(dbName);
+            }
+        }
+        return versionMap;
     };
 
     try {
@@ -449,6 +468,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 databaseNodes.push_back(node);
             }
             responseData.setDatabases(databaseNodes);
+            responseData.setDbVersionMap(buildFullVersionMap());
             LogWriter::info("network", "NetReceiver", "processMsg",
                             std::string("DB_VERSION_REQUEST returned ")
                                 + std::to_string(databaseNodes.size()) + " databases.");
@@ -480,22 +500,26 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             // 数据库版本号核验
             // 作者：NAPH130
             const std::string requestDbName = networkTransferData.getDbName();
-            const std::uint64_t clientVersion = networkTransferData.getDbVersion();
-            std::uint64_t serverVersion = 0;
+            std::map<std::string, std::uint64_t> fullVersionMap;
             bool versionChecked = false;
-             if (!requestDbName.empty() && core->getStorageManager() != nullptr
+            if (!requestDbName.empty() && core->getStorageManager() != nullptr
                 && core->getStorageManager()->getSystemCatalogManager() != nullptr) {
-                serverVersion = core->getStorageManager()->getSystemCatalogManager()
-                                    ->getDatabaseVersion(requestDbName);
+                fullVersionMap = buildFullVersionMap();
+                const auto &clientVersionMap = networkTransferData.getDbVersionMap();
+                auto clientIt = clientVersionMap.find(requestDbName);
+                const std::uint64_t clientVersion = (clientIt != clientVersionMap.end()) ? clientIt->second : 0;
+                auto serverIt = fullVersionMap.find(requestDbName);
+                const std::uint64_t serverVersion = (serverIt != fullVersionMap.end()) ? serverIt->second : 0;
                 if (clientVersion != serverVersion) {
-                    // 客户端首次请求(dbVersion=0)允许通过
+                    // clientVersion==0 表示不校验版本（SELECT等查询），直接放行
+                    // 仅当两者均为 0 时（数据库尚无版本记录）也允许首次请求通过
                     // 作者：NAPH130
-                    if (clientVersion != 0) {
+                    if (clientVersion > 0) {
                         NetworkTransferData versionError(NetworkTransferData::SQL_EXEC_RESPONSE,
                                                           networkTransferData.getId());
                         versionError.setSuccess(false);
                         versionError.setDbName(requestDbName);
-                        versionError.setDbVersion(serverVersion);
+                        versionError.setDbVersionMap(fullVersionMap);
                         versionError.setMessage("Database version mismatch: client="
                             + std::to_string(clientVersion) + ", server=" + std::to_string(serverVersion)
                             + ". Please refresh the directory.");
@@ -523,7 +547,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
 
             if (statementTokensList.empty()) {
                 LogWriter::warning("network", "NetReceiver", "processMsg", "No SQL statements found.");
-                sendFailureResponse("No SQL statements found.", serverVersion, versionChecked);
+                sendFailureResponse("No SQL statements found.", fullVersionMap);
                 return;
             }
 
@@ -569,7 +593,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                             "Statement " + std::to_string(statementNumber)
                             + " parse failed at token " + std::to_string(parseResult.errorTokenIndex)
                             + ": " + parseResult.errorMessage,
-                            &networkTransferData, serverVersion, versionChecked);
+                            &networkTransferData, fullVersionMap);
                         sendResponse(errorResponse);
                         continue;
                     }
@@ -606,7 +630,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                                     }
 
                                     NetworkTransferData responseData = buildExecutionResponse(
-                                        planExecResult, networkTransferData, statementType, serverVersion);
+                                        planExecResult, networkTransferData, statementType, fullVersionMap);
                                     responseData.setColumns(planExecResult.getColumns());
                                     responseData.setRows(planExecResult.getResultSet());
                                     sendResponse(responseData);
@@ -696,14 +720,14 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
 
                             NetworkTransferData responseData =
                                 buildExecutionResponse(unionResult, networkTransferData, ExecutionStatementType::Select,
-                                                       serverVersion);
+                                                       fullVersionMap);
                             responseData.setColumns(unionColumns);
                             responseData.setRows(unionRows);
                             sendResponse(responseData);
                         } else {
                             NetworkTransferData errorResponse = buildFailureResponse(
                                 "UNION failed: " + leftResult.getMessage() + " / " + rightResult.getMessage(),
-                                &networkTransferData, serverVersion, versionChecked);
+                                &networkTransferData, fullVersionMap);
                             sendResponse(errorResponse);
                         }
                         continue;
@@ -745,12 +769,11 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                         && executionResult.getStatus() == ExecutionStatus::Success) {
                         core->getStorageManager()->getSystemCatalogManager()
                             ->addDatabaseVersion(requestDbName);
-                        serverVersion = core->getStorageManager()->getSystemCatalogManager()
-                                            ->getDatabaseVersion(requestDbName);
+                        fullVersionMap = buildFullVersionMap();
                     }
 
                     NetworkTransferData responseData = buildExecutionResponse(
-                        executionResult, networkTransferData, statementType, serverVersion);
+                        executionResult, networkTransferData, statementType, fullVersionMap);
                     if (isQueryStatementType(statementType)) {
                         std::vector<std::string> resultColumns = executionResult.getColumns();
                         if (resultColumns.empty()) {
@@ -768,7 +791,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                     NetworkTransferData errorResponse = buildFailureResponse(
                         "Statement " + std::to_string(statementNumber)
                         + " execution failed: " + std::string(exception.what()),
-                        &networkTransferData, serverVersion, versionChecked);
+                        &networkTransferData, fullVersionMap);
                     sendResponse(errorResponse);
                 }
             }
@@ -780,6 +803,8 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
              * @brief 处理临时 SQL 执行请求（不修改当前会话数据库上下文）
              * @author Qi
              * @details 从请求中提取目标 dbName 执行查询，返回结果但不更新会话 currentDbName。
+             *          新增数据库版本号核验逻辑，与 SQL_EXEC_REQUEST 保持一致。
+             * @author NAPH130
              */
             const std::string tempSql = networkTransferData.getSql();
             const std::string tempDbName = networkTransferData.getDbName();
@@ -795,11 +820,51 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
                 return;
             }
 
+            // 数据库版本号核验
+            // 作者：NAPH130
+            std::map<std::string, std::uint64_t> fullVersionMap;
+            bool versionChecked = false;
+            if (!tempDbName.empty() && core->getStorageManager() != nullptr
+                && core->getStorageManager()->getSystemCatalogManager() != nullptr) {
+                fullVersionMap = buildFullVersionMap();
+                const auto &clientVersionMap = networkTransferData.getDbVersionMap();
+                auto clientIt = clientVersionMap.find(tempDbName);
+                const std::uint64_t clientVersion = (clientIt != clientVersionMap.end()) ? clientIt->second : 0;
+                auto serverIt = fullVersionMap.find(tempDbName);
+                const std::uint64_t serverVersion = (serverIt != fullVersionMap.end()) ? serverIt->second : 0;
+                if (clientVersion != serverVersion) {
+                    // clientVersion==0 表示不校验版本（SELECT等查询），直接放行
+                    // 仅当两者均为 0 时（数据库尚无版本记录）也允许首次请求通过
+                    // 作者：NAPH130
+                    if (clientVersion > 0) {
+                        NetworkTransferData versionError(
+                            NetworkTransferData::SQL_TEMP_EXEC_RESPONSE,
+                            networkTransferData.getId());
+                        versionError.setSuccess(false);
+                        versionError.setDbName(tempDbName);
+                        versionError.setDbVersionMap(fullVersionMap);
+                        versionError.setMessage("Database version mismatch: client="
+                            + std::to_string(clientVersion) + ", server="
+                            + std::to_string(serverVersion)
+                            + ". Please refresh the directory.");
+                        LogWriter::warning("network", "NetReceiver", "processMsg",
+                                           std::string("Database version mismatch for ")
+                                               + tempDbName + ": client="
+                                               + std::to_string(clientVersion)
+                                               + ", server=" + std::to_string(serverVersion));
+                        sendResponse(versionError);
+                        return;
+                    }
+                }
+                versionChecked = true;
+            }
+
             Tokenizer tokenizer(core, tempSql);
             const std::vector<Token> tokens = tokenizer.tokenize();
             const ParseResult parseResult = core->getParserManager()->getParser()->parse(tokens);
             if (!parseResult.success || parseResult.statement == nullptr) {
-                sendFailureResponse("Parse failed: " + parseResult.errorMessage);
+                sendFailureResponse("Parse failed: " + parseResult.errorMessage,
+                                    versionChecked ? fullVersionMap : std::map<std::string, std::uint64_t>{});
                 return;
             }
 
@@ -807,12 +872,23 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             tempContext.setCurrentDbName(tempDbName);
             tempContext.setConnectionId("temp_query");
 
+            const ExecutionStatementType stmtType = parseResult.statement->getStmtType();
+
             const ExecutionResult execResult =
                 core->getExecutorManager()->getExecutorEngine()->execute(
                     parseResult.statement.get(), &tempContext);
 
-            const ExecutionStatementType stmtType = parseResult.statement->getStmtType();
-            NetworkTransferData responseData = buildExecutionResponse(execResult, networkTransferData, stmtType);
+            // DDL/DML 操作成功后递增版本号
+            // 作者：NAPH130
+            if (versionChecked && !isQueryStatementType(stmtType)
+                && execResult.getStatus() == ExecutionStatus::Success) {
+                core->getStorageManager()->getSystemCatalogManager()
+                    ->addDatabaseVersion(tempDbName);
+                fullVersionMap = buildFullVersionMap();
+            }
+
+            NetworkTransferData responseData = buildExecutionResponse(
+                execResult, networkTransferData, stmtType, fullVersionMap);
             if (isQueryStatementType(stmtType)) {
                 std::vector<std::string> resultCols = execResult.getColumns();
                 if (resultCols.empty()) resultCols = buildQueryColumns(parseResult.statement.get());
@@ -872,6 +948,7 @@ void NetReceiver::processMsg(std::shared_ptr<asio::ip::tcp::socket> clientSocket
             }
 
             responseData.setDatabases(databaseNodes);
+            responseData.setDbVersionMap(buildFullVersionMap());
             LogWriter::info("network",
                             "NetReceiver",
                             "processMsg",

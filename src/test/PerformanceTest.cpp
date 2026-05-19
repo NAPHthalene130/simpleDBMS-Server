@@ -118,10 +118,14 @@ void writeReportLog(const std::string &suite, const std::vector<TestStepResult> 
 uint64_t getServerVersion(asio::ip::tcp::socket *sock, const std::string &dbName, const std::string &uid) {
     NetworkTransferData probeReq(NetworkTransferData::SQL_EXEC_REQUEST, uid);
     probeReq.setDbName(dbName);
-    probeReq.setDbVersion(999999);
+    std::map<std::string, std::uint64_t> vm;
+    vm[dbName] = 999999;
+    probeReq.setDbVersionMap(vm);
     probeReq.setSql("SHOW TABLES;");
     auto probeResp = sendRecv(sock, probeReq);
-    return probeResp.getDbVersion();
+    const auto &m = probeResp.getDbVersionMap();
+    auto it = m.find(dbName);
+    return it != m.end() ? it->second : 0;
 }
 
 } // namespace
@@ -150,7 +154,12 @@ int main() {
         auto exec = [&](const std::string &sql, const std::string &db = "", uint64_t ver = 0) {
             NetworkTransferData req(NetworkTransferData::SQL_EXEC_REQUEST, UID);
             req.setSql(sql);
-            if (!db.empty()) { req.setDbName(db); req.setDbVersion(ver); }
+            if (!db.empty()) {
+                req.setDbName(db);
+                std::map<std::string, std::uint64_t> vm;
+                vm[db] = ver;
+                req.setDbVersionMap(vm);
+            }
             return sendRecv(&sock, req);
         };
 
@@ -201,7 +210,9 @@ int main() {
             for (int i = 1; i <= 100; ++i) {
                 auto r = exec("INSERT INTO " + TBL + " VALUES (" + std::to_string(i) + ", 'user" + std::to_string(i) + "', " + std::to_string(20 + (i % 50)) + ", " + std::to_string(30000 + i * 100) + ".00);", DB, v);
                 if (!r.getSuccess()) allOk = false;
-                v = r.getDbVersion();
+                const auto &m = r.getDbVersionMap();
+                auto it = m.find(DB);
+                v = it != m.end() ? it->second : 0;
             }
             appendStep(steps, seq++, "INSERT 100 rows into perf_users", allOk);
             std::cout << "  " << (allOk ? "[PASS]" : "[FAIL]") << " P-" << (seq-1) << "\n";
@@ -254,7 +265,9 @@ int main() {
             for (int i = 101; i <= 200; ++i) {
                 auto r = exec("INSERT INTO " + TBL + " VALUES (" + std::to_string(i) + ", 'user" + std::to_string(i) + "', " + std::to_string(20 + (i % 50)) + ", " + std::to_string(30000 + i * 100) + ".00);", DB, v);
                 if (!r.getSuccess()) allOk = false;
-                v = r.getDbVersion();
+                const auto &m = r.getDbVersionMap();
+                auto it = m.find(DB);
+                v = it != m.end() ? it->second : 0;
             }
             appendStep(steps, seq++, "INSERT another 100 rows (total 200)", allOk);
             std::cout << "  " << (allOk ? "[PASS]" : "[FAIL]") << " P-" << (seq-1) << "\n";

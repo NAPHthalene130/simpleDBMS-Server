@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -125,8 +126,8 @@ public:
     const std::vector<DatabaseNode> &getDatabases() const;
     void setDatabases(const std::vector<DatabaseNode> &databases);
 
-    std::uint64_t getDbVersion() const;
-    void setDbVersion(std::uint64_t dbVersion);
+    const std::map<std::string, std::uint64_t> &getDbVersionMap() const;
+    void setDbVersionMap(const std::map<std::string, std::uint64_t> &dbVersionMap);
 
 private:
     std::string type;
@@ -140,5 +141,5 @@ private:
     std::vector<std::string> columns;
     std::vector<std::vector<std::string>> rows;
     std::vector<DatabaseNode> databases;
-    std::uint64_t dbVersion = 0;
+    std::map<std::string, std::uint64_t> dbVersionMap;
 };

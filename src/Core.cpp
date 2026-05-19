@@ -7,6 +7,7 @@
 #include <ctime>
 
 #include "binder/BinderManager.h"
+#include "core/SqlPipeline.h"
 #include "dbLog/DbLogManager.h"
 #include "executor/ExecutorManager.h"
 #include "log/LogWriter.h"
@@ -178,7 +179,8 @@ Core::Core()
       parserManager(new ParserManager(this)),
       dbLogManager(new DbLogManager(this)),
       binderManager(new BinderManager(this)),
-      planManager(new PlanManager(this))
+      planManager(new PlanManager(this)),
+      sqlPipeline(new SqlPipeline(this))
 {
     LogWriter::info("core", "Core", "Core", "Core modules initialized.");
 }
@@ -189,6 +191,7 @@ Core::~Core()
     stop();
     delete planManager;
     delete binderManager;
+    delete sqlPipeline;
     delete parserManager;
     delete tokenizer;
     delete networkManager;
@@ -197,6 +200,7 @@ Core::~Core()
     delete dbLogManager;
     planManager = nullptr;
     binderManager = nullptr;
+    sqlPipeline = nullptr;
     parserManager = nullptr;
     tokenizer = nullptr;
     networkManager = nullptr;
@@ -264,4 +268,9 @@ PlanManager *Core::getPlanManager()
 DbLogManager *Core::getDbLogManager()
 {
     return dbLogManager;
+}
+
+SqlPipeline *Core::getSqlPipeline()
+{
+    return sqlPipeline;
 }

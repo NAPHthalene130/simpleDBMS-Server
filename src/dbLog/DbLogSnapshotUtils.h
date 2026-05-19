@@ -76,7 +76,8 @@ inline nlohmann::json buildTableSnapshot(const std::filesystem::path &dbPath,
 {
     auto table = storage::Table::load(dbPath, tableName);
     const auto &schema = table.schema();
-    const auto rows = table.select({}, {});
+    const auto rows = table.select(std::vector<std::string> {},
+                                   std::vector<storage::Table::WhereCondition> {});
 
     nlohmann::json snapshot;
     snapshot["table_name"] = tableName;

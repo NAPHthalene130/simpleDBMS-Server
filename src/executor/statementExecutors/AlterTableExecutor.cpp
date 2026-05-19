@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <string>
 
+#include "Core.h"
 #include "dbLog/DbLogManager.h"
 #include "dbLog/DbLogSnapshotUtils.h"
 #include "log/LogWriter.h"

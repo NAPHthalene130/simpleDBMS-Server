@@ -770,7 +770,7 @@ bool PlanExecutor::evaluateLeafCondition(const ConditionNode *node,
     // 子查询条件
     // 作者：NAPH130
     if (node->hasSubquery()) {
-        const auto subResult = evaluateSubquery(node->getSubquery().get(), dbName);
+        const auto subResult = evaluateSubquery(node->getSubquery().get(), dbName, row, columns);
         const std::string opUpper = toUpperString(node->getOperator());
         const std::string &colName = node->getLeftOperand();
         auto it = std::find(columns.begin(), columns.end(), colName);
@@ -844,11 +844,11 @@ bool PlanExecutor::evaluateLeafCondition(const ConditionNode *node,
 }
 
 std::vector<std::string> PlanExecutor::evaluateSubquery(const SQLStatement *subquery,
-                                                          const std::string &dbName) const {
+                                                          const std::string &dbName,
+                                                          const std::vector<std::string> &outerRow,
+                                                          const std::vector<std::string> &outerColumns) const {
     if (subquery == nullptr || databaseManager == nullptr) return {};
 
-    // 仅支持简单 SELECT 子查询
-    // 作者：NAPH130
     if (subquery->getStmtType() != ExecutionStatementType::Select) return {};
 
     const auto *selStmt = static_cast<const SelectStmt *>(subquery);
@@ -858,6 +858,38 @@ std::vector<std::string> PlanExecutor::evaluateSubquery(const SQLStatement *subq
         const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
         auto table = storage::Table::load(dbPath, tableName);
         const auto &schema = table.schema();
+
+        /**
+         * @brief 将 "table.column" 形式剥离为纯列名
+         * @author NAPH130
+         */
+        auto stripTablePrefix = [&tableName](const std::string &colRef) -> std::string {
+            const auto dotPos = colRef.find('.');
+            if (dotPos == std::string::npos) return colRef;
+            return colRef.substr(dotPos + 1);
+        };
+
+        /**
+         * @brief 解析外表引用：若引用含 "table.col" 且 table 不同于子查询表名，则从外部行取值
+         * @author NAPH130
+         */
+        auto resolveOuterRef = [&](const std::string &val) -> std::string {
+            const auto dotPos = val.find('.');
+            if (dotPos == std::string::npos) return val;
+            const std::string refTable = val.substr(0, dotPos);
+            // 引用同一张表 → 不替换
+            if (refTable == tableName) return val;
+            // 引用外表 → 从当前外部行查找列值
+            const std::string refCol = val.substr(dotPos + 1);
+            auto it = std::find(outerColumns.begin(), outerColumns.end(), refCol);
+            if (it != outerColumns.end()) {
+                const std::size_t idx = static_cast<std::size_t>(std::distance(outerColumns.begin(), it));
+                if (idx < outerRow.size()) {
+                    return outerRow[idx];
+                }
+            }
+            return val;
+        };
 
         std::vector<storage::Table::WhereCondition> whereConditions;
         const auto whereCond = selStmt->getWhereCondition();
@@ -881,9 +913,9 @@ std::vector<std::string> PlanExecutor::evaluateSubquery(const SQLStatement *subq
                         return;
                     }
                     storage::Table::WhereCondition wc;
-                    wc.column = leftOp;
+                    wc.column = stripTablePrefix(leftOp);
                     wc.op = mapCompare(op);
-                    wc.value = rightOp;
+                    wc.value = resolveOuterRef(rightOp);
                     whereConditions.push_back(wc);
                 }
             };
@@ -895,7 +927,7 @@ std::vector<std::string> PlanExecutor::evaluateSubquery(const SQLStatement *subq
         result.reserve(rows.size());
         for (const auto &row : rows) {
             if (!row.values.empty()) {
-                result.push_back(row.values[0]); // 取第一列
+                result.push_back(row.values[0]);
             }
         }
         return result;

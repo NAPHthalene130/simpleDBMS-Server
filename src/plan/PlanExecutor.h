@@ -133,7 +133,10 @@ private:
      * @param dbName 当前数据库名
      * @return 子查询结果行集（每行为单列值的向量）
      */
-    std::vector<std::string> evaluateSubquery(const SQLStatement *subquery, const std::string &dbName) const;
+    std::vector<std::string> evaluateSubquery(const SQLStatement *subquery,
+                                               const std::string &dbName,
+                                               const std::vector<std::string> &outerRow = {},
+                                               const std::vector<std::string> &outerColumns = {}) const;
 
     Core *core;
     DatabaseManager *databaseManager;

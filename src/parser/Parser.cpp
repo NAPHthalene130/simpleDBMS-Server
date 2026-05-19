@@ -1263,6 +1263,7 @@ std::shared_ptr<ConditionNode> Parser::parsePredicate(TokenStream &tokenStream) 
         if (tokenStream.peek(1).getType() == SqlTokenType::Keyword
             && tokenStream.peek(1).getValue() == "SELECT") {
             tokenStream.advance(); // consume (
+            tokenStream.advance(); // consume SELECT
             auto subSelect = parseSelectStatement(tokenStream);
             tokenStream.expect(SqlTokenType::Symbol, ")", "Subquery requires closing parenthesis.");
 

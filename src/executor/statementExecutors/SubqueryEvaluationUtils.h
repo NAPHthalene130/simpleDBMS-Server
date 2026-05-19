@@ -282,6 +282,16 @@ inline bool evaluateLeafCondition(const ConditionNode *node,
             return node->isNegated() ? !found : found;
         }
 
+        if (opUpper == "!=" || opUpper == "<>" || opUpper == ">"
+            || opUpper == ">=" || opUpper == "<" || opUpper == "<=") {
+            if (subqueryResult.empty()) {
+                return false;
+            }
+            const bool result =
+                compareValues(leftValue, mapCompareOp(node->getOperator()), subqueryResult.front());
+            return node->isNegated() ? !result : result;
+        }
+
         return false;
     }
 

@@ -71,10 +71,21 @@ void DatabaseNode::setTables(const std::vector<TableNode> &tables)
     this->tables = tables;
 }
 
+std::uint64_t DatabaseNode::getDbVersion() const
+{
+    return dbVersion;
+}
+
+void DatabaseNode::setDbVersion(std::uint64_t dbVersion)
+{
+    this->dbVersion = dbVersion;
+}
+
 std::string DatabaseNode::toJson() const
 {
     nlohmann::json jsonObject;
     jsonObject["name"] = name;
+    jsonObject["dbVersion"] = dbVersion;
 
     nlohmann::json tablesJson = nlohmann::json::array();
     for (const TableNode &tableNode : tables) {
@@ -95,7 +106,9 @@ DatabaseNode DatabaseNode::fromJson(const std::string &jsonStr)
         }
     }
 
-    return DatabaseNode(jsonObject.value("name", ""), tableNodes);
+    DatabaseNode node(jsonObject.value("name", ""), tableNodes);
+    node.setDbVersion(jsonObject.value("dbVersion", std::uint64_t(0)));
+    return node;
 }
 
 NetworkTransferData::NetworkTransferData()
@@ -125,12 +138,19 @@ std::string NetworkTransferData::toJson() const
     jsonObject["affectedRows"] = affectedRows;
     jsonObject["columns"] = columns;
     jsonObject["rows"] = rows;
+    jsonObject["dbLogTime"] = dbLogTime;
 
     nlohmann::json databasesJson = nlohmann::json::array();
     for (const DatabaseNode &databaseNode : databases) {
         databasesJson.push_back(nlohmann::json::parse(databaseNode.toJson()));
     }
     jsonObject["databases"] = databasesJson;
+
+    nlohmann::json versionMapJson;
+    for (const auto &entry : dbVersionMap) {
+        versionMapJson[entry.first] = entry.second;
+    }
+    jsonObject["dbVersionMap"] = versionMapJson;
 
     return jsonObject.dump();
 }
@@ -148,6 +168,7 @@ NetworkTransferData NetworkTransferData::fromJson(const std::string &jsonStr)
     networkTransferData.setAffectedRows(jsonObject.value("affectedRows", 0));
     networkTransferData.setColumns(jsonObject.value("columns", std::vector<std::string> {}));
     networkTransferData.setRows(jsonObject.value("rows", std::vector<std::vector<std::string>> {}));
+    networkTransferData.setDbLogTime(jsonObject.value("dbLogTime", ""));
 
     std::vector<DatabaseNode> databaseNodes;
     if (jsonObject.contains("databases") && jsonObject["databases"].is_array()) {
@@ -156,6 +177,15 @@ NetworkTransferData NetworkTransferData::fromJson(const std::string &jsonStr)
         }
     }
     networkTransferData.setDatabases(databaseNodes);
+
+    std::map<std::string, std::uint64_t> versionMap;
+    if (jsonObject.contains("dbVersionMap") && jsonObject["dbVersionMap"].is_object()) {
+        for (const auto &entry : jsonObject["dbVersionMap"].items()) {
+            versionMap[entry.key()] = entry.value().get<std::uint64_t>();
+        }
+    }
+    networkTransferData.setDbVersionMap(versionMap);
+
     return networkTransferData;
 }
 
@@ -267,4 +297,24 @@ const std::vector<DatabaseNode> &NetworkTransferData::getDatabases() const
 void NetworkTransferData::setDatabases(const std::vector<DatabaseNode> &databases)
 {
     this->databases = databases;
+}
+
+const std::map<std::string, std::uint64_t> &NetworkTransferData::getDbVersionMap() const
+{
+    return dbVersionMap;
+}
+
+void NetworkTransferData::setDbVersionMap(const std::map<std::string, std::uint64_t> &dbVersionMap)
+{
+    this->dbVersionMap = dbVersionMap;
+}
+
+const std::string &NetworkTransferData::getDbLogTime() const
+{
+    return dbLogTime;
+}
+
+void NetworkTransferData::setDbLogTime(const std::string &dbLogTime)
+{
+    this->dbLogTime = dbLogTime;
 }

@@ -34,3 +34,18 @@ void InsertStmt::setValues(const std::vector<std::string> &values)
 {
     this->values = values;
 }
+
+const std::vector<std::vector<std::string>> &InsertStmt::getMultiValues() const
+{
+    return multiValues;
+}
+
+void InsertStmt::setMultiValues(const std::vector<std::vector<std::string>> &multiValues)
+{
+    this->multiValues = multiValues;
+}
+
+void InsertStmt::addValuesRow(const std::vector<std::string> &valuesRow)
+{
+    multiValues.push_back(valuesRow);
+}

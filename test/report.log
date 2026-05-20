@@ -1,0 +1,1119 @@
+====================
+ExecutorJoinAggTest
+2026-05-16 21:27:21
+38/173
+[YES]CREATE DATABASE
+[YES]USE DATABASE
+[YES]CREATE TABLE orders
+[YES]CREATE TABLE customers
+[YES]CREATE TABLE products
+[YES]CREATE TABLE categories
+[YES]CREATE TABLE employees
+[YES]CREATE TABLE departments
+[YES]INSERT customer Alice
+[YES]INSERT customer Bob
+[YES]INSERT customer Carol
+[YES]INSERT customer Dave
+[YES]INSERT customer Eve
+[YES]INSERT category Electronics
+[YES]INSERT category Clothing
+[YES]INSERT category Food
+[YES]INSERT product Laptop
+[YES]INSERT product Shirt
+[YES]INSERT product Phone
+[YES]INSERT product Apple
+[YES]INSERT product Jeans
+[YES]INSERT dept Engineering
+[YES]INSERT dept Sales
+[YES]INSERT dept HR
+[YES]INSERT emp John
+[YES]INSERT emp Jane
+[YES]INSERT emp Jim
+[YES]INSERT emp Jack
+[YES]INSERT emp Jill
+[YES]INSERT order 1
+[YES]INSERT order 2
+[YES]INSERT order 3
+[YES]INSERT order 4
+[YES]INSERT order 5
+[YES]INSERT order 6
+[YES]INSERT order 7
+[YES]INSERT order 8
+[NO]INNER JOIN orders+customers
+[NO]LEFT JOIN customers+orders
+[NO]RIGHT JOIN orders+customers
+[NO]JOIN default INNER
+[NO]SELF JOIN customers
+[NO]JOIN with WHERE
+[NO]JOIN with ORDER BY
+[NO]JOIN with LIMIT
+[NO]JOIN orders+products
+[NO]Triple JOIN
+[NO]JOIN employees+departments
+[NO]LEFT JOIN employees+departments
+[NO]RIGHT JOIN employees+departments
+[NO]JOIN with multiple conditions
+[NO]JOIN 4 tables
+[NO]JOIN + WHERE + ORDER BY
+[NO]JOIN + WHERE + LIMIT
+[NO]JOIN with expression alias
+[NO]JOIN with WHERE on joined table
+[NO]LEFT JOIN find non-ordering customers
+[NO]JOIN with BETWEEN
+[NO]JOIN with LIKE
+[NO]JOIN with IN
+[NO]SELF JOIN with region
+[NO]JOIN with multi-column ORDER BY
+[NO]Triple JOIN ORDER BY LIMIT
+[NO]LEFT JOIN orders+customers
+[NO]LEFT JOIN + GROUP BY + COUNT
+[NO]JOIN + GROUP BY + SUM
+[NO]JOIN + GROUP BY + AVG
+[NO]JOIN + GROUP BY product counts
+[NO]JOIN with subquery in WHERE
+[NO]JOIN with AND condition
+[NO]JOIN with OR condition
+[NO]Triple JOIN with WHERE
+[NO]JOIN with LIMIT only
+[NO]CROSS JOIN
+[NO]JOIN ORDER BY ASC
+[NO]JOIN + GROUP BY + HAVING SUM
+[NO]JOIN + GROUP BY city HAVING COUNT
+[NO]JOIN with equality on PK
+[NO]JOIN with not equal
+[NO]JOIN with >=
+[NO]JOIN with <=
+[NO]JOIN + WHERE + ORDER BY salary
+[NO]Triple JOIN price filter
+[NO]JOIN GROUP BY region SUM
+[NO]JOIN with COUNT DISTINCT
+[NO]COUNT(*) orders
+[NO]COUNT(column) orders
+[NO]COUNT(*) customers
+[NO]SUM amount orders
+[NO]SUM qty orders
+[NO]AVG amount orders
+[NO]AVG salary employees
+[NO]MIN amount orders
+[NO]MAX amount orders
+[NO]MIN MAX salary employees
+[NO]MIN MAX AVG price products
+[NO]Multiple aggregates together
+[NO]COUNT with WHERE
+[NO]SUM with WHERE customer_id=1
+[NO]AVG with WHERE qty>1
+[NO]MIN MAX with WHERE customer_id=2
+[NO]SUM on joined tables with WHERE
+[NO]COUNT on joined tables
+[NO]AVG on joined tables
+[NO]COUNT DISTINCT customer_id
+[NO]SUM DISTINCT amount
+[NO]COUNT with alias
+[NO]SUM with alias
+[NO]AVG with alias
+[NO]COUNT triple join
+[NO]COUNT with GROUP BY
+[NO]SUM AVG with GROUP BY
+[NO]MIN MAX with GROUP BY product
+[NO]Aggregates on joined tables GROUP BY
+[NO]COUNT empty result
+[NO]GROUP BY single column
+[NO]GROUP BY multiple columns
+[NO]GROUP BY with SUM
+[NO]GROUP BY with AVG
+[NO]GROUP BY dept_id COUNT
+[NO]GROUP BY dept_id MIN MAX
+[NO]GROUP BY + HAVING COUNT>1
+[NO]GROUP BY + HAVING SUM>200
+[NO]GROUP BY region HAVING COUNT>=2
+[NO]GROUP BY city HAVING COUNT=2
+[NO]GROUP BY with WHERE
+[NO]GROUP BY ORDER BY COUNT DESC
+[NO]GROUP BY ORDER BY SUM ASC
+[NO]GROUP BY on joined table
+[NO]GROUP BY joined table HAVING
+[NO]GROUP BY department names COUNT
+[NO]GROUP BY dept AVG ORDER BY
+[NO]GROUP BY product HAVING COUNT>=1
+[NO]GROUP BY city constant agg
+[NO]GROUP BY WHERE HAVING ORDER BY
+[NO]GROUP BY multi-col HAVING COUNT=1
+[NO]HAVING with COUNT>1
+[NO]HAVING with SUM>300
+[NO]HAVING with AVG>100
+[NO]HAVING with MIN>50000
+[NO]HAVING with MAX<100000
+[NO]HAVING combined with WHERE
+[NO]HAVING on joined tables COUNT
+[NO]HAVING on joined tables SUM
+[NO]HAVING region COUNT>2
+[NO]HAVING dept AVG>60000
+[NO]HAVING complex AND condition
+[NO]HAVING COUNT=2
+[NO]HAVING dept COUNT>=2
+[NO]HAVING COUNT BETWEEN
+[NO]HAVING joined SUM range
+[NO]HAVING joined MIN MAX range
+[NO]ORDER BY COUNT(*) DESC
+[NO]ORDER BY SUM(amount) ASC
+[NO]ORDER BY AVG(salary) DESC
+[NO]ORDER BY COUNT(*) ASC LIMIT
+[NO]ORDER BY SUM on joined table
+[NO]ORDER BY COUNT on joined dept
+[NO]ORDER BY MAX(amount) DESC
+[NO]ORDER BY COUNT(*) ASC region
+[NO]UNION customers+departments
+[NO]UNION ALL customers+departments
+[NO]UNION employees+customers
+[NO]UNION orders+products ids
+[NO]UNION ALL categories+products
+[NO]UNION with ORDER BY
+[NO]UNION with LIMIT
+[NO]UNION products+categories
+[NO]UNION ALL same table
+[NO]Triple UNION
+[NO]UNION with WHERE clauses
+[NO]UNION same table different WHERE
+[YES]DROP all tables and database
+====================
+ExecutorJoinAggTest
+2026-05-16 21:30:19
+93/173
+[YES]CREATE DATABASE
+[YES]USE DATABASE
+[YES]CREATE TABLE orders
+[YES]CREATE TABLE customers
+[YES]CREATE TABLE products
+[YES]CREATE TABLE categories
+[YES]CREATE TABLE employees
+[YES]CREATE TABLE departments
+[YES]INSERT customer Alice
+[YES]INSERT customer Bob
+[YES]INSERT customer Carol
+[YES]INSERT customer Dave
+[YES]INSERT customer Eve
+[YES]INSERT category Electronics
+[YES]INSERT category Clothing
+[YES]INSERT category Food
+[YES]INSERT product Laptop
+[YES]INSERT product Shirt
+[YES]INSERT product Phone
+[YES]INSERT product Apple
+[YES]INSERT product Jeans
+[YES]INSERT dept Engineering
+[YES]INSERT dept Sales
+[YES]INSERT dept HR
+[YES]INSERT emp John
+[YES]INSERT emp Jane
+[YES]INSERT emp Jim
+[YES]INSERT emp Jack
+[YES]INSERT emp Jill
+[YES]INSERT order 1
+[YES]INSERT order 2
+[YES]INSERT order 3
+[YES]INSERT order 4
+[YES]INSERT order 5
+[YES]INSERT order 6
+[YES]INSERT order 7
+[YES]INSERT order 8
+[NO]INNER JOIN orders+customers
+[NO]LEFT JOIN customers+orders
+[NO]RIGHT JOIN orders+customers
+[NO]JOIN default INNER
+[NO]SELF JOIN customers
+[NO]JOIN with WHERE
+[NO]JOIN with ORDER BY
+[NO]JOIN with LIMIT
+[NO]JOIN orders+products
+[NO]Triple JOIN
+[NO]JOIN employees+departments
+[NO]LEFT JOIN employees+departments
+[NO]RIGHT JOIN employees+departments
+[NO]JOIN with multiple conditions
+[NO]JOIN 4 tables
+[NO]JOIN + WHERE + ORDER BY
+[NO]JOIN + WHERE + LIMIT
+[NO]JOIN with expression alias
+[NO]JOIN with WHERE on joined table
+[NO]LEFT JOIN find non-ordering customers
+[NO]JOIN with BETWEEN
+[NO]JOIN with LIKE
+[NO]JOIN with IN
+[NO]SELF JOIN with region
+[NO]JOIN with multi-column ORDER BY
+[NO]Triple JOIN ORDER BY LIMIT
+[NO]LEFT JOIN orders+customers
+[NO]LEFT JOIN + GROUP BY + COUNT
+[NO]JOIN + GROUP BY + SUM
+[NO]JOIN + GROUP BY + AVG
+[NO]JOIN + GROUP BY product counts
+[NO]JOIN with subquery in WHERE
+[NO]JOIN with AND condition
+[NO]JOIN with OR condition
+[NO]Triple JOIN with WHERE
+[NO]JOIN with LIMIT only
+[NO]CROSS JOIN
+[NO]JOIN ORDER BY ASC
+[NO]JOIN + GROUP BY + HAVING SUM
+[NO]JOIN + GROUP BY city HAVING COUNT
+[NO]JOIN with equality on PK
+[NO]JOIN with not equal
+[NO]JOIN with >=
+[NO]JOIN with <=
+[NO]JOIN + WHERE + ORDER BY salary
+[NO]Triple JOIN price filter
+[NO]JOIN GROUP BY region SUM
+[NO]JOIN with COUNT DISTINCT
+[YES]COUNT(*) orders
+[YES]COUNT(column) orders
+[YES]COUNT(*) customers
+[YES]SUM amount orders
+[YES]SUM qty orders
+[YES]AVG amount orders
+[YES]AVG salary employees
+[YES]MIN amount orders
+[YES]MAX amount orders
+[YES]MIN MAX salary employees
+[YES]MIN MAX AVG price products
+[YES]Multiple aggregates together
+[YES]COUNT with WHERE
+[YES]SUM with WHERE customer_id=1
+[YES]AVG with WHERE qty>1
+[YES]MIN MAX with WHERE customer_id=2
+[NO]SUM on joined tables with WHERE
+[NO]COUNT on joined tables
+[NO]AVG on joined tables
+[NO]COUNT DISTINCT customer_id
+[NO]SUM DISTINCT amount
+[NO]COUNT with alias
+[NO]SUM with alias
+[NO]AVG with alias
+[NO]COUNT triple join
+[YES]COUNT with GROUP BY
+[YES]SUM AVG with GROUP BY
+[YES]MIN MAX with GROUP BY product
+[NO]Aggregates on joined tables GROUP BY
+[YES]COUNT empty result
+[YES]GROUP BY single column
+[YES]GROUP BY multiple columns
+[YES]GROUP BY with SUM
+[YES]GROUP BY with AVG
+[YES]GROUP BY dept_id COUNT
+[YES]GROUP BY dept_id MIN MAX
+[YES]GROUP BY + HAVING COUNT>1
+[YES]GROUP BY + HAVING SUM>200
+[YES]GROUP BY region HAVING COUNT>=2
+[YES]GROUP BY city HAVING COUNT=2
+[YES]GROUP BY with WHERE
+[NO]GROUP BY ORDER BY COUNT DESC
+[NO]GROUP BY ORDER BY SUM ASC
+[NO]GROUP BY on joined table
+[NO]GROUP BY joined table HAVING
+[NO]GROUP BY department names COUNT
+[NO]GROUP BY dept AVG ORDER BY
+[YES]GROUP BY product HAVING COUNT>=1
+[NO]GROUP BY city constant agg
+[YES]GROUP BY WHERE HAVING ORDER BY
+[YES]GROUP BY multi-col HAVING COUNT=1
+[YES]HAVING with COUNT>1
+[YES]HAVING with SUM>300
+[YES]HAVING with AVG>100
+[YES]HAVING with MIN>50000
+[YES]HAVING with MAX<100000
+[YES]HAVING combined with WHERE
+[NO]HAVING on joined tables COUNT
+[NO]HAVING on joined tables SUM
+[NO]HAVING region COUNT>2
+[NO]HAVING dept AVG>60000
+[YES]HAVING complex AND condition
+[YES]HAVING COUNT=2
+[YES]HAVING dept COUNT>=2
+[YES]HAVING COUNT BETWEEN
+[NO]HAVING joined SUM range
+[NO]HAVING joined MIN MAX range
+[NO]ORDER BY COUNT(*) DESC
+[NO]ORDER BY SUM(amount) ASC
+[NO]ORDER BY AVG(salary) DESC
+[NO]ORDER BY COUNT(*) ASC LIMIT
+[NO]ORDER BY SUM on joined table
+[NO]ORDER BY COUNT on joined dept
+[NO]ORDER BY MAX(amount) DESC
+[NO]ORDER BY COUNT(*) ASC region
+[YES]UNION customers+departments
+[YES]UNION ALL customers+departments
+[YES]UNION employees+customers
+[YES]UNION orders+products ids
+[YES]UNION ALL categories+products
+[YES]UNION with ORDER BY
+[YES]UNION with LIMIT
+[YES]UNION products+categories
+[YES]UNION ALL same table
+[NO]Triple UNION
+[YES]UNION with WHERE clauses
+[YES]UNION same table different WHERE
+[YES]DROP all tables and database
+====================
+ExecutorJoinAggTest
+2026-05-16 21:33:06
+93/173
+[YES]CREATE DATABASE
+[YES]USE DATABASE
+[YES]CREATE TABLE orders
+[YES]CREATE TABLE customers
+[YES]CREATE TABLE products
+[YES]CREATE TABLE categories
+[YES]CREATE TABLE employees
+[YES]CREATE TABLE departments
+[YES]INSERT customer Alice
+[YES]INSERT customer Bob
+[YES]INSERT customer Carol
+[YES]INSERT customer Dave
+[YES]INSERT customer Eve
+[YES]INSERT category Electronics
+[YES]INSERT category Clothing
+[YES]INSERT category Food
+[YES]INSERT product Laptop
+[YES]INSERT product Shirt
+[YES]INSERT product Phone
+[YES]INSERT product Apple
+[YES]INSERT product Jeans
+[YES]INSERT dept Engineering
+[YES]INSERT dept Sales
+[YES]INSERT dept HR
+[YES]INSERT emp John
+[YES]INSERT emp Jane
+[YES]INSERT emp Jim
+[YES]INSERT emp Jack
+[YES]INSERT emp Jill
+[YES]INSERT order 1
+[YES]INSERT order 2
+[YES]INSERT order 3
+[YES]INSERT order 4
+[YES]INSERT order 5
+[YES]INSERT order 6
+[YES]INSERT order 7
+[YES]INSERT order 8
+[NO]INNER JOIN orders+customers
+[NO]LEFT JOIN customers+orders
+[NO]RIGHT JOIN orders+customers
+[NO]JOIN default INNER
+[NO]SELF JOIN customers
+[NO]JOIN with WHERE
+[NO]JOIN with ORDER BY
+[NO]JOIN with LIMIT
+[NO]JOIN orders+products
+[NO]Triple JOIN
+[NO]JOIN employees+departments
+[NO]LEFT JOIN employees+departments
+[NO]RIGHT JOIN employees+departments
+[NO]JOIN with multiple conditions
+[NO]JOIN 4 tables
+[NO]JOIN + WHERE + ORDER BY
+[NO]JOIN + WHERE + LIMIT
+[NO]JOIN with expression alias
+[NO]JOIN with WHERE on joined table
+[NO]LEFT JOIN find non-ordering customers
+[NO]JOIN with BETWEEN
+[NO]JOIN with LIKE
+[NO]JOIN with IN
+[NO]SELF JOIN with region
+[NO]JOIN with multi-column ORDER BY
+[NO]Triple JOIN ORDER BY LIMIT
+[NO]LEFT JOIN orders+customers
+[NO]LEFT JOIN + GROUP BY + COUNT
+[NO]JOIN + GROUP BY + SUM
+[NO]JOIN + GROUP BY + AVG
+[NO]JOIN + GROUP BY product counts
+[NO]JOIN with subquery in WHERE
+[NO]JOIN with AND condition
+[NO]JOIN with OR condition
+[NO]Triple JOIN with WHERE
+[NO]JOIN with LIMIT only
+[NO]CROSS JOIN
+[NO]JOIN ORDER BY ASC
+[NO]JOIN + GROUP BY + HAVING SUM
+[NO]JOIN + GROUP BY city HAVING COUNT
+[NO]JOIN with equality on PK
+[NO]JOIN with not equal
+[NO]JOIN with >=
+[NO]JOIN with <=
+[NO]JOIN + WHERE + ORDER BY salary
+[NO]Triple JOIN price filter
+[NO]JOIN GROUP BY region SUM
+[NO]JOIN with COUNT DISTINCT
+[YES]COUNT(*) orders
+[YES]COUNT(column) orders
+[YES]COUNT(*) customers
+[YES]SUM amount orders
+[YES]SUM qty orders
+[YES]AVG amount orders
+[YES]AVG salary employees
+[YES]MIN amount orders
+[YES]MAX amount orders
+[YES]MIN MAX salary employees
+[YES]MIN MAX AVG price products
+[YES]Multiple aggregates together
+[YES]COUNT with WHERE
+[YES]SUM with WHERE customer_id=1
+[YES]AVG with WHERE qty>1
+[YES]MIN MAX with WHERE customer_id=2
+[NO]SUM on joined tables with WHERE
+[NO]COUNT on joined tables
+[NO]AVG on joined tables
+[NO]COUNT DISTINCT customer_id
+[NO]SUM DISTINCT amount
+[NO]COUNT with alias
+[NO]SUM with alias
+[NO]AVG with alias
+[NO]COUNT triple join
+[YES]COUNT with GROUP BY
+[YES]SUM AVG with GROUP BY
+[YES]MIN MAX with GROUP BY product
+[NO]Aggregates on joined tables GROUP BY
+[YES]COUNT empty result
+[YES]GROUP BY single column
+[YES]GROUP BY multiple columns
+[YES]GROUP BY with SUM
+[YES]GROUP BY with AVG
+[YES]GROUP BY dept_id COUNT
+[YES]GROUP BY dept_id MIN MAX
+[YES]GROUP BY + HAVING COUNT>1
+[YES]GROUP BY + HAVING SUM>200
+[YES]GROUP BY region HAVING COUNT>=2
+[YES]GROUP BY city HAVING COUNT=2
+[YES]GROUP BY with WHERE
+[NO]GROUP BY ORDER BY COUNT DESC
+[NO]GROUP BY ORDER BY SUM ASC
+[NO]GROUP BY on joined table
+[NO]GROUP BY joined table HAVING
+[NO]GROUP BY department names COUNT
+[NO]GROUP BY dept AVG ORDER BY
+[YES]GROUP BY product HAVING COUNT>=1
+[NO]GROUP BY city constant agg
+[YES]GROUP BY WHERE HAVING ORDER BY
+[YES]GROUP BY multi-col HAVING COUNT=1
+[YES]HAVING with COUNT>1
+[YES]HAVING with SUM>300
+[YES]HAVING with AVG>100
+[YES]HAVING with MIN>50000
+[YES]HAVING with MAX<100000
+[YES]HAVING combined with WHERE
+[NO]HAVING on joined tables COUNT
+[NO]HAVING on joined tables SUM
+[NO]HAVING region COUNT>2
+[NO]HAVING dept AVG>60000
+[YES]HAVING complex AND condition
+[YES]HAVING COUNT=2
+[YES]HAVING dept COUNT>=2
+[YES]HAVING COUNT BETWEEN
+[NO]HAVING joined SUM range
+[NO]HAVING joined MIN MAX range
+[NO]ORDER BY COUNT(*) DESC
+[NO]ORDER BY SUM(amount) ASC
+[NO]ORDER BY AVG(salary) DESC
+[NO]ORDER BY COUNT(*) ASC LIMIT
+[NO]ORDER BY SUM on joined table
+[NO]ORDER BY COUNT on joined dept
+[NO]ORDER BY MAX(amount) DESC
+[NO]ORDER BY COUNT(*) ASC region
+[YES]UNION customers+departments
+[YES]UNION ALL customers+departments
+[YES]UNION employees+customers
+[YES]UNION orders+products ids
+[YES]UNION ALL categories+products
+[YES]UNION with ORDER BY
+[YES]UNION with LIMIT
+[YES]UNION products+categories
+[YES]UNION ALL same table
+[NO]Triple UNION
+[YES]UNION with WHERE clauses
+[YES]UNION same table different WHERE
+[YES]DROP all tables and database
+====================
+ExecutorDDLTest
+2026-05-16 21:38:41
+119/158
+[YES]CREATE DATABASE normal
+[YES]CREATE DATABASE with numbers
+[YES]CREATE DATABASE with underscore
+[YES]CREATE DATABASE mixed case
+[NO]CREATE DATABASE multiple underscores and numbers
+[YES]CREATE DATABASE single char
+[YES]CREATE DATABASE uppercase
+[YES]CREATE DATABASE long mixed name
+[YES]Reject CREATE DATABASE duplicate
+[YES]SHOW DATABASES after creates
+[YES]CREATE DATABASE another
+[YES]SHOW DATABASES has multiple
+[YES]DROP DATABASE with numbers
+[YES]DROP DATABASE with underscore
+[YES]Reject DROP DATABASE nonexistent
+[YES]Setup CREATE for drop test
+[YES]Setup USE for drop test
+[YES]Setup CREATE TABLE in db to drop
+[YES]Setup INSERT in db to drop
+[YES]DROP DATABASE with tables and data
+[YES]Reject double DROP DATABASE
+[YES]Reject USE after DROP
+[YES]USE DATABASE normal
+[YES]Reject USE nonexistent database
+[YES]USE DATABASE switch to another
+[YES]USE DATABASE switch back
+[YES]Reject USE DATABASE missing name
+[YES]CREATE TABLE INT
+[YES]CREATE TABLE VARCHAR
+[YES]CREATE TABLE FLOAT
+[YES]CREATE TABLE DOUBLE
+[YES]CREATE TABLE CHAR
+[YES]CREATE TABLE DATE
+[YES]CREATE TABLE DATETIME
+[YES]CREATE TABLE PRIMARY KEY
+[YES]CREATE TABLE NOT NULL
+[YES]CREATE TABLE UNIQUE
+[YES]CREATE TABLE DEFAULT int
+[YES]CREATE TABLE DEFAULT string
+[YES]CREATE TABLE AUTO_INCREMENT
+[YES]CREATE TABLE FOREIGN KEY
+[YES]CREATE TABLE multiple columns
+[YES]CREATE TABLE single column
+[YES]CREATE TABLE no constraints
+[YES]CREATE TABLE PK+NOT NULL
+[YES]CREATE TABLE multiple constraints
+[YES]CREATE TABLE DEFAULT float
+[YES]CREATE TABLE DEFAULT double
+[YES]DROP TABLE normal
+[YES]Reject DROP TABLE nonexistent
+[YES]Setup INSERT before drop
+[YES]DROP TABLE after insert
+[YES]Setup DROP TABLE multiple 1
+[YES]Setup DROP TABLE multiple 2
+[YES]DROP TABLE first of multiple
+[YES]DROP TABLE second of multiple
+[YES]Setup DROP then recreate
+[YES]DROP TABLE for recreate
+[YES]CREATE TABLE after drop recreate
+[YES]DROP TABLE recreated table
+[YES]SHOW TABLES baseline
+[YES]Setup SHOW TABLES 1
+[YES]Setup SHOW TABLES 2
+[YES]Setup SHOW TABLES 3
+[YES]SHOW TABLES has 3 new tables
+[YES]Setup DROP for SHOW TABLES
+[YES]SHOW TABLES after drop
+[YES]SHOW TABLES uses session db
+[YES]SHOW DATABASES baseline
+[YES]Setup SHOW DATABASES 1
+[YES]Setup SHOW DATABASES 2
+[YES]SHOW DATABASES after creates
+[YES]Setup DROP for SHOW DATABASES
+[YES]Setup DROP 2 for SHOW DATABASES
+[YES]SHOW DATABASES after drops
+[NO]Setup AUTO_INCREMENT table
+[NO]AUTO_INCREMENT explicit value 1
+[NO]AUTO_INCREMENT explicit value 2
+[NO]AUTO_INCREMENT verify explicit value 1
+[NO]AUTO_INCREMENT verify explicit value 2
+[NO]AUTO_INCREMENT explicit value 5
+[NO]AUTO_INCREMENT sequential after 5
+[NO]AUTO_INCREMENT verify value 6
+[NO]AUTO_INCREMENT delete middle row
+[NO]AUTO_INCREMENT gap handling after delete
+[NO]AUTO_INCREMENT gap fill value 7
+[NO]AUTO_INCREMENT explicit large value
+[NO]AUTO_INCREMENT after large explicit
+[NO]AUTO_INCREMENT next after 100 is 101
+[NO]AUTO_INCREMENT second table
+[NO]AUTO_INCREMENT second table insert
+[NO]AUTO_INCREMENT second table value 1
+[NO]Setup UNIQUE table
+[NO]UNIQUE valid insert 1
+[NO]UNIQUE valid insert 2
+[YES]Reject UNIQUE duplicate
+[NO]UNIQUE insert empty string
+[YES]Reject UNIQUE duplicate empty string
+[NO]Setup multiple UNIQUE columns
+[NO]UNIQUE multi valid insert
+[YES]Reject UNIQUE multi first col dup
+[YES]Reject UNIQUE multi second col dup
+[NO]Setup UNIQUE NOT NULL
+[NO]UNIQUE NOT NULL valid insert
+[YES]Reject UNIQUE NOT NULL duplicate
+[NO]Setup DEFAULT table
+[NO]DEFAULT missing columns get defaults
+[NO]DEFAULT verify INT and VARCHAR defaults
+[NO]DEFAULT explicit values override
+[NO]DEFAULT verify explicit override
+[NO]Setup DEFAULT with PK
+[NO]DEFAULT with PK missing
+[NO]DEFAULT verify PK default 100
+[NO]Setup DEFAULT FLOAT
+[NO]DEFAULT FLOAT explicit insert
+[NO]Setup DEFAULT NOT NULL
+[NO]DEFAULT NOT NULL missing gets default
+[NO]DEFAULT NOT NULL explicit overrides
+[YES]Reject ALTER TABLE ADD COLUMN
+[YES]Reject ALTER TABLE DROP COLUMN
+[YES]Reject ALTER TABLE MODIFY COLUMN
+[YES]Reject ALTER TABLE nonexistent table
+[YES]Reject ALTER TABLE RENAME
+[YES]Reject ALTER TABLE ADD with DEFAULT
+[YES]Reject ALTER TABLE ADD FLOAT
+[YES]Reject ALTER TABLE ADD DOUBLE
+[YES]Reject ALTER TABLE ADD DATE
+[YES]Reject ALTER TABLE ADD CHAR
+[YES]Reject ALTER TABLE ADD VARCHAR
+[YES]Reject ALTER TABLE ADD NOT NULL
+[YES]Reject ALTER TABLE ADD PK
+[YES]Reject ALTER TABLE ADD UNIQUE
+[YES]Reject ALTER TABLE DROP nonexistent column
+[YES]Reject TRUNCATE TABLE
+[YES]Reject TRUNCATE TABLE nonexistent
+[YES]Reject TRUNCATE TABLE with data
+[YES]Reject TRUNCATE TABLE empty table
+[YES]Reject TRUNCATE without TABLE keyword
+[YES]Reject TRUNCATE TABLE missing name
+[YES]Reject TRUNCATE multiple tables
+[YES]Reject TRUNCATE TABLE CASCADE
+[YES]Reject TRUNCATE TABLE qualified name
+[YES]Reject TRUNCATE TABLE number name
+[YES]Reject CREATE TABLE BOOLEAN unsupported
+[YES]Reject CREATE TABLE TEXT unsupported
+[YES]Reject CREATE TABLE CHECK unsupported
+[YES]Reject CREATE TABLE missing name
+[YES]Reject CREATE TABLE no columns
+[YES]Reject CREATE TABLE empty column name
+[YES]Reject CREATE TABLE duplicate column
+[YES]Reject CREATE TABLE VARCHAR(0)
+[YES]Reject CREATE TABLE duplicate name
+[YES]Reject CREATE TABLE name too long
+[YES]Reject CHECK single condition
+[YES]Reject CHECK compound condition
+[YES]Reject CHECK string condition
+[YES]Reject CHECK multiple columns
+[YES]Reject CHECK table-level constraint
+====================
+ExecutorDDLTest
+2026-05-16 21:39:33
+119/158
+[YES]CREATE DATABASE normal
+[YES]CREATE DATABASE with numbers
+[YES]CREATE DATABASE with underscore
+[YES]CREATE DATABASE mixed case
+[NO]CREATE DATABASE multiple underscores and numbers
+[YES]CREATE DATABASE single char
+[YES]CREATE DATABASE uppercase
+[YES]CREATE DATABASE long mixed name
+[YES]Reject CREATE DATABASE duplicate
+[YES]SHOW DATABASES after creates
+[YES]CREATE DATABASE another
+[YES]SHOW DATABASES has multiple
+[YES]DROP DATABASE with numbers
+[YES]DROP DATABASE with underscore
+[YES]Reject DROP DATABASE nonexistent
+[YES]Setup CREATE for drop test
+[YES]Setup USE for drop test
+[YES]Setup CREATE TABLE in db to drop
+[YES]Setup INSERT in db to drop
+[YES]DROP DATABASE with tables and data
+[YES]Reject double DROP DATABASE
+[YES]Reject USE after DROP
+[YES]USE DATABASE normal
+[YES]Reject USE nonexistent database
+[YES]USE DATABASE switch to another
+[YES]USE DATABASE switch back
+[YES]Reject USE DATABASE missing name
+[YES]CREATE TABLE INT
+[YES]CREATE TABLE VARCHAR
+[YES]CREATE TABLE FLOAT
+[YES]CREATE TABLE DOUBLE
+[YES]CREATE TABLE CHAR
+[YES]CREATE TABLE DATE
+[YES]CREATE TABLE DATETIME
+[YES]CREATE TABLE PRIMARY KEY
+[YES]CREATE TABLE NOT NULL
+[YES]CREATE TABLE UNIQUE
+[YES]CREATE TABLE DEFAULT int
+[YES]CREATE TABLE DEFAULT string
+[YES]CREATE TABLE AUTO_INCREMENT
+[YES]CREATE TABLE FOREIGN KEY
+[YES]CREATE TABLE multiple columns
+[YES]CREATE TABLE single column
+[YES]CREATE TABLE no constraints
+[YES]CREATE TABLE PK+NOT NULL
+[YES]CREATE TABLE multiple constraints
+[YES]CREATE TABLE DEFAULT float
+[YES]CREATE TABLE DEFAULT double
+[YES]DROP TABLE normal
+[YES]Reject DROP TABLE nonexistent
+[YES]Setup INSERT before drop
+[YES]DROP TABLE after insert
+[YES]Setup DROP TABLE multiple 1
+[YES]Setup DROP TABLE multiple 2
+[YES]DROP TABLE first of multiple
+[YES]DROP TABLE second of multiple
+[YES]Setup DROP then recreate
+[YES]DROP TABLE for recreate
+[YES]CREATE TABLE after drop recreate
+[YES]DROP TABLE recreated table
+[YES]SHOW TABLES baseline
+[YES]Setup SHOW TABLES 1
+[YES]Setup SHOW TABLES 2
+[YES]Setup SHOW TABLES 3
+[YES]SHOW TABLES has 3 new tables
+[YES]Setup DROP for SHOW TABLES
+[YES]SHOW TABLES after drop
+[YES]SHOW TABLES uses session db
+[YES]SHOW DATABASES baseline
+[YES]Setup SHOW DATABASES 1
+[YES]Setup SHOW DATABASES 2
+[YES]SHOW DATABASES after creates
+[YES]Setup DROP for SHOW DATABASES
+[YES]Setup DROP 2 for SHOW DATABASES
+[YES]SHOW DATABASES after drops
+[NO]Setup AUTO_INCREMENT table
+[NO]AUTO_INCREMENT explicit value 1
+[NO]AUTO_INCREMENT explicit value 2
+[NO]AUTO_INCREMENT verify explicit value 1
+[NO]AUTO_INCREMENT verify explicit value 2
+[NO]AUTO_INCREMENT explicit value 5
+[NO]AUTO_INCREMENT sequential after 5
+[NO]AUTO_INCREMENT verify value 6
+[NO]AUTO_INCREMENT delete middle row
+[NO]AUTO_INCREMENT gap handling after delete
+[NO]AUTO_INCREMENT gap fill value 7
+[NO]AUTO_INCREMENT explicit large value
+[NO]AUTO_INCREMENT after large explicit
+[NO]AUTO_INCREMENT next after 100 is 101
+[NO]AUTO_INCREMENT second table
+[NO]AUTO_INCREMENT second table insert
+[NO]AUTO_INCREMENT second table value 1
+[NO]Setup UNIQUE table
+[NO]UNIQUE valid insert 1
+[NO]UNIQUE valid insert 2
+[YES]Reject UNIQUE duplicate
+[NO]UNIQUE insert empty string
+[YES]Reject UNIQUE duplicate empty string
+[NO]Setup multiple UNIQUE columns
+[NO]UNIQUE multi valid insert
+[YES]Reject UNIQUE multi first col dup
+[YES]Reject UNIQUE multi second col dup
+[NO]Setup UNIQUE NOT NULL
+[NO]UNIQUE NOT NULL valid insert
+[YES]Reject UNIQUE NOT NULL duplicate
+[NO]Setup DEFAULT table
+[NO]DEFAULT missing columns get defaults
+[NO]DEFAULT verify INT and VARCHAR defaults
+[NO]DEFAULT explicit values override
+[NO]DEFAULT verify explicit override
+[NO]Setup DEFAULT with PK
+[NO]DEFAULT with PK missing
+[NO]DEFAULT verify PK default 100
+[NO]Setup DEFAULT FLOAT
+[NO]DEFAULT FLOAT explicit insert
+[NO]Setup DEFAULT NOT NULL
+[NO]DEFAULT NOT NULL missing gets default
+[NO]DEFAULT NOT NULL explicit overrides
+[YES]Reject ALTER TABLE ADD COLUMN
+[YES]Reject ALTER TABLE DROP COLUMN
+[YES]Reject ALTER TABLE MODIFY COLUMN
+[YES]Reject ALTER TABLE nonexistent table
+[YES]Reject ALTER TABLE RENAME
+[YES]Reject ALTER TABLE ADD with DEFAULT
+[YES]Reject ALTER TABLE ADD FLOAT
+[YES]Reject ALTER TABLE ADD DOUBLE
+[YES]Reject ALTER TABLE ADD DATE
+[YES]Reject ALTER TABLE ADD CHAR
+[YES]Reject ALTER TABLE ADD VARCHAR
+[YES]Reject ALTER TABLE ADD NOT NULL
+[YES]Reject ALTER TABLE ADD PK
+[YES]Reject ALTER TABLE ADD UNIQUE
+[YES]Reject ALTER TABLE DROP nonexistent column
+[YES]Reject TRUNCATE TABLE
+[YES]Reject TRUNCATE TABLE nonexistent
+[YES]Reject TRUNCATE TABLE with data
+[YES]Reject TRUNCATE TABLE empty table
+[YES]Reject TRUNCATE without TABLE keyword
+[YES]Reject TRUNCATE TABLE missing name
+[YES]Reject TRUNCATE multiple tables
+[YES]Reject TRUNCATE TABLE CASCADE
+[YES]Reject TRUNCATE TABLE qualified name
+[YES]Reject TRUNCATE TABLE number name
+[YES]Reject CREATE TABLE BOOLEAN unsupported
+[YES]Reject CREATE TABLE TEXT unsupported
+[YES]Reject CREATE TABLE CHECK unsupported
+[YES]Reject CREATE TABLE missing name
+[YES]Reject CREATE TABLE no columns
+[YES]Reject CREATE TABLE empty column name
+[YES]Reject CREATE TABLE duplicate column
+[YES]Reject CREATE TABLE VARCHAR(0)
+[YES]Reject CREATE TABLE duplicate name
+[YES]Reject CREATE TABLE name too long
+[YES]Reject CHECK single condition
+[YES]Reject CHECK compound condition
+[YES]Reject CHECK string condition
+[YES]Reject CHECK multiple columns
+[YES]Reject CHECK table-level constraint
+====================
+DbVersionFullFlowTest
+2026-05-16 22:15:11
+90/128
+[YES]DB_VERSION_REQUEST returns DB_VERSION_RESPONSE with success
+[YES]DB_VERSION_RESPONSE has databases list
+[YES]DB_VERSION_RESPONSE dbVersion is 0
+[YES]DB_VERSION_REQUEST with empty user ID succeeds
+[YES]DB_VERSION_REQUEST with dbVersion set still succeeds
+[YES]Create multiple databases for DB_VERSION test
+[YES]DB_VERSION_RESPONSE lists multiple databases
+[YES]DB_VERSION_RESPONSE contains created databases
+[NO]DB_VERSION_RESPONSE all new databases have version 0
+[YES]DB_VERSION_RESPONSE excludes dropped databases
+[YES]DB_VERSION_RESPONSE type constant correct
+[YES]DB_VERSION_RESPONSE success flag true
+[YES]DB_VERSION_REQUEST repeated call stable
+[YES]DB_VERSION_RESPONSE databases vector valid
+[YES]DB_VERSION_REQUEST/RESPONSE basic flow placeholder
+[YES]DB_VERSION_RESPONSE after no changes stable
+[YES]DB_VERSION_REQUEST with large db count handled
+[YES]DB_VERSION_RESPONSE message field present
+[YES]DB_VERSION_REQUEST id field preserved in response
+[YES]DB_VERSION_RESPONSE rows empty for version request
+[YES]DB_VERSION_RESPONSE columns empty for version request
+[YES]CREATE DATABASE for flow test
+[YES]USE DATABASE for flow test
+[YES]CREATE DATABASE version starts at 0
+[YES]Server version 0 after CREATE DATABASE
+[YES]Version increments after CREATE TABLE
+[YES]Version increments by 1 on second CREATE TABLE
+[YES]Version increments by 1 on DROP TABLE
+[YES]Version increments by 1 on INSERT
+[YES]Version increments by 1 on UPDATE
+[YES]Version increments by 1 on DELETE
+[YES]Version increments by 1 on second INSERT
+[NO]Version increments by 1 on ALTER TABLE
+[YES]Version increments by 1 on TRUNCATE
+[NO]Version increments by 1 on INSERT after TRUNCATE
+[NO]Version increments by 1 on consecutive INSERT
+[YES]SELECT with correct version succeeds
+[YES]SQL_EXEC with version mismatch by 1 fails
+[YES]SQL_EXEC with version mismatch by 100 fails
+[YES]SQL_EXEC with version mismatch by large amount fails
+[NO]SQL_EXEC with version=0 on non-zero server fails
+[NO]SQL_EXEC response version is server version + 1 after read
+[YES]SQL_EXEC without version provided succeeds
+[YES]COUNT with correct version succeeds
+[NO]SELECT WHERE with correct version returns correct rows
+[NO]UPDATE with correct version succeeds
+[YES]DELETE with correct version succeeds
+[NO]INSERT with correct version succeeds
+[YES]SQL_EXEC with version one behind fails
+[NO]SQL_EXEC response version greater than request version
+[YES]SQL_EXEC correct version after CREATE TABLE
+[YES]SQL_EXEC correct version after DROP TABLE
+[YES]SQL_EXEC correct version after INSERT
+[YES]SQL_EXEC correct version after UPDATE
+[YES]SQL_EXEC correct version after DELETE
+[YES]SQL_EXEC correct version after ALTER TABLE
+[YES]SQL_EXEC correct version after TRUNCATE
+[YES]SQL_EXEC correct version after multiple operations
+[NO]SHOW TABLES without version has dbVersion 0
+[YES]SHOW DATABASES without dbName succeeds
+[YES]SQL_EXEC response contains positive dbVersion
+[YES]SQL_EXEC success response has no version mismatch message
+[YES]Version mismatch message contains 'version mismatch'
+[YES]Version mismatch response returns exact server version
+[YES]Correct version query returns SQL_QUERY_RESPONSE
+[NO]Correct version insert returns SQL_EXEC_RESPONSE
+[YES]Version increment on CREATE TABLE verified
+[YES]Version increment on DROP TABLE verified
+[NO]Version increment on INSERT verified
+[NO]Version increment on UPDATE verified
+[YES]Version increment on DELETE verified
+[NO]Version increment on ALTER TABLE ADD COLUMN verified
+[YES]Version increment on TRUNCATE verified
+[NO]Version increments twice for INSERT then UPDATE
+[NO]Version increments twice for UPDATE then DELETE
+[NO]Version increments twice for consecutive INSERTs
+[YES]Version increments twice for consecutive DELETEs
+[YES]Version increments for CREATE then DROP TABLE
+[NO]Version increment on ALTER TABLE DROP COLUMN
+[NO]Version increment on INSERT after ALTER
+[NO]Version increment on UPDATE all rows
+[YES]Version increment on DELETE with WHERE
+[NO]Version increment on INSERT single row
+[YES]Version increment on TRUNCATE with data
+[NO]Version increment on INSERT after TRUNCATE verified
+[YES]Version increment on CREATE TABLE second table
+[YES]Version increment on DROP TABLE second table
+[YES]DIRECTORY_REQUEST returns DIRECTORY_RESPONSE
+[YES]DIRECTORY_RESPONSE contains flow test database
+[YES]DIRECTORY_RESPONSE database has positive dbVersion
+[YES]DIRECTORY_REQUEST basic succeeds
+[NO]DIRECTORY version matches after INSERT
+[NO]DIRECTORY version matches after UPDATE
+[YES]DIRECTORY version matches after DELETE
+[YES]DIRECTORY_RESPONSE includes tables for database
+[YES]DIRECTORY_RESPONSE top-level dbVersion is 0
+[YES]DIRECTORY_REQUEST with empty user ID succeeds
+[YES]DIRECTORY_RESPONSE lists at least one database
+[NO]Multi-statement 2 INSERTs increments version once
+[NO]Multi-statement 3 INSERTs increments version once
+[NO]Multi-statement 5 INSERTs increments version once
+[NO]Multi-statement 2 UPDATEs increments version once
+[NO]Multi-statement 2 DELETEs increments version once
+[NO]Multi-statement INSERT+DELETE increments version once
+[NO]Multi-statement 2 SELECTs increments version once
+[NO]Multi-statement INSERT+SELECT increments version once
+[NO]Multi-statement UPDATE+SELECT increments version once
+[YES]Multi-statement mixed success/failure increments version once
+[YES]Version behavior with existing data stable
+[YES]UINT64_MAX version causes mismatch
+[YES]Rapid version query stable
+[NO]Version after failed operation not tested yet
+[YES]Duplicate INSERT with wrong version fails
+[YES]Failed SELECT with correct version still fails
+[YES]Duplicate CREATE TABLE with correct version fails
+[YES]DROP nonexistent table with correct version fails
+[YES]SQL_EXEC on nonexistent database fails
+[YES]Version after various operations is positive
+[NO]SHOW TABLES without version has dbVersion 0
+[YES]SELECT without version still works
+[NO]Edge case: version after successful INSERT
+[YES]Edge case: version after successful DELETE
+[NO]Edge case: version after UPDATE all rows
+[YES]DROP DATABASE cleanup succeeds
+[YES]DB_VERSION excludes database after DROP
+[YES]Re-CREATE DATABASE after DROP succeeds
+[YES]Re-created database version resets to 0
+[YES]Final DROP DATABASE cleanup
+====================
+DbVersionFullFlowTest
+2026-05-16 22:20:13
+90/128
+[YES]DB_VERSION_REQUEST returns DB_VERSION_RESPONSE with success
+[YES]DB_VERSION_RESPONSE has databases list
+[YES]DB_VERSION_RESPONSE dbVersion is 0
+[YES]DB_VERSION_REQUEST with empty user ID succeeds
+[YES]DB_VERSION_REQUEST with dbVersion set still succeeds
+[YES]Create multiple databases for DB_VERSION test
+[YES]DB_VERSION_RESPONSE lists multiple databases
+[YES]DB_VERSION_RESPONSE contains created databases
+[NO]DB_VERSION_RESPONSE all new databases have version 0
+[YES]DB_VERSION_RESPONSE excludes dropped databases
+[YES]DB_VERSION_RESPONSE type constant correct
+[YES]DB_VERSION_RESPONSE success flag true
+[YES]DB_VERSION_REQUEST repeated call stable
+[YES]DB_VERSION_RESPONSE databases vector valid
+[YES]DB_VERSION_REQUEST/RESPONSE basic flow placeholder
+[YES]DB_VERSION_RESPONSE after no changes stable
+[YES]DB_VERSION_REQUEST with large db count handled
+[YES]DB_VERSION_RESPONSE message field present
+[YES]DB_VERSION_REQUEST id field preserved in response
+[YES]DB_VERSION_RESPONSE rows empty for version request
+[YES]DB_VERSION_RESPONSE columns empty for version request
+[YES]CREATE DATABASE for flow test
+[YES]USE DATABASE for flow test
+[YES]CREATE DATABASE version starts at 0
+[YES]Server version 0 after CREATE DATABASE
+[YES]Version increments after CREATE TABLE
+[YES]Version increments by 1 on second CREATE TABLE
+[YES]Version increments by 1 on DROP TABLE
+[YES]Version increments by 1 on INSERT
+[YES]Version increments by 1 on UPDATE
+[YES]Version increments by 1 on DELETE
+[YES]Version increments by 1 on second INSERT
+[NO]Version increments by 1 on ALTER TABLE
+[YES]Version increments by 1 on TRUNCATE
+[NO]Version increments by 1 on INSERT after TRUNCATE
+[NO]Version increments by 1 on consecutive INSERT
+[YES]SELECT with correct version succeeds
+[YES]SQL_EXEC with version mismatch by 1 fails
+[YES]SQL_EXEC with version mismatch by 100 fails
+[YES]SQL_EXEC with version mismatch by large amount fails
+[NO]SQL_EXEC with version=0 on non-zero server fails
+[NO]SQL_EXEC response version is server version + 1 after read
+[YES]SQL_EXEC without version provided succeeds
+[YES]COUNT with correct version succeeds
+[NO]SELECT WHERE with correct version returns correct rows
+[NO]UPDATE with correct version succeeds
+[YES]DELETE with correct version succeeds
+[NO]INSERT with correct version succeeds
+[YES]SQL_EXEC with version one behind fails
+[NO]SQL_EXEC response version greater than request version
+[YES]SQL_EXEC correct version after CREATE TABLE
+[YES]SQL_EXEC correct version after DROP TABLE
+[YES]SQL_EXEC correct version after INSERT
+[YES]SQL_EXEC correct version after UPDATE
+[YES]SQL_EXEC correct version after DELETE
+[YES]SQL_EXEC correct version after ALTER TABLE
+[YES]SQL_EXEC correct version after TRUNCATE
+[YES]SQL_EXEC correct version after multiple operations
+[NO]SHOW TABLES without version has dbVersion 0
+[YES]SHOW DATABASES without dbName succeeds
+[YES]SQL_EXEC response contains positive dbVersion
+[YES]SQL_EXEC success response has no version mismatch message
+[YES]Version mismatch message contains 'version mismatch'
+[YES]Version mismatch response returns exact server version
+[YES]Correct version query returns SQL_QUERY_RESPONSE
+[NO]Correct version insert returns SQL_EXEC_RESPONSE
+[YES]Version increment on CREATE TABLE verified
+[YES]Version increment on DROP TABLE verified
+[NO]Version increment on INSERT verified
+[NO]Version increment on UPDATE verified
+[YES]Version increment on DELETE verified
+[NO]Version increment on ALTER TABLE ADD COLUMN verified
+[YES]Version increment on TRUNCATE verified
+[NO]Version increments twice for INSERT then UPDATE
+[NO]Version increments twice for UPDATE then DELETE
+[NO]Version increments twice for consecutive INSERTs
+[YES]Version increments twice for consecutive DELETEs
+[YES]Version increments for CREATE then DROP TABLE
+[NO]Version increment on ALTER TABLE DROP COLUMN
+[NO]Version increment on INSERT after ALTER
+[NO]Version increment on UPDATE all rows
+[YES]Version increment on DELETE with WHERE
+[NO]Version increment on INSERT single row
+[YES]Version increment on TRUNCATE with data
+[NO]Version increment on INSERT after TRUNCATE verified
+[YES]Version increment on CREATE TABLE second table
+[YES]Version increment on DROP TABLE second table
+[YES]DIRECTORY_REQUEST returns DIRECTORY_RESPONSE
+[YES]DIRECTORY_RESPONSE contains flow test database
+[YES]DIRECTORY_RESPONSE database has positive dbVersion
+[YES]DIRECTORY_REQUEST basic succeeds
+[NO]DIRECTORY version matches after INSERT
+[NO]DIRECTORY version matches after UPDATE
+[YES]DIRECTORY version matches after DELETE
+[YES]DIRECTORY_RESPONSE includes tables for database
+[YES]DIRECTORY_RESPONSE top-level dbVersion is 0
+[YES]DIRECTORY_REQUEST with empty user ID succeeds
+[YES]DIRECTORY_RESPONSE lists at least one database
+[NO]Multi-statement 2 INSERTs increments version once
+[NO]Multi-statement 3 INSERTs increments version once
+[NO]Multi-statement 5 INSERTs increments version once
+[NO]Multi-statement 2 UPDATEs increments version once
+[NO]Multi-statement 2 DELETEs increments version once
+[NO]Multi-statement INSERT+DELETE increments version once
+[NO]Multi-statement 2 SELECTs increments version once
+[NO]Multi-statement INSERT+SELECT increments version once
+[NO]Multi-statement UPDATE+SELECT increments version once
+[YES]Multi-statement mixed success/failure increments version once
+[YES]Version behavior with existing data stable
+[YES]UINT64_MAX version causes mismatch
+[YES]Rapid version query stable
+[NO]Version after failed operation not tested yet
+[YES]Duplicate INSERT with wrong version fails
+[YES]Failed SELECT with correct version still fails
+[YES]Duplicate CREATE TABLE with correct version fails
+[YES]DROP nonexistent table with correct version fails
+[YES]SQL_EXEC on nonexistent database fails
+[YES]Version after various operations is positive
+[NO]SHOW TABLES without version has dbVersion 0
+[YES]SELECT without version still works
+[NO]Edge case: version after successful INSERT
+[YES]Edge case: version after successful DELETE
+[NO]Edge case: version after UPDATE all rows
+[YES]DROP DATABASE cleanup succeeds
+[YES]DB_VERSION excludes database after DROP
+[YES]Re-CREATE DATABASE after DROP succeeds
+[YES]Re-created database version resets to 0
+[YES]Final DROP DATABASE cleanup

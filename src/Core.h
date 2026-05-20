@@ -7,6 +7,8 @@ class Tokenizer;
 class ParserManager;
 class SqlPipeline;
 class DbLogManager;
+class BinderManager;
+class PlanManager;
 
 /**
  * @class Core
@@ -51,6 +53,8 @@ public:
     StorageManager *getStorageManager();
     Tokenizer *getTokenizer();
     ParserManager *getParserManager();
+    BinderManager *getBinderManager();
+    PlanManager *getPlanManager();
     /**
      * @brief 获取 SQL 编排服务
      * @author YuzhSong
@@ -73,4 +77,6 @@ private:
     ParserManager *parserManager;
     SqlPipeline *sqlPipeline;
     DbLogManager *dbLogManager;
+    BinderManager *binderManager;
+    PlanManager *planManager;
 };

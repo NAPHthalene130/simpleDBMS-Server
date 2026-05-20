@@ -56,6 +56,10 @@ std::vector<std::string> buildFullValues(const storage::TableSchema &schema,
         if (it != specifiedColumns.end()) {
             const std::size_t idx = static_cast<std::size_t>(std::distance(specifiedColumns.begin(), it));
             fullValues[i] = specifiedValues[idx];
+        } else if (i < schema.columnMetas.size()
+                   && (schema.columnMetas[i].integrities & 8) != 0) {
+            // AUTO_INCREMENT 列且未指定值 → 留空，由 Table::normalize 自动生成
+            // 作者：NAPH130
         } else if (i < schema.columnMetas.size() && !schema.columnMetas[i].defaultValue.empty()) {
             fullValues[i] = schema.columnMetas[i].defaultValue;
         }
@@ -127,59 +131,98 @@ ExecutionResult InsertExecutor::executeInsert(const InsertStmt *insertStmt, Exec
     }
 
     const std::vector<std::string> &columnNames = insertStmt->getColumnNames();
-    const std::vector<std::string> &values = insertStmt->getValues();
 
-    if (columnNames.empty()) {
-        if (!databaseManager->insertRow(dbName, tableName, values)) {
-            LogWriter::error("executor", "InsertExecutor", "executeInsert",
-                             "Failed to insert row into " + dbName + "." + tableName + ".");
-            return buildFailureResult("Insert failed.", dbName, tableName);
-        }
+    // 获取所有待插入的值行
+    // 作者：NAPH130
+    std::vector<std::vector<std::string>> allValueRows;
+    const auto &multiValues = insertStmt->getMultiValues();
+    if (!multiValues.empty()) {
+        allValueRows = multiValues;
     } else {
-        try {
-            const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
-            const auto dbPath = dbRootPath / dbName;
-
-            if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
-                return buildFailureResult("Database does not exist.", dbName, tableName);
-            }
-
-            auto table = storage::Table::load(dbPath, tableName);
-            const auto &schema = table.schema();
-
-            const std::vector<std::string> fullValues = buildFullValues(schema, columnNames, values);
-
-            const std::string notNullError = validateNotNull(schema, fullValues);
-            if (!notNullError.empty()) {
-                return buildFailureResult(notNullError, dbName, tableName);
-            }
-
-            table.insert(fullValues);
-        } catch (const std::exception &exception) {
-            LogWriter::error("executor", "InsertExecutor", "executeInsert",
-                             std::string("Insert into ") + dbName + "." + tableName + " failed: " + exception.what());
-            return buildFailureResult(std::string("Insert failed: ") + exception.what(), dbName, tableName);
-        }
+        allValueRows.push_back(insertStmt->getValues());
     }
 
-    // 记录插入日志
-    if (core != nullptr && core->getDbLogManager() != nullptr) {
-        const std::vector<std::string> &insertValues = insertStmt->getValues();
-        const std::vector<std::string> &insertColumns = insertStmt->getColumnNames();
-        nlohmann::json insertSnapshot;
-        for (std::size_t i = 0; i < insertColumns.size() && i < insertValues.size(); ++i) {
-            insertSnapshot[insertColumns[i]] = insertValues[i];
+    std::int32_t totalInserted = 0;
+
+    for (const auto &values : allValueRows) {
+        if (columnNames.empty()) {
+            if (!databaseManager->insertRow(dbName, tableName, values)) {
+                LogWriter::error("executor", "InsertExecutor", "executeInsert",
+                                 "Failed to insert row into " + dbName + "." + tableName + ".");
+                return buildFailureResult("Insert failed at row " + std::to_string(totalInserted + 1) + ".", dbName, tableName);
+            }
+
+            if (core != nullptr && core->getDbLogManager() != nullptr) {
+                nlohmann::json insertSnapshot;
+                insertSnapshot["__primary_key__"] = values.front();
+                insertSnapshot["values"] = values;
+                core->getDbLogManager()->logInsert(
+                    dbName, tableName,
+                    insertSnapshot.dump(),
+                    "INSERT INTO " + tableName + " VALUES (...)"
+                );
+            }
+        } else {
+            try {
+                const auto &dbRootPath = SystemCatalogManager::getDataRootPath();
+                const auto dbPath = dbRootPath / dbName;
+
+                if (!std::filesystem::exists(dbPath) || !std::filesystem::is_directory(dbPath)) {
+                    return buildFailureResult("Database does not exist.", dbName, tableName);
+                }
+
+                auto table = storage::Table::load(dbPath, tableName);
+                const auto &schema = table.schema();
+
+                const std::vector<std::string> fullValues = buildFullValues(schema, columnNames, values);
+
+                LogWriter::info("executor", "InsertExecutor", "executeInsert",
+                                "Partial INSERT: columnNames=" + std::to_string(columnNames.size())
+                                + " fullValues=" + std::to_string(fullValues.size())
+                                + " firstVal=" + (fullValues.empty() ? "empty" : fullValues.front()));
+
+                const std::string notNullError = validateNotNull(schema, fullValues);
+                if (!notNullError.empty()) {
+                    return buildFailureResult(notNullError, dbName, tableName);
+                }
+
+                table.insert(fullValues);
+
+                LogWriter::info("executor", "InsertExecutor", "executeInsert",
+                                "Partial INSERT succeeded: " + dbName + "." + tableName);
+
+                // 逐行记录插入日志 — NAPH130
+                if (core != nullptr && core->getDbLogManager() != nullptr) {
+                    nlohmann::json insertSnapshot;
+                    insertSnapshot["__primary_key__"] = fullValues.front();
+                    insertSnapshot["values"] = fullValues;
+                    if (!columnNames.empty()) {
+                        nlohmann::json columnMap;
+                        for (std::size_t i = 0; i < columnNames.size() && i < values.size(); ++i) {
+                            columnMap[columnNames[i]] = values[i];
+                        }
+                        insertSnapshot["columns"] = columnMap;
+                    }
+                    core->getDbLogManager()->logInsert(
+                        dbName, tableName,
+                        insertSnapshot.dump(),
+                        "INSERT INTO " + tableName + " VALUES (...)"
+                    );
+                }
+            } catch (const std::exception &exception) {
+                LogWriter::error("executor", "InsertExecutor", "executeInsert",
+                                 std::string("Insert into ") + dbName + "." + tableName + " failed: " + exception.what());
+                return buildFailureResult(std::string("Insert failed: ") + exception.what(), dbName, tableName);
+            }
         }
-        core->getDbLogManager()->logInsert(
-            dbName, tableName,
-            insertSnapshot.dump(),
-            "INSERT INTO " + tableName + " VALUES (...)"
-        );
+        ++totalInserted;
     }
 
     LogWriter::info("executor", "InsertExecutor", "executeInsert",
-                    "Inserted row into " + dbName + "." + tableName + ".");
-    return buildSuccessResult("Insert succeeded.", dbName, tableName);
+                    "Inserted " + std::to_string(totalInserted) + " row(s) into " + dbName + "." + tableName + ".");
+    ExecutionResult result = buildSuccessResult("Insert succeeded.", dbName, tableName);
+    result.setAffectedRows(totalInserted);
+    return result;
 }
 
 bool InsertExecutor::validateInsertStmt(const InsertStmt *insertStmt) const

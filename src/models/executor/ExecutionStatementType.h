@@ -20,5 +20,8 @@ enum class ExecutionStatementType
     UseDatabase,     ///< 切换数据库
     Show,            ///< 查看数据库/表
     Use,             ///< 用户相关操作
+    UnionSelect,     ///< UNION 查询
+    AlterTable,      ///< 修改表结构
+    Dcl,             ///< 数据控制语言（GRANT/REVOKE）
     Unknown          ///< 未知类型
 };

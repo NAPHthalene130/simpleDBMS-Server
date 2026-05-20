@@ -9,6 +9,7 @@
 
 #include "Core.h"
 #include "dbLog/DbLogManager.h"
+#include "dbLog/DbLogSnapshotUtils.h"
 #include "log/LogWriter.h"
 #include "storage/manager/SystemCatalogManager.h"
 
@@ -166,6 +167,19 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
         storage::ColumnMeta meta;
         meta.integrities = fieldBlock.getIntegrities();
         meta.defaultValue = fieldBlock.getDefaultValue();
+
+        const std::int32_t fieldType = fieldBlock.getType();
+        const std::int32_t fieldParam = fieldBlock.getParam();
+        switch (fieldType) {
+            case 1: meta.dataType = storage::DataType::INT; break;
+            case 2:
+            case 3:
+            case 7: meta.dataType = storage::DataType::FLOAT; break;
+            case 5: meta.dataType = storage::DataType::VARCHAR; meta.varcharLen = static_cast<std::uint16_t>(fieldParam); break;
+            case 8: meta.dataType = storage::DataType::TEXT; break;
+            default: meta.dataType = storage::DataType::TEXT; break;
+        }
+
         columnMetas.push_back(meta);
     }
 
@@ -180,9 +194,8 @@ ExecutionResult CreateTableExecutor::executeCreateTable(const CreateTableStmt *c
 
     // 记录创建表日志
     if (core != nullptr && core->getDbLogManager() != nullptr) {
-        nlohmann::json tableSnapshot;
-        tableSnapshot["columns"] = columnNames;
-        tableSnapshot["field_count"] = fieldBlocks.size();
+        const auto dbPath = SystemCatalogManager::getDataRootPath() / dbName;
+        const nlohmann::json tableSnapshot = dblog_snapshot::buildTableSnapshot(dbPath, tableName);
         core->getDbLogManager()->logCreateTable(
             dbName, tableName, tableSnapshot.dump(),
             "CREATE TABLE " + tableName + " (...)"

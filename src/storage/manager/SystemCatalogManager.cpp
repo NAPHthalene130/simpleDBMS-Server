@@ -420,11 +420,69 @@ bool SystemCatalogManager::checkDbExists(std::string dbName)
 
 uInt64 SystemCatalogManager::getDatabaseVersion(std::string dbName)
 {
-    (void)dbName;
-    return 0;
+    if (dbName.empty()) {
+        LogWriter::warning("storage", "SystemCatalogManager", "getDatabaseVersion",
+                           "Rejected empty database name.");
+        return 0;
+    }
+
+    const auto verFilePath = SystemCatalogManager::getDataRootPath() / dbName / (dbName + ".ver");
+    if (!std::filesystem::exists(verFilePath)) {
+        LogWriter::debug("storage", "SystemCatalogManager", "getDatabaseVersion",
+                         std::string("Version file not found for database: ") + dbName + ", returning 0.");
+        return 0;
+    }
+
+    std::ifstream ifs(verFilePath, std::ios::binary);
+    if (!ifs.good()) {
+        LogWriter::warning("storage", "SystemCatalogManager", "getDatabaseVersion",
+                           std::string("Failed to open version file for database: ") + dbName);
+        return 0;
+    }
+
+    uInt64 version = 0;
+    ifs.read(reinterpret_cast<char *>(&version), sizeof(uInt64));
+    if (ifs.gcount() != sizeof(uInt64)) {
+        LogWriter::warning("storage", "SystemCatalogManager", "getDatabaseVersion",
+                           std::string("Version file is corrupted for database: ") + dbName + ", returning 0.");
+        return 0;
+    }
+
+    LogWriter::debug("storage", "SystemCatalogManager", "getDatabaseVersion",
+                     std::string("Database ") + dbName + " version=" + std::to_string(version));
+    return version;
 }
 
 void SystemCatalogManager::addDatabaseVersion(std::string dbName)
 {
-    (void)dbName;
+    if (dbName.empty()) {
+        LogWriter::warning("storage", "SystemCatalogManager", "addDatabaseVersion",
+                           "Rejected empty database name.");
+        return;
+    }
+
+    uInt64 currentVersion = getDatabaseVersion(dbName);
+    const uInt64 newVersion = (currentVersion == UINT64_MAX) ? 0 : (currentVersion + 1);
+
+    const auto dbFolderPath = SystemCatalogManager::getDataRootPath() / dbName;
+    std::filesystem::create_directories(dbFolderPath);
+    const auto verFilePath = dbFolderPath / (dbName + ".ver");
+
+    std::ofstream ofs(verFilePath, std::ios::binary | std::ios::trunc);
+    if (!ofs.good()) {
+        LogWriter::error("storage", "SystemCatalogManager", "addDatabaseVersion",
+                         std::string("Failed to write version file for database: ") + dbName);
+        return;
+    }
+
+    ofs.write(reinterpret_cast<const char *>(&newVersion), sizeof(uInt64));
+    if (!ofs.good()) {
+        LogWriter::error("storage", "SystemCatalogManager", "addDatabaseVersion",
+                         std::string("Failed to write version file for database: ") + dbName);
+        return;
+    }
+
+    LogWriter::info("storage", "SystemCatalogManager", "addDatabaseVersion",
+                    std::string("Database ") + dbName + " version updated: "
+                        + std::to_string(currentVersion) + " -> " + std::to_string(newVersion));
 }

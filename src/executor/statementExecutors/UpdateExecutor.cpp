@@ -9,6 +9,7 @@
 #include <string>
 
 #include "Core.h"
+#include "SubqueryEvaluationUtils.h"
 #include "dbLog/DbLogManager.h"
 #include "log/LogWriter.h"
 #include "storage/manager/SystemCatalogManager.h"
@@ -171,7 +172,7 @@ ExecutionResult UpdateExecutor::executeUpdate(const UpdateStmt *updateStmt,
             }
 
             if (whereCondition != nullptr
-                && !evaluateConditionTree(whereCondition, row.values, schema.columns)) {
+                && !evaluateConditionTree(whereCondition, row.values, schema.columns, dbName, tableName)) {
                 continue;
             }
 
@@ -180,20 +181,34 @@ ExecutionResult UpdateExecutor::executeUpdate(const UpdateStmt *updateStmt,
                 newValues[setColumnIndexes[i]] = setValues[i];
             }
 
-            rowsToUpdate.push_back({row.values.front(), std::move(newValues)});
+            rowsToUpdate.push_back(RowUpdate{row.values.front(), std::move(newValues)});
         }
 
-        // 记录更新日志 -- NAPH130
+        // 记录更新日志 — 先记录beforeData（旧值），再执行更新 — NAPH130
         if (core != nullptr && core->getDbLogManager() != nullptr && !rowsToUpdate.empty()) {
             for (const auto &rowUpdate : rowsToUpdate) {
-                nlohmann::json updateSnapshot;
-                updateSnapshot["primary_key"] = rowUpdate.primaryKey;
-                updateSnapshot["new_values"] = rowUpdate.newValues;
+                // 从原始行中找到旧值
+                std::vector<std::string> oldValues;
+                for (const auto &row : allRows) {
+                    if (row.values.front() == rowUpdate.primaryKey) {
+                        oldValues = row.values;
+                        break;
+                    }
+                }
+
+                nlohmann::json beforeSnapshot;
+                beforeSnapshot["primary_key"] = rowUpdate.primaryKey;
+                beforeSnapshot["old_values"] = oldValues;
+
+                nlohmann::json afterSnapshot;
+                afterSnapshot["primary_key"] = rowUpdate.primaryKey;
+                afterSnapshot["new_values"] = rowUpdate.newValues;
+
                 core->getDbLogManager()->logUpdate(
                     dbName, tableName,
-                    "",
-                    updateSnapshot.dump(),
-                    "UPDATE " + tableName + " SET ... WHERE ..."
+                    beforeSnapshot.dump(),
+                    afterSnapshot.dump(),
+                    "UPDATE " + tableName + " WHERE primary_key=" + rowUpdate.primaryKey
                 );
             }
         }
@@ -229,55 +244,22 @@ ExecutionResult UpdateExecutor::executeUpdate(const UpdateStmt *updateStmt,
 
 bool UpdateExecutor::evaluateConditionTree(const ConditionNode *conditionNode,
                                            const std::vector<std::string> &row,
-                                           const std::vector<std::string> &columns)
+                                           const std::vector<std::string> &columns,
+                                           const std::string &dbName,
+                                           const std::string &tableName)
 {
-    if (conditionNode == nullptr) {
-        return true;
-    }
-
-    const auto &leftNode = conditionNode->getLeftNode();
-    const auto &rightNode = conditionNode->getRightNode();
-
-    if (leftNode != nullptr || rightNode != nullptr) {
-        const bool leftResult = evaluateConditionTree(leftNode.get(), row, columns);
-        const bool rightResult = evaluateConditionTree(rightNode.get(), row, columns);
-        const std::string opUpper = toUpperString(conditionNode->getOperator());
-        if (opUpper == "AND") {
-            return leftResult && rightResult;
-        }
-        return leftResult || rightResult;
-    }
-
-    return evaluateLeafCondition(conditionNode, row, columns);
+    return subquery_eval::evaluateConditionTree(
+        conditionNode, row, columns, dbName, tableName, {}, {}, "");
 }
 
 bool UpdateExecutor::evaluateLeafCondition(const ConditionNode *conditionNode,
                                            const std::vector<std::string> &row,
-                                           const std::vector<std::string> &columns)
+                                           const std::vector<std::string> &columns,
+                                           const std::string &dbName,
+                                           const std::string &tableName)
 {
-    if (conditionNode == nullptr) {
-        return true;
-    }
-
-    const std::string &columnName = conditionNode->getLeftOperand();
-    const std::string &opStr = conditionNode->getOperator();
-    const std::string &value = conditionNode->getRightOperand();
-
-    auto it = std::find(columns.begin(), columns.end(), columnName);
-    if (it == columns.end()) {
-        LogWriter::warning("executor",
-                           "UpdateExecutor",
-                           "evaluateLeafCondition",
-                           "Unknown column in WHERE: " + columnName);
-        return false;
-    }
-
-    const std::size_t columnIndex = static_cast<std::size_t>(std::distance(columns.begin(), it));
-    if (columnIndex >= row.size()) {
-        return false;
-    }
-
-    return compareValues(row[columnIndex], mapCompareOp(opStr), value);
+    return subquery_eval::evaluateLeafCondition(
+        conditionNode, row, columns, dbName, tableName, {}, {}, "");
 }
 
 bool UpdateExecutor::compareValues(const std::string &leftValue,

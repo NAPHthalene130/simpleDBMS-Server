@@ -60,6 +60,8 @@ public:
         std::string value;
         std::string secondValue;
         std::vector<std::string> values;
+        bool isSubqueryNot = false;
+        bool isExistsCheck = false;
     };
 
     struct AggregateExpr {
@@ -77,15 +79,37 @@ public:
 
     struct SelectOptions {
         std::string orderByColumn;
-        bool orderByDesc = false;
-        bool hasLimit = false;
-        std::size_t limit = 0;
+        bool orderByDesc;
+        bool hasLimit;
+        std::size_t limit;
+
+        SelectOptions() : orderByDesc(false), hasLimit(false), limit(0) {}
+    };
+
+    enum class SubqueryKind { Scalar, RowSet, Exists };
+
+    struct SubqueryResult {
+        SubqueryKind kind = SubqueryKind::Scalar;
+        std::string scalarValue;
+        std::vector<std::string> rows;
+        bool exists = false;
+        bool empty() const { return kind == SubqueryKind::RowSet ? rows.empty() : (kind == SubqueryKind::Exists ? !exists : scalarValue.empty()); }
+    };
+
+    struct SubquerySpec {
+        std::string dbName;
+        std::string tableName;
+        std::vector<std::string> targetColumns;
+        std::vector<WhereCondition> whereConditions;
+        std::vector<AggregateExpr> aggregates;
+        SelectOptions options;
     };
 
     enum class ConstraintType {
         NOT_NULL,
         UNIQUE,
-        DEFAULT_VALUE
+        DEFAULT_VALUE,
+        CHECK_CONSTRAINT
     };
 
     struct ColumnConstraintSpec {
@@ -94,11 +118,16 @@ public:
         bool unique = false;
         bool hasDefault = false;
         std::string defaultValue;
+        bool hasCheck = false;
+        std::string checkExpr;  // format: "op|value" e.g. ">=|18" or "<|100"
     };
 
     struct ColumnDefinition {
         std::string name;
         ColumnConstraintSpec constraints;
+        DataType dataType = DataType::TEXT;
+        std::uint16_t varcharLen = 0;
+        bool isPrimaryKey = false;
     };
 
     struct QueryConstraint {
@@ -174,6 +203,45 @@ public:
     bool deleteByPrimaryKey(const std::string& primaryKey);
 
     /**
+     * @brief 按条件更新，返回受影响行数
+     * @author Startale
+     */
+    std::size_t updateByCondition(const std::vector<WhereCondition>& whereConditions,
+                                  const std::vector<std::string>& newValues);
+
+    /**
+     * @brief 按条件删除，返回受影响行数
+     * @author Startale
+     */
+    std::size_t deleteByCondition(const std::vector<WhereCondition>& whereConditions);
+
+    /**
+     * @brief 快速清空全部数据
+     * @author Startale
+     */
+    void truncate();
+
+    std::size_t compact();
+
+    bool addColumn(const std::string& name, DataType type, std::uint16_t varcharLen = 0,
+                   const std::string& defaultValue = "");
+    bool rename(const std::string& newName);
+    bool dropConstraint(const std::string& column, ConstraintType type);
+    bool dropColumn(const std::string& name);
+    bool renameColumn(const std::string& oldName, const std::string& newName);
+    bool alterColumnType(const std::string& column, DataType newType, std::uint16_t varcharLen = 0);
+
+    bool setPrimaryKey(const std::string& column);
+
+    SubqueryResult evaluateSubquery(const SubquerySpec& spec) const;
+
+    /**
+     * @brief 求值关联子查询，将 spec 中 "$outer.col" 引用替换为 outerRow 对应列值
+     * @author Startale
+     */
+    SubqueryResult evaluateSubqueryForRow(const SubquerySpec& spec, const Row& outerRow) const;
+
+    /**
      * @brief 按列投影并按条件过滤查询数据
      * @author Startale
      * @param targetColumns 目标列名列表，传空或 {"*"} 表示返回全部列
@@ -208,12 +276,42 @@ public:
     bool addColumnConstraints(const std::vector<ColumnConstraintSpec>& specs);
     std::vector<ColumnConstraintSpec> getColumnConstraints() const;
 
+    std::uint64_t getVersion() const;
+
     /**
-     * @brief 获取表结构
+     * @brief 将 ColumnDefinition 转换为 ColumnMeta
      * @author Startale
-     * @return 表结构对象
+     * @param def 列定义
+     * @return 列元数据
      */
+    static ColumnMeta toColumnMeta(const ColumnDefinition& def);
+
+    static bool compareValue(const std::string& left, CompareOp op, const std::string& right);
+    static bool compareValue(const std::string& left, const WhereCondition& condition);
+
     const TableSchema& schema() const { return schema_; }
+
+    /**
+     * @brief 获取指定列的下一自增值并递增计数器
+     * @author NAPH130
+     * @param columnName 列名
+     * @return 下一自增值（首次调用从1开始）
+     */
+    std::int64_t nextAutoIncValue(const std::string& columnName) const;
+
+    /**
+     * @brief 初始化自增计数器起始值
+     * @author NAPH130
+     * @param columnName 列名
+     * @param startValue 起始值
+     */
+    void initAutoIncValue(const std::string& columnName, std::int64_t startValue);
+
+    /**
+     * @brief 检查指定列是否有自增标记
+     * @author NAPH130
+     */
+    bool isAutoIncColumn(const std::string& columnName) const;
 
     /**
      * @brief 检查主键是否已存在
@@ -224,14 +322,63 @@ public:
     bool containsPrimaryKey(const std::string& key) const;
 
 private:
+    struct ColumnIndex {
+        std::multimap<std::string, std::uint64_t> entries;
+        std::filesystem::path filePath;
+        bool active = false;
+
+        void add(const std::string& value, std::uint64_t offset) {
+            entries.emplace(value, offset);
+        }
+        void remove(const std::string& value, std::uint64_t offset) {
+            auto range = entries.equal_range(value);
+            for (auto it = range.first; it != range.second; ++it) {
+                if (it->second == offset) { entries.erase(it); break; }
+            }
+        }
+        void save(const std::filesystem::path& path);
+        void load(const std::filesystem::path& path);
+        bool lookup(const std::string& value, Table::CompareOp op,
+                    const std::string& secondValue, const std::vector<std::string>& values,
+                    std::vector<std::uint64_t>& offsets) const;
+    };
+
+    struct ConstraintValidator {
+        const Table& table;
+
+        explicit ConstraintValidator(const Table& t) : table(t) {}
+
+        std::vector<std::string> normalize(const std::vector<std::string>& values) const;
+        void check(const std::vector<std::string>& values, const std::string* skipPrimaryKey = nullptr) const;
+        bool checkNewConstraint(const ColumnConstraintSpec& spec) const;
+    };
+
+    struct DataPageManager {
+        Table& table;
+
+        explicit DataPageManager(Table& t) : table(t) {}
+
+        TupleRef allocate(const std::vector<std::string>& values);
+        bool read(TupleRef ref, Row& out) const;
+        bool markDeleted(TupleRef ref);
+        std::vector<Row> scanAll() const;
+        void scan(std::function<void(TupleRef, const Row&)> visitor) const;
+        bool compactPage(std::uint32_t pageId);
+        std::size_t compactAll();
+    };
+
     std::filesystem::path dbPath_;
     TableSchema schema_;
     BTree<std::string, Row> index_{2};
     std::unordered_map<std::string, std::uint64_t> primaryKeyOffsets_;
     std::map<std::string, std::uint64_t> primaryKeyOffsetsOrdered_;
     std::unordered_map<std::string, ColumnConstraintSpec> constraintsByColumn_;
+    std::unordered_map<std::string, ColumnIndex> secondaryIndexes_;
+    mutable std::map<std::string, std::int64_t> autoIncCounters_;
+    DataPageManager dataPages_{*this};
     std::uint32_t rootPageId_ = 1;
     std::uint32_t nextPageId_ = 2;
+    using TidNodeRef = BTree<std::string, Row>::TidNodeRef;
 
     /**
      * @brief 获取表元数据文件路径
@@ -261,6 +408,7 @@ private:
      */
     std::filesystem::path indexFilePath() const;
     std::filesystem::path nonPrimaryIndexFilePath(const std::string& column) const;
+    std::filesystem::path versionFilePath() const;
 
     /**
      * @brief 持久化表结构到元数据文件
@@ -276,20 +424,11 @@ private:
     void loadConstraintsFromIntegrityMeta();
 
     /**
-     * @brief 追加一行数据记录到 .trd 文件
+     * @brief 将内存 BTree 索引刷盘为页式 .tid 文件
      * @author Startale
-     * @param values 行数据
-     * @return 写入前的字节偏移
      */
-    std::uint64_t appendDataRow(const std::vector<std::string>& values) const;
-
-    /**
-     * @brief 追加主键索引记录到 .tid 文件
-     * @author Startale
-     * @param key 主键值
-     * @param offset 对应数据在 .trd 中的偏移
-     */
-    void appendIndexEntry(const std::string& key, std::uint64_t offset);
+    void syncIndexPages();
+    void writeHeader(std::ostream& os);
 
     /**
      * @brief 从 .tid 恢复内存索引
@@ -324,12 +463,6 @@ private:
     std::vector<Row> readAllDataRows() const;
     bool readRowByOffset(std::uint64_t offset, Row& row) const;
 
-    /**
-     * @brief 覆盖写回所有行记录到数据文件
-     * @author Startale
-     * @param rows 行记录列表
-     */
-    void rewriteDataRows(const std::vector<Row>& rows) const;
     std::vector<std::string> normalizeInputValues(const std::vector<std::string>& values) const;
     bool validateConstraintForExistingRows(const ColumnConstraintSpec& spec) const;
     void enforceRowConstraints(const std::vector<std::string>& values,
@@ -383,28 +516,9 @@ private:
     static std::vector<std::uint64_t> mergeOffsetUnion(const std::vector<std::uint64_t>& left,
                                                        const std::vector<std::uint64_t>& right);
     static std::vector<std::uint64_t> mergeOffsetIntersection(const std::vector<std::uint64_t>& left,
-                                                              const std::vector<std::uint64_t>& right);
+                                                               const std::vector<std::uint64_t>& right);
 
-    /**
-     * @brief 比较两个字段值
-     * @author Startale
-     * @param left 左值
-     * @param op 比较操作符
-     * @param right 右值
-     * @return 比较结果
-     */
-    static bool compareValue(const std::string& left, CompareOp op, const std::string& right);
-    static bool compareValue(const std::string& left,
-                             const WhereCondition& condition);
-
-    /**
-     * @brief LIKE 模式匹配
-     * @author Startale
-     * @param text 待匹配文本
-     * @param pattern LIKE 模式，支持 % 通配
-     * @return 是否匹配
-     */
-    static bool likeMatch(const std::string& text, const std::string& pattern);
+    bool compareTyped(std::size_t colIndex, const std::string& left, CompareOp op, const std::string& right) const;
 
     /**
      * @brief 生成主键值

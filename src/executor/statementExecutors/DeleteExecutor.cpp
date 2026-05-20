@@ -9,6 +9,7 @@
 #include <string>
 
 #include "Core.h"
+#include "SubqueryEvaluationUtils.h"
 #include "dbLog/DbLogManager.h"
 #include "log/LogWriter.h"
 #include "storage/manager/SystemCatalogManager.h"
@@ -140,23 +141,30 @@ ExecutionResult DeleteExecutor::executeDelete(const DeleteStmt *deleteStmt,
             }
 
             if (whereCondition != nullptr
-                && !evaluateConditionTree(whereCondition, row.values, schema.columns)) {
+                && !evaluateConditionTree(whereCondition, row.values, schema.columns, dbName, tableName)) {
                 continue;
             }
 
             keysToDelete.push_back(row.values.front());
         }
 
-        // 记录删除日志 -- NAPH130
+        // 记录删除日志 — 逐行记录完整数据，便于恢复 — NAPH130
         if (core != nullptr && core->getDbLogManager() != nullptr && !keysToDelete.empty()) {
-            nlohmann::json deleteSnapshot;
-            deleteSnapshot["deleted_keys"] = keysToDelete;
-            deleteSnapshot["deleted_count"] = static_cast<std::int32_t>(keysToDelete.size());
-            core->getDbLogManager()->logDelete(
-                dbName, tableName,
-                deleteSnapshot.dump(),
-                "DELETE FROM " + tableName + " WHERE ..."
-            );
+            for (const auto &row : allRows) {
+                if (std::find(keysToDelete.begin(), keysToDelete.end(), row.values.front())
+                    == keysToDelete.end()) {
+                    continue;
+                }
+                nlohmann::json deleteSnapshot;
+                deleteSnapshot["primary_key"] = row.values.front();
+                deleteSnapshot["values"] = row.values;
+                deleteSnapshot["columns"] = schema.columns;
+                core->getDbLogManager()->logDelete(
+                    dbName, tableName,
+                    deleteSnapshot.dump(),
+                    "DELETE FROM " + tableName + " WHERE primary_key=" + row.values.front()
+                );
+            }
         }
 
         std::int32_t deletedCount = 0;
@@ -190,55 +198,22 @@ ExecutionResult DeleteExecutor::executeDelete(const DeleteStmt *deleteStmt,
 
 bool DeleteExecutor::evaluateConditionTree(const ConditionNode *conditionNode,
                                            const std::vector<std::string> &row,
-                                           const std::vector<std::string> &columns)
+                                           const std::vector<std::string> &columns,
+                                           const std::string &dbName,
+                                           const std::string &tableName)
 {
-    if (conditionNode == nullptr) {
-        return true;
-    }
-
-    const auto &leftNode = conditionNode->getLeftNode();
-    const auto &rightNode = conditionNode->getRightNode();
-
-    if (leftNode != nullptr || rightNode != nullptr) {
-        const bool leftResult = evaluateConditionTree(leftNode.get(), row, columns);
-        const bool rightResult = evaluateConditionTree(rightNode.get(), row, columns);
-        const std::string opUpper = toUpperString(conditionNode->getOperator());
-        if (opUpper == "AND") {
-            return leftResult && rightResult;
-        }
-        return leftResult || rightResult;
-    }
-
-    return evaluateLeafCondition(conditionNode, row, columns);
+    return subquery_eval::evaluateConditionTree(
+        conditionNode, row, columns, dbName, tableName, {}, {}, "");
 }
 
 bool DeleteExecutor::evaluateLeafCondition(const ConditionNode *conditionNode,
                                            const std::vector<std::string> &row,
-                                           const std::vector<std::string> &columns)
+                                           const std::vector<std::string> &columns,
+                                           const std::string &dbName,
+                                           const std::string &tableName)
 {
-    if (conditionNode == nullptr) {
-        return true;
-    }
-
-    const std::string &columnName = conditionNode->getLeftOperand();
-    const std::string &opStr = conditionNode->getOperator();
-    const std::string &value = conditionNode->getRightOperand();
-
-    auto it = std::find(columns.begin(), columns.end(), columnName);
-    if (it == columns.end()) {
-        LogWriter::warning("executor",
-                           "DeleteExecutor",
-                           "evaluateLeafCondition",
-                           "Unknown column in WHERE: " + columnName);
-        return false;
-    }
-
-    const std::size_t columnIndex = static_cast<std::size_t>(std::distance(columns.begin(), it));
-    if (columnIndex >= row.size()) {
-        return false;
-    }
-
-    return compareValues(row[columnIndex], mapCompareOp(opStr), value);
+    return subquery_eval::evaluateLeafCondition(
+        conditionNode, row, columns, dbName, tableName, {}, {}, "");
 }
 
 bool DeleteExecutor::compareValues(const std::string &leftValue,

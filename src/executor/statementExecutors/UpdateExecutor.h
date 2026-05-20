@@ -61,7 +61,9 @@ private:
      */
     static bool evaluateConditionTree(const ConditionNode *conditionNode,
                                       const std::vector<std::string> &row,
-                                      const std::vector<std::string> &columns);
+                                      const std::vector<std::string> &columns,
+                                      const std::string &dbName,
+                                      const std::string &tableName);
 
     /**
      * @brief 评估叶子比较节点对一行数据是否成立
@@ -73,7 +75,9 @@ private:
      */
     static bool evaluateLeafCondition(const ConditionNode *conditionNode,
                                       const std::vector<std::string> &row,
-                                      const std::vector<std::string> &columns);
+                                      const std::vector<std::string> &columns,
+                                      const std::string &dbName,
+                                      const std::string &tableName);
 
     /**
      * @brief 比较两个值是否满足指定比较操作

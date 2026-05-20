@@ -181,10 +181,16 @@ $RECYCLE.BIN/
 /build-tests-cmake/
 /.idea
 /build
+/data
 /CMakeUserPresets.json
 src/log/logs.log
 src/storage/data/StartaleDB/
 src/storage/DONTREADME.txt
+src/storage/plan.md
 vcpkg_installed/
 /build-msvc/
 src/storage/data/*
+src/test/StorageCoreChainTest.cpp
+test/report.log
+build*/
+src/test/test_write_check.txt

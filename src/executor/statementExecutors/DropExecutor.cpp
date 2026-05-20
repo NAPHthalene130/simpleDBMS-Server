@@ -1,8 +1,13 @@
 #include "DropExecutor.h"
 
+#include <filesystem>
+
 #include "Core.h"
 #include "dbLog/DbLogManager.h"
+#include "dbLog/DbLogSnapshotUtils.h"
 #include "log/LogWriter.h"
+#include "storage/manager/SystemCatalogManager.h"
+#include "storage/object/Table.h"
 
 namespace {
 ExecutionResult buildFailureResult(const std::string &message,
@@ -67,19 +72,25 @@ ExecutionResult DropExecutor::execute(const SQLStatement *statement, ExecutionCo
                                "Database does not exist: " + targetName + ".");
             return buildFailureResult("Database does not exist.", targetName);
         }
+
+        // 先记录日志（此时文件夹仍存在），再执行删除
+        // 避免日志系统在文件夹删除后通过 create_directories 重建，
+        // 导致后续 CREATE DATABASE 误判文件夹已存在。
+        // 作者：NAPH130
+        if (core != nullptr && core->getDbLogManager() != nullptr) {
+            const nlohmann::json databaseSnapshot =
+                dblog_snapshot::buildDatabaseSnapshot(databaseManager, targetName);
+            core->getDbLogManager()->logDropDatabase(
+                targetName,
+                databaseSnapshot.dump(),
+                "DROP DATABASE " + targetName
+            );
+        }
+
         if (!systemCatalogManager->dropDatabase(targetName)) {
             LogWriter::error("executor", "DropExecutor", "execute",
                              "Failed to drop database: " + targetName + ".");
             return buildFailureResult("Failed to drop database.", targetName);
-        }
-
-        // 记录删除数据库日志
-        if (core != nullptr && core->getDbLogManager() != nullptr) {
-            core->getDbLogManager()->logDropDatabase(
-                targetName,
-                "Database metadata snapshot for: " + targetName,
-                "DROP DATABASE " + targetName
-            );
         }
 
         LogWriter::info("executor", "DropExecutor", "execute",
@@ -94,20 +105,34 @@ ExecutionResult DropExecutor::execute(const SQLStatement *statement, ExecutionCo
         if (databaseManager == nullptr) {
             return buildFailureResult("Database manager is not initialized.", dbName);
         }
-        if (!databaseManager->dropTable(targetName)) {
+
+        // 删除前记录日志，包含真实表结构快照以便恢复 — NAPH130
+        if (core != nullptr && core->getDbLogManager() != nullptr) {
+            try {
+                const auto dbRootPath = SystemCatalogManager::getDataRootPath();
+                const auto dbPath = dbRootPath / dbName;
+                if (std::filesystem::exists(dbPath / (targetName + ".tdf"))) {
+                    nlohmann::json tableSnapshot = dblog_snapshot::buildTableSnapshot(dbPath, targetName);
+                    core->getDbLogManager()->logDropTable(
+                        dbName, targetName,
+                        tableSnapshot.dump(),
+                        "DROP TABLE " + targetName
+                    );
+                }
+            } catch (...) {
+                // 如果读取失败，回退到简单记录
+                core->getDbLogManager()->logDropTable(
+                    dbName, targetName,
+                    R"({"table_name":")" + targetName + R"("})",
+                    "DROP TABLE " + targetName
+                );
+            }
+        }
+
+        if (!databaseManager->dropTable(dbName, targetName)) {
             LogWriter::error("executor", "DropExecutor", "execute",
                              "Failed to drop table " + targetName + " in " + dbName + ".");
             return buildFailureResult("Failed to drop table.", dbName);
-        }
-
-        // 记录删除表日志
-        if (core != nullptr && core->getDbLogManager() != nullptr) {
-            core->getDbLogManager()->logDropTable(
-                dbName,
-                targetName,
-                "Table metadata snapshot for: " + dbName + "." + targetName,
-                "DROP TABLE " + targetName
-            );
         }
 
         LogWriter::info("executor", "DropExecutor", "execute",

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -47,12 +49,16 @@ public:
     const std::vector<TableNode> &getTables() const;
     void setTables(const std::vector<TableNode> &tables);
 
+    std::uint64_t getDbVersion() const;
+    void setDbVersion(std::uint64_t dbVersion);
+
     std::string toJson() const;
     static DatabaseNode fromJson(const std::string &jsonStr);
 
 private:
     std::string name;
     std::vector<TableNode> tables;
+    std::uint64_t dbVersion = 0;
 };
 
 /**
@@ -76,6 +82,12 @@ public:
     inline static const std::string DIRECTORY_REQUEST = "DIRECTORY_REQUEST";
     inline static const std::string DIRECTORY_RESPONSE = "DIRECTORY_RESPONSE";
     inline static const std::string ERROR_RESPONSE = "ERROR_RESPONSE";
+    inline static const std::string DB_VERSION_REQUEST = "DB_VERSION_REQUEST";
+    inline static const std::string DB_VERSION_RESPONSE = "DB_VERSION_RESPONSE";
+    inline static const std::string SQL_TEMP_EXEC_REQUEST = "SQL_TEMP_EXEC_REQUEST";
+    inline static const std::string SQL_TEMP_EXEC_RESPONSE = "SQL_TEMP_EXEC_RESPONSE";
+    inline static const std::string DBLOG_REQUEST = "DBLOG_REQUEST";
+    inline static const std::string DBLOG_RESPONSE = "DBLOG_RESPONSE";
 
     NetworkTransferData();
     NetworkTransferData(const std::string &type, const std::string &id);
@@ -116,6 +128,12 @@ public:
     const std::vector<DatabaseNode> &getDatabases() const;
     void setDatabases(const std::vector<DatabaseNode> &databases);
 
+    const std::map<std::string, std::uint64_t> &getDbVersionMap() const;
+    void setDbVersionMap(const std::map<std::string, std::uint64_t> &dbVersionMap);
+
+    const std::string &getDbLogTime() const;
+    void setDbLogTime(const std::string &dbLogTime);
+
 private:
     std::string type;
     std::string id;
@@ -128,4 +146,6 @@ private:
     std::vector<std::string> columns;
     std::vector<std::vector<std::string>> rows;
     std::vector<DatabaseNode> databases;
+    std::map<std::string, std::uint64_t> dbVersionMap;
+    std::string dbLogTime;
 };

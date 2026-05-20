@@ -64,3 +64,58 @@ void SelectStmt::setHavingCondition(const std::shared_ptr<ConditionNode> &having
 {
     this->havingCondition = havingCondition;
 }
+
+const std::vector<JoinInfo> &SelectStmt::getJoinInfoList() const
+{
+    return joinInfoList;
+}
+
+void SelectStmt::addJoinInfo(const JoinInfo &joinInfo)
+{
+    joinInfoList.push_back(joinInfo);
+}
+
+bool SelectStmt::hasJoin() const
+{
+    return !joinInfoList.empty();
+}
+
+const std::string &SelectStmt::getOrderByColumn() const
+{
+    return orderByColumn;
+}
+
+void SelectStmt::setOrderByColumn(const std::string &orderByColumn)
+{
+    this->orderByColumn = orderByColumn;
+}
+
+bool SelectStmt::getOrderByDesc() const
+{
+    return orderByDesc;
+}
+
+void SelectStmt::setOrderByDesc(bool orderByDesc)
+{
+    this->orderByDesc = orderByDesc;
+}
+
+bool SelectStmt::getHasLimit() const
+{
+    return hasLimit;
+}
+
+void SelectStmt::setHasLimit(bool hasLimit)
+{
+    this->hasLimit = hasLimit;
+}
+
+std::size_t SelectStmt::getLimitCount() const
+{
+    return limitCount;
+}
+
+void SelectStmt::setLimitCount(std::size_t limitCount)
+{
+    this->limitCount = limitCount;
+}

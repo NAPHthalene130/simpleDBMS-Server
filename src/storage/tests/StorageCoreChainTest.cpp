@@ -1,9 +1,9 @@
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -14,9 +14,23 @@
 #include "storage/manager/SystemCatalogManager.h"
 #include "storage/object/Table.h"
 
+#ifndef SERVER_PROJECT_ROOT
+#error SERVER_PROJECT_ROOT is not defined.
+#endif
+
 namespace {
 
 constexpr const char *kCatalogBlockSeparator = "---DB_BLOCK---";
+
+using Matrix = std::vector<std::vector<std::string>>;
+
+struct TestLayout {
+    std::filesystem::path storageDir;
+    std::filesystem::path dataRoot;
+    std::filesystem::path catalogFile;
+    std::filesystem::path dbDir;
+    std::filesystem::path tableBlockFile;
+};
 
 template <std::size_t N>
 std::array<char, N> toArray(const std::string &text)
@@ -34,11 +48,24 @@ void ensure(bool condition, const std::string &message)
     }
 }
 
+TestLayout buildLayout(const std::string &dbName)
+{
+    const auto storageDir = std::filesystem::path(SERVER_PROJECT_ROOT) / "src" / "storage";
+    return {
+        storageDir,
+        storageDir / "data",
+        storageDir / "data" / "database.db",
+        storageDir / "data" / dbName,
+        storageDir / "data" / dbName / (dbName + ".tb")
+    };
+}
+
 void removeDatabaseFromCatalog(const std::filesystem::path &catalogFile, const std::string &dbName)
 {
     if (!std::filesystem::exists(catalogFile)) {
         return;
     }
+
     std::ifstream ifs(catalogFile);
     if (!ifs.good()) {
         return;
@@ -67,6 +94,7 @@ void removeDatabaseFromCatalog(const std::filesystem::path &catalogFile, const s
     if (!ofs.good()) {
         return;
     }
+
     for (const auto &block : blocks) {
         bool removeBlock = false;
         for (const auto &item : block) {
@@ -85,16 +113,433 @@ void removeDatabaseFromCatalog(const std::filesystem::path &catalogFile, const s
     }
 }
 
+void expectFileExists(const std::filesystem::path &filePath, const std::string &label)
+{
+    ensure(std::filesystem::exists(filePath), label + " not found: " + filePath.string());
+}
+
+void expectFileContainsLine(const std::filesystem::path &filePath,
+                            const std::string &expectedLine,
+                            const std::string &label)
+{
+    std::ifstream ifs(filePath, std::ios::binary);
+    ensure(ifs.good(), "failed to open " + label + ": " + filePath.string());
+
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line == expectedLine) {
+            return;
+        }
+    }
+    ensure(false, label + " missing line: " + expectedLine);
+}
+
+void expectFileContainsPrefix(const std::filesystem::path &filePath,
+                              const std::string &prefix,
+                              const std::string &label)
+{
+    std::ifstream ifs(filePath, std::ios::binary);
+    ensure(ifs.good(), "failed to open " + label + ": " + filePath.string());
+
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.rfind(prefix, 0) == 0) {
+            return;
+        }
+    }
+    ensure(false, label + " missing prefix: " + prefix);
+}
+
+Matrix toMatrix(const std::vector<storage::Row> &rows)
+{
+    Matrix values;
+    values.reserve(rows.size());
+    for (const auto &row : rows) {
+        values.push_back(row.values);
+    }
+    return values;
+}
+
+std::string matrixToText(const Matrix &rows)
+{
+    std::vector<std::string> lines;
+    lines.reserve(rows.size());
+    for (const auto &row : rows) {
+        lines.push_back("[" + storage::join(row, ", ") + "]");
+    }
+    return "[" + storage::join(lines, ", ") + "]";
+}
+
+void expectRowsEqual(const std::vector<storage::Row> &actualRows,
+                     const Matrix &expectedRows,
+                     const std::string &label)
+{
+    const auto actual = toMatrix(actualRows);
+    ensure(actual == expectedRows,
+           label + " mismatch, expected=" + matrixToText(expectedRows) + ", actual=" + matrixToText(actual));
+}
+
+storage::Table::SelectOptions orderedBy(const std::string &column)
+{
+    storage::Table::SelectOptions options;
+    options.orderByColumn = column;
+    return options;
+}
+
+std::vector<storage::Row> selectRows(DatabaseManager *databaseManager,
+                                     const std::string &dbName,
+                                     const std::string &tableName,
+                                     const std::vector<std::string> &columns,
+                                     const std::vector<storage::Table::WhereCondition> &whereConditions = {},
+                                     const std::vector<storage::Table::QueryConstraint> &queryConstraints = {},
+                                     const storage::Table::SelectOptions &options = storage::Table::SelectOptions())
+{
+    return databaseManager->selectRows(dbName, tableName, columns, whereConditions, queryConstraints, options);
+}
+
+void verifyDatabaseArtifacts(const TestLayout &layout,
+                             const std::string &dbName,
+                             const std::string &studentTableName)
+{
+    const auto tdfFile = layout.dbDir / (studentTableName + ".tdf");
+    const auto trdFile = layout.dbDir / (studentTableName + ".trd");
+    const auto ticFile = layout.dbDir / (studentTableName + ".tic");
+    const auto tidFile = layout.dbDir / (studentTableName + ".tid");
+    const auto nameIndexFile = layout.dbDir / (studentTableName + ".Name.nidx");
+    const auto deptIndexFile = layout.dbDir / (studentTableName + ".Dept.nidx");
+
+    expectFileExists(layout.catalogFile, "catalog file");
+    expectFileExists(layout.tableBlockFile, "table block file");
+    expectFileExists(tdfFile, "student .tdf");
+    expectFileExists(trdFile, "student .trd");
+    expectFileExists(ticFile, "student .tic");
+    expectFileExists(tidFile, "student .tid");
+    expectFileExists(nameIndexFile, "student Name index");
+    expectFileExists(deptIndexFile, "student Dept index");
+
+    expectFileContainsLine(layout.catalogFile, "name=" + dbName, "catalog file");
+    expectFileContainsLine(layout.tableBlockFile, "name=" + studentTableName, "table block file");
+
+    expectFileContainsLine(tdfFile, "schema_version=2", "student .tdf");
+    expectFileContainsLine(tdfFile, "table=" + studentTableName, "student .tdf");
+    expectFileContainsLine(tdfFile, "columns=ID:TEXT|Name:TEXT|Dept:TEXT", "student .tdf");
+    expectFileContainsLine(tdfFile,
+                           "index_definitions=PRIMARY(ID):BTREE:" + studentTableName + ".tid",
+                           "student .tdf");
+    expectFileContainsLine(tdfFile,
+                           "index_reserved=Name:BTREE:" + studentTableName + ".Name.nidx",
+                           "student .tdf");
+    expectFileContainsLine(tdfFile,
+                           "index_reserved=Dept:BTREE:" + studentTableName + ".Dept.nidx",
+                           "student .tdf");
+
+    expectFileContainsLine(ticFile, "constraint=PRIMARY_KEY(ID)", "student .tic");
+    expectFileContainsLine(ticFile, "constraint=UNIQUE(Name)", "student .tic");
+    expectFileContainsLine(ticFile, "constraint=NOT_NULL(Dept)", "student .tic");
+    expectFileContainsLine(ticFile, "index_reserved=Name:" + studentTableName + ".Name.nidx", "student .tic");
+    expectFileContainsLine(ticFile, "index_reserved=Dept:" + studentTableName + ".Dept.nidx", "student .tic");
+
+    expectFileContainsLine(tidFile, "TID_PAGED_V3", "student .tid");
+    expectFileContainsPrefix(tidFile, "root_page=", "student .tid");
+    expectFileContainsPrefix(tidFile, "ENTRY|S001|", "student .tid");
+}
+
+void runStudentCrudChain(DatabaseManager *databaseManager,
+                         const TestLayout &layout,
+                         const std::string &dbName,
+                         const std::string &studentTableName)
+{
+    ensure(databaseManager->createTable(dbName, studentTableName, {"ID", "Name", "Dept"}),
+           "create student table failed");
+
+    ensure(databaseManager->insertRow(dbName, studentTableName, {"S001", "Alice", "CS"}),
+           "insert S001 failed");
+    ensure(databaseManager->insertRow(dbName, studentTableName, {"S002", "Bob", "Math"}),
+           "insert S002 failed");
+    ensure(databaseManager->insertRow(dbName, studentTableName, {"S003", "Carol", "CS"}),
+           "insert S003 failed");
+
+    expectRowsEqual(
+        selectRows(databaseManager, dbName, studentTableName, {"ID", "Name", "Dept"}, {}, {}, orderedBy("ID")),
+        {{"S001", "Alice", "CS"}, {"S002", "Bob", "Math"}, {"S003", "Carol", "CS"}},
+        "student initial query");
+
+    expectRowsEqual(
+        selectRows(databaseManager,
+                   dbName,
+                   studentTableName,
+                   {"ID", "Name"},
+                   {storage::Table::WhereCondition{"Dept", storage::Table::CompareOp::EQ, "CS"}},
+                   {},
+                   orderedBy("ID")),
+        {{"S001", "Alice"}, {"S003", "Carol"}},
+        "student equality query");
+
+    expectRowsEqual(
+        selectRows(databaseManager,
+                   dbName,
+                   studentTableName,
+                   {"ID", "Name"},
+                   {storage::Table::WhereCondition{"Name", storage::Table::CompareOp::LIKE, "A%"}},
+                   {},
+                   orderedBy("ID")),
+        {{"S001", "Alice"}},
+        "student LIKE query");
+
+    auto inCondition = storage::Table::WhereCondition{"ID", storage::Table::CompareOp::IN, ""};
+    inCondition.values = {"S001", "S003"};
+    expectRowsEqual(
+        selectRows(databaseManager, dbName, studentTableName, {"ID"}, {inCondition}, {}, orderedBy("ID")),
+        {{"S001"}, {"S003"}},
+        "student IN query");
+
+    ensure(databaseManager->addColumnConstraint(
+               dbName,
+               studentTableName,
+               storage::Table::ColumnConstraintSpec{"Name", false, true, false, ""}),
+           "add UNIQUE(Name) failed");
+    ensure(databaseManager->addColumnConstraint(
+               dbName,
+               studentTableName,
+               storage::Table::ColumnConstraintSpec{"Dept", true, false, false, ""}),
+           "add NOT NULL(Dept) failed");
+
+    expectRowsEqual(
+        selectRows(databaseManager,
+                   dbName,
+                   studentTableName,
+                   {"ID", "Name"},
+                   {},
+                   {storage::Table::QueryConstraint{"Name", storage::Table::ConstraintType::UNIQUE, true}},
+                   orderedBy("ID")),
+        {{"S001", "Alice"}, {"S002", "Bob"}, {"S003", "Carol"}},
+        "student UNIQUE constraint query");
+
+    expectRowsEqual(
+        selectRows(databaseManager,
+                   dbName,
+                   studentTableName,
+                   {"ID", "Dept"},
+                   {},
+                   {storage::Table::QueryConstraint{"Dept", storage::Table::ConstraintType::NOT_NULL, true}},
+                   orderedBy("ID")),
+        {{"S001", "CS"}, {"S002", "Math"}, {"S003", "CS"}},
+        "student NOT NULL constraint query");
+
+    ensure(!databaseManager->insertRow(dbName, studentTableName, {"S010", "Alice", "Physics"}),
+           "duplicate Name should be rejected");
+    ensure(!databaseManager->insertRow(dbName, studentTableName, {"S011", "Eve", ""}),
+           "empty Dept should be rejected");
+
+    ensure(databaseManager->updateRowByPrimaryKey(dbName, studentTableName, "S002", {"S002", "Bobby", "EE"}),
+           "update S002 failed");
+    expectRowsEqual(
+        selectRows(databaseManager,
+                   dbName,
+                   studentTableName,
+                   {"ID", "Name", "Dept"},
+                   {storage::Table::WhereCondition{"ID", storage::Table::CompareOp::EQ, "S002"}}),
+        {{"S002", "Bobby", "EE"}},
+        "student update query");
+
+    ensure(databaseManager->insertRow(dbName, studentTableName, {"S004", "Doris", "CS"}),
+           "insert S004 failed");
+    ensure(databaseManager->deleteRowByPrimaryKey(dbName, studentTableName, "S003"),
+           "delete S003 failed");
+
+    expectRowsEqual(
+        selectRows(databaseManager, dbName, studentTableName, {"ID", "Name", "Dept"}, {}, {}, orderedBy("ID")),
+        {{"S001", "Alice", "CS"}, {"S002", "Bobby", "EE"}, {"S004", "Doris", "CS"}},
+        "student final query");
+
+    verifyDatabaseArtifacts(layout, dbName, studentTableName);
+}
+
+void runConstraintFlow(DatabaseManager *databaseManager,
+                       const TestLayout &layout,
+                       const std::string &dbName,
+                       const std::string &profileTableName)
+{
+    ensure(databaseManager->createTable(dbName, profileTableName, {"ID", "Email", "Tag"}),
+           "create profile table failed");
+
+    ensure(databaseManager->insertRow(dbName, profileTableName, {"P001", "alice@db.local", "seed"}),
+           "insert P001 failed");
+    ensure(databaseManager->insertRow(dbName, profileTableName, {"P002", "bob@db.local", "vip"}),
+           "insert P002 failed");
+
+    ensure(databaseManager->addColumnConstraint(
+               dbName,
+               profileTableName,
+               storage::Table::ColumnConstraintSpec{"Email", false, true, false, ""}),
+           "add UNIQUE(Email) failed");
+    ensure(databaseManager->addColumnConstraint(
+               dbName,
+               profileTableName,
+               storage::Table::ColumnConstraintSpec{"Tag", false, false, true, "normal"}),
+           "add DEFAULT(Tag) failed");
+
+    ensure(databaseManager->insertRow(dbName, profileTableName, {"P003", "carol@db.local"}),
+           "insert P003 with default Tag failed");
+    ensure(!databaseManager->insertRow(dbName, profileTableName, {"P004", "alice@db.local", "dup"}),
+           "duplicate Email should be rejected");
+
+    expectRowsEqual(
+        selectRows(databaseManager,
+                   dbName,
+                   profileTableName,
+                   {"ID", "Tag"},
+                   {},
+                   {storage::Table::QueryConstraint{"Tag", storage::Table::ConstraintType::DEFAULT_VALUE, true}},
+                   orderedBy("ID")),
+        {{"P003", "normal"}},
+        "profile DEFAULT constraint query");
+
+    const auto ticFile = layout.dbDir / (profileTableName + ".tic");
+    expectFileContainsLine(ticFile, "constraint=UNIQUE(Email)", "profile .tic");
+    expectFileContainsLine(ticFile, "constraint=DEFAULT(Tag|normal)", "profile .tic");
+}
+
+void runJoinFlow(DatabaseManager *databaseManager,
+                 const std::string &dbName,
+                 const std::string &studentTableName,
+                 const std::string &scholarshipTableName)
+{
+    ensure(databaseManager->createTable(dbName, scholarshipTableName, {"StudentID", "Level", "Amount"}),
+           "create scholarship table failed");
+    ensure(databaseManager->insertRow(dbName, scholarshipTableName, {"S001", "A", "1500"}),
+           "insert scholarship S001 failed");
+    ensure(databaseManager->insertRow(dbName, scholarshipTableName, {"S004", "A", "2000"}),
+           "insert scholarship S004 failed");
+
+    DatabaseManager::JoinQuery innerJoinQuery;
+    innerJoinQuery.baseTable = studentTableName;
+    innerJoinQuery.baseAlias = "s";
+
+    DatabaseManager::JoinSpec scholarshipJoin;
+    scholarshipJoin.type = DatabaseManager::JoinType::INNER_JOIN;
+    scholarshipJoin.tableName = scholarshipTableName;
+    scholarshipJoin.alias = "c";
+    scholarshipJoin.onConditions.push_back({{"s", "ID"}, {"c", "StudentID"}, storage::Table::CompareOp::EQ});
+    innerJoinQuery.joins.push_back(scholarshipJoin);
+    innerJoinQuery.projections = {
+        {{"s", "ID"}, "student_id"},
+        {{"s", "Name"}, "student_name"},
+        {{"c", "Level"}, "level"},
+        {{"c", "Amount"}, "amount"}
+    };
+    innerJoinQuery.postFilters.push_back({{"c", "Amount"}, storage::Table::CompareOp::GT, "1000", "", {}});
+    innerJoinQuery.options.orderByOutput = "student_id";
+
+    const auto innerJoinRows = databaseManager->selectJoinRows(dbName, innerJoinQuery);
+    ensure(innerJoinRows.columns == std::vector<std::string>({"student_id", "student_name", "level", "amount"}),
+           "inner join columns mismatch");
+    expectRowsEqual(innerJoinRows.rows,
+                    {{"S001", "Alice", "A", "1500"}, {"S004", "Doris", "A", "2000"}},
+                    "inner join query");
+
+    DatabaseManager::JoinQuery leftJoinQuery;
+    leftJoinQuery.baseTable = studentTableName;
+    leftJoinQuery.baseAlias = "s";
+
+    DatabaseManager::JoinSpec leftJoin = scholarshipJoin;
+    leftJoin.type = DatabaseManager::JoinType::LEFT_JOIN;
+    leftJoinQuery.joins.push_back(leftJoin);
+    leftJoinQuery.projections = {
+        {{"s", "ID"}, "student_id"},
+        {{"s", "Name"}, "student_name"},
+        {{"c", "Level"}, "level"}
+    };
+    leftJoinQuery.options.orderByOutput = "student_id";
+
+    const auto leftJoinRows = databaseManager->selectJoinRows(dbName, leftJoinQuery);
+    expectRowsEqual(leftJoinRows.rows,
+                    {{"S001", "Alice", "A"}, {"S002", "Bobby", ""}, {"S004", "Doris", "A"}},
+                    "left join query");
+}
+
+void runSubqueryFlow(DatabaseManager *databaseManager,
+                     const TestLayout &layout,
+                     const std::string &dbName,
+                     const std::string &studentTableName,
+                     const std::string &scholarshipTableName)
+{
+    auto studentTable = storage::Table::load(layout.dbDir, studentTableName);
+
+    storage::Table::SubquerySpec scalarSpec;
+    scalarSpec.dbName = dbName;
+    scalarSpec.tableName = scholarshipTableName;
+    scalarSpec.targetColumns = {"Amount"};
+    scalarSpec.aggregates = {{storage::Table::AggregateOp::MAX, "Amount"}};
+
+    const auto scalarResult = studentTable.evaluateSubquery(scalarSpec);
+    ensure(scalarResult.kind == storage::Table::SubqueryKind::Scalar, "scalar subquery kind mismatch");
+    ensure(scalarResult.scalarValue == "2000", "scalar subquery MAX(Amount) mismatch");
+
+    expectRowsEqual(
+        selectRows(databaseManager,
+                   dbName,
+                   scholarshipTableName,
+                   {"StudentID", "Amount"},
+                   {storage::Table::WhereCondition{"Amount", storage::Table::CompareOp::EQ, scalarResult.scalarValue}},
+                   {},
+                   orderedBy("StudentID")),
+        {{"S004", "2000"}},
+        "scalar subquery driven select");
+
+    storage::Table::SubquerySpec inSpec;
+    inSpec.dbName = dbName;
+    inSpec.tableName = scholarshipTableName;
+    inSpec.targetColumns = {"StudentID"};
+    inSpec.whereConditions = {storage::Table::WhereCondition{"Level", storage::Table::CompareOp::EQ, "A"}};
+
+    const auto inResult = studentTable.evaluateSubquery(inSpec);
+    ensure(inResult.kind == storage::Table::SubqueryKind::RowSet, "IN subquery kind mismatch");
+    ensure(inResult.rows.size() == 2, "IN subquery row count mismatch");
+
+    auto inCondition = storage::Table::WhereCondition{"ID", storage::Table::CompareOp::IN, ""};
+    inCondition.values = inResult.rows;
+    expectRowsEqual(
+        studentTable.select({"ID", "Name"}, {inCondition}, orderedBy("ID")),
+        {{"S001", "Alice"}, {"S004", "Doris"}},
+        "IN subquery select");
+
+    auto notInCondition = inCondition;
+    notInCondition.isSubqueryNot = true;
+    expectRowsEqual(
+        studentTable.select({"ID", "Name"}, {notInCondition}, orderedBy("ID")),
+        {{"S002", "Bobby"}},
+        "NOT IN subquery select");
+
+    std::vector<std::string> matchedIds;
+    for (const auto &row : studentTable.select({"*"}, {}, orderedBy("ID"))) {
+        storage::Table::SubquerySpec correlatedSpec;
+        correlatedSpec.dbName = dbName;
+        correlatedSpec.tableName = scholarshipTableName;
+        correlatedSpec.targetColumns = {"StudentID"};
+        correlatedSpec.whereConditions = {
+            storage::Table::WhereCondition{"StudentID", storage::Table::CompareOp::EQ, "$outer.ID"}};
+
+        const auto correlated = studentTable.evaluateSubqueryForRow(correlatedSpec, row);
+        if (!correlated.rows.empty()) {
+            matchedIds.push_back(row.values.front());
+        }
+    }
+
+    ensure(matchedIds == std::vector<std::string>({"S001", "S004"}),
+           "correlated EXISTS subquery mismatch");
+}
+
 } // namespace
 
-class Core {
+class TestCore {
 public:
-    Core()
-        : storageManager(new StorageManager(this))
+    TestCore()
+        : storageManager(new StorageManager(reinterpret_cast<Core *>(this)))
     {
     }
 
-    ~Core()
+    ~TestCore()
     {
         delete storageManager;
         storageManager = nullptr;
@@ -112,291 +557,75 @@ private:
 int main()
 {
     try {
-    const std::filesystem::path storageDir = std::filesystem::current_path() / "src" / "storage";
-    ensure(std::filesystem::exists(storageDir) && std::filesystem::is_directory(storageDir),
-           "storage directory not found: " + storageDir.string());
-    std::filesystem::current_path(storageDir);
+        const std::string dbName = "StorageChainDB";
+        const std::string studentTableName = "Students";
+        const std::string profileTableName = "Profiles";
+        const std::string scholarshipTableName = "Scholarships";
 
-    const std::string dbName = "StartaleDB";
-    const std::string tableName = "StartaleTB";
-    const std::string aggTableName = "AggTB";
-    const std::string constraintTableName = "ConstraintTB";
-    const std::filesystem::path dbRoot("data");
-    const std::filesystem::path dbDir = dbRoot / dbName;
-    const std::filesystem::path tbFile = dbDir / (dbName + ".tb");
-    const std::filesystem::path catalogFile = dbRoot / "database.db";
-    const std::filesystem::path tdfFile = dbDir / (tableName + ".tdf");
-    const std::filesystem::path trdFile = dbDir / (tableName + ".trd");
-    const std::filesystem::path ticFile = dbDir / (tableName + ".tic");
-    const std::filesystem::path tidFile = dbDir / (tableName + ".tid");
-    const std::filesystem::path nidxBFile = dbDir / (tableName + ".B.nidx");
-    const std::filesystem::path nidxCFile = dbDir / (tableName + ".C.nidx");
+        const auto layout = buildLayout(dbName);
+        ensure(std::filesystem::exists(layout.storageDir) && std::filesystem::is_directory(layout.storageDir),
+               "storage directory not found: " + layout.storageDir.string());
+        std::filesystem::current_path(layout.storageDir);
 
-    if (std::filesystem::exists(dbDir)) {
-        std::filesystem::remove_all(dbDir);
-    }
-    removeDatabaseFromCatalog(catalogFile, dbName);
-
-    Core core;
-
-    auto *systemCatalogManager = core.getStorageManager()->getSystemCatalogManager();
-    auto *databaseManager = core.getStorageManager()->getDatabaseManager();
-    ensure(systemCatalogManager != nullptr, "systemCatalogManager is null");
-    ensure(databaseManager != nullptr, "databaseManager is null");
-
-    DatabaseBlock dbInfo;
-    dbInfo.setName(toArray<128>(dbName));
-    ensure(systemCatalogManager->createDatabase(dbInfo), "createDatabase failed");
-
-    ensure(databaseManager->createTable(dbName, tableName, {"A", "B", "C"}), "createTable failed");
-    {
-        std::ifstream tb(tbFile);
-        bool foundTableInTb = false;
-        std::string line;
-        while (std::getline(tb, line)) {
-            if (line == "name=" + tableName || line == "table=" + tableName || line == tableName) {
-                foundTableInTb = true;
-                break;
-            }
+        if (std::filesystem::exists(layout.dbDir)) {
+            std::filesystem::remove_all(layout.dbDir);
         }
-        ensure(foundTableInTb, ".tb missing table name after createTable");
-    }
+        removeDatabaseFromCatalog(layout.catalogFile, dbName);
 
-    ensure(databaseManager->insertRow(dbName, tableName, {"v1", "v2", "v3"}), "insertRow failed");
-    ensure(databaseManager->insertRow(dbName, tableName, {"v5", "v2", "v3"}), "insertRow failed");
-    ensure(databaseManager->updateRowByPrimaryKey(dbName, tableName, "v1", {"v1", "v9", "v8"}),
-           "updateRowByPrimaryKey failed");
-    ensure(databaseManager->deleteRowByPrimaryKey(dbName, tableName, "v5"), "deleteRowByPrimaryKey failed");
-    ensure(databaseManager->insertRow(dbName, tableName, {"v2", "v3", "v4"}), "insertRow failed");
-    ensure(databaseManager->insertRow(dbName, tableName, {"v3", "v1", "v5"}), "insertRow failed");
+        TestCore core;
+        auto *systemCatalogManager = core.getStorageManager()->getSystemCatalogManager();
+        auto *databaseManager = core.getStorageManager()->getDatabaseManager();
+        ensure(systemCatalogManager != nullptr, "systemCatalogManager is null");
+        ensure(databaseManager != nullptr, "databaseManager is null");
 
-    ensure(databaseManager->createTable(dbName, aggTableName, {"ID", "Score", "Qty"}),
-           "createTable agg failed");
-    ensure(databaseManager->insertRow(dbName, aggTableName, {"k1", "10", "2"}), "insertRow agg failed");
-    ensure(databaseManager->insertRow(dbName, aggTableName, {"k2", "20", "3"}), "insertRow agg failed");
-    ensure(databaseManager->insertRow(dbName, aggTableName, {"k3", "30", "4"}), "insertRow agg failed");
+        DatabaseBlock dbInfo;
+        dbInfo.setName(toArray<128>(dbName));
+        ensure(systemCatalogManager->createDatabase(dbInfo), "createDatabase failed");
+        ensure(std::filesystem::exists(layout.dbDir), "database directory was not created");
 
-    auto loadedTable = storage::Table::load(dbDir, tableName);
-    const auto selectedRows = loadedTable.select(
-        {"A", "C"},
-        {storage::Table::WhereCondition{"A", storage::Table::CompareOp::EQ, "v1"}}
-    );
-    ensure(selectedRows.size() == 1, "select result row count mismatch");
-    ensure(selectedRows.front().values.size() == 2, "select projected column count mismatch");
-    ensure(selectedRows.front().values[0] == "v1", "select value A mismatch");
-    ensure(selectedRows.front().values[1] == "v8", "select value C mismatch after update");
+        runStudentCrudChain(databaseManager, layout, dbName, studentTableName);
+        runConstraintFlow(databaseManager, layout, dbName, profileTableName);
+        runJoinFlow(databaseManager, dbName, studentTableName, scholarshipTableName);
+        runSubqueryFlow(databaseManager, layout, dbName, studentTableName, scholarshipTableName);
 
-    const auto likeBoth = loadedTable.select(
-        {"A"},
-        {storage::Table::WhereCondition{"A", storage::Table::CompareOp::LIKE, "%1%"}}
-    );
-    ensure(likeBoth.size() == 1, "select like %field% mismatch");
+        // PK smallest key insertion test
+        {
+            auto pkTable = storage::Table::create(layout.dbDir, "PKTest", {"K","V"});
+            for (int i = 5; i <= 7; ++i)
+                ensure(databaseManager->insertRow(dbName, "PKTest", {std::to_string(i),"v"+std::to_string(i)}),
+                       "PKTest insert big failed");
+            // Insert keys smaller than all existing keys
+            ensure(databaseManager->insertRow(dbName, "PKTest", {"1","v1"}),
+                   "PKTest insert 1 failed");
+            ensure(databaseManager->insertRow(dbName, "PKTest", {"0","v0"}),
+                   "PKTest insert 0 failed");
+            ensure(databaseManager->insertRow(dbName, "PKTest", {"-1","v-1"}),
+                   "PKTest insert -1 failed");
+            ensure(databaseManager->insertRow(dbName, "PKTest", {"a","va"}),
+                   "PKTest insert a failed");
 
-    const auto likeSuffix = loadedTable.select(
-        {"A"},
-        {storage::Table::WhereCondition{"A", storage::Table::CompareOp::LIKE, "%5"}}
-    );
-    ensure(likeSuffix.empty(), "select like %field mismatch after delete");
+            auto pkLoaded = storage::Table::load(layout.dbDir, "PKTest");
+            auto pkAll = pkLoaded.select({"*"});
+            ensure(pkAll.size() == 7, "PKTest count mismatch (" + std::to_string(pkAll.size()) + ")");
 
-    const auto likePrefix = loadedTable.select(
-        {"A"},
-        {storage::Table::WhereCondition{"A", storage::Table::CompareOp::LIKE, "v%"}}
-    );
-    ensure(likePrefix.size() == 3, "select like field% mismatch after update/delete");
+            // EQ smallest
+            auto r1 = pkLoaded.select({"*"}, {{"K", storage::Table::CompareOp::EQ, "-1"}});
+            ensure(r1.size() == 1 && r1[0].values[1] == "v-1", "PKTest EQ -1");
 
-    const auto neRows = loadedTable.select(
-        {"A"},
-        {storage::Table::WhereCondition{"A", storage::Table::CompareOp::NE, "v2"}}
-    );
-    ensure(neRows.size() == 2, "select NE mismatch");
+            // Update smallest
+            auto pu = storage::Table::load(layout.dbDir, "PKTest");
+            pu.updateByPrimaryKey("-1", {"-1", "v-1_updated"});
 
-    const auto gtRows = loadedTable.select(
-        {"A"},
-        {storage::Table::WhereCondition{"A", storage::Table::CompareOp::GT, "v1"}}
-    );
-    ensure(gtRows.size() == 2, "select GT mismatch");
-
-    const auto leRows = loadedTable.select(
-        {"A"},
-        {storage::Table::WhereCondition{"A", storage::Table::CompareOp::LE, "v2"}}
-    );
-    ensure(leRows.size() == 2, "select LE mismatch");
-
-    auto betweenCond = storage::Table::WhereCondition {"A", storage::Table::CompareOp::BETWEEN, "v1"};
-    betweenCond.secondValue = "v2";
-    const auto betweenRows = loadedTable.select({"A"}, {betweenCond});
-    ensure(betweenRows.size() == 2, "select BETWEEN mismatch");
-
-    auto inCond = storage::Table::WhereCondition {"A", storage::Table::CompareOp::IN, ""};
-    inCond.values = {"v1", "v3"};
-    const auto inRows = loadedTable.select({"A"}, {inCond});
-    ensure(inRows.size() == 2, "select IN mismatch");
-
-    auto andLeft = std::make_shared<storage::Table::ConditionNode>();
-    andLeft->isLeaf = true;
-    andLeft->condition = storage::Table::WhereCondition {"B", storage::Table::CompareOp::EQ, "v9"};
-    auto andRight = std::make_shared<storage::Table::ConditionNode>();
-    andRight->isLeaf = true;
-    andRight->condition = storage::Table::WhereCondition {"C", storage::Table::CompareOp::EQ, "v8"};
-    auto andTree = std::make_shared<storage::Table::ConditionNode>();
-    andTree->isLeaf = false;
-    andTree->logicalOp = storage::Table::LogicalOp::AND;
-    andTree->left = andLeft;
-    andTree->right = andRight;
-    const auto andRows = loadedTable.select({"A"}, andTree);
-    ensure(andRows.size() == 1 && andRows.front().values.front() == "v1", "select AND tree mismatch");
-
-    auto orLeft = std::make_shared<storage::Table::ConditionNode>();
-    orLeft->isLeaf = true;
-    orLeft->condition = storage::Table::WhereCondition {"A", storage::Table::CompareOp::EQ, "v3"};
-    auto orRight = std::make_shared<storage::Table::ConditionNode>();
-    orRight->isLeaf = true;
-    orRight->condition = storage::Table::WhereCondition {"A", storage::Table::CompareOp::EQ, "v2"};
-    auto orTree = std::make_shared<storage::Table::ConditionNode>();
-    orTree->isLeaf = false;
-    orTree->logicalOp = storage::Table::LogicalOp::OR;
-    orTree->left = orLeft;
-    orTree->right = orRight;
-    storage::Table::SelectOptions options;
-    options.orderByColumn = "A";
-    options.orderByDesc = true;
-    options.hasLimit = true;
-    options.limit = 1;
-    const auto orderLimitRows = loadedTable.select({"A"}, orTree, options);
-    ensure(orderLimitRows.size() == 1 && orderLimitRows.front().values.front() == "v3",
-           "select ORDER BY/LIMIT mismatch");
-
-    auto aggTable = storage::Table::load(dbDir, aggTableName);
-    const auto aggValues = aggTable.aggregate({
-        {storage::Table::AggregateOp::COUNT, "*"},
-        {storage::Table::AggregateOp::SUM, "Score"},
-        {storage::Table::AggregateOp::AVG, "Score"},
-        {storage::Table::AggregateOp::MIN, "Score"},
-        {storage::Table::AggregateOp::MAX, "Score"},
-    });
-    ensure(aggValues.size() == 5, "aggregate result size mismatch");
-    ensure(aggValues[0] == "3", "aggregate COUNT mismatch");
-    ensure(aggValues[1] == "60", "aggregate SUM mismatch");
-    ensure(aggValues[2] == "20", "aggregate AVG mismatch");
-    ensure(aggValues[3] == "10", "aggregate MIN mismatch");
-    ensure(aggValues[4] == "30", "aggregate MAX mismatch");
-
-    auto aggWhere = storage::Table::WhereCondition {"Score", storage::Table::CompareOp::BETWEEN, "15"};
-    aggWhere.secondValue = "30";
-    const auto filteredAgg = aggTable.aggregate({
-        {storage::Table::AggregateOp::COUNT, "*"},
-        {storage::Table::AggregateOp::SUM, "Qty"},
-    }, {aggWhere});
-    ensure(filteredAgg.size() == 2, "aggregate with where result size mismatch");
-    ensure(filteredAgg[0] == "2", "aggregate with where COUNT mismatch");
-    ensure(filteredAgg[1] == "7", "aggregate with where SUM mismatch");
-
-    const std::vector<storage::Table::ColumnDefinition> constraintDefs = {
-        {"ID", storage::Table::ColumnConstraintSpec{"ID", true, true, false, ""}},
-        {"Name", storage::Table::ColumnConstraintSpec{"Name", true, true, false, ""}},
-        {"Tag", storage::Table::ColumnConstraintSpec{"Tag", false, false, true, "N/A"}},
-    };
-    ensure(databaseManager->createTable(dbName, constraintTableName, constraintDefs),
-           "createTable with constraints failed");
-    ensure(databaseManager->insertRow(dbName, constraintTableName, {"u1", "alice"}),
-           "insert default row failed");
-    ensure(databaseManager->insertRow(dbName, constraintTableName, {"u2", "bob", "X"}),
-           "insert explicit tag row failed");
-    ensure(!databaseManager->insertRow(dbName, constraintTableName, {"u3", "alice", "Y"}),
-           "UNIQUE constraint should reject duplicate Name");
-    ensure(!databaseManager->insertRow(dbName, constraintTableName, {"u4", "", "Z"}),
-           "NOT NULL constraint should reject empty Name");
-
-    ensure(databaseManager->addColumnConstraint(
-               dbName, constraintTableName, storage::Table::ColumnConstraintSpec{"Tag", true, false, false, ""}),
-           "add NOT NULL constraint to Tag failed");
-    ensure(!databaseManager->insertRow(dbName, constraintTableName, {"u5", "eve", ""}),
-           "NOT NULL(Tag) should reject empty value");
-
-    const auto defaultRows = databaseManager->selectRows(
-        dbName,
-        constraintTableName,
-        {"ID", "Tag"},
-        {},
-        {storage::Table::QueryConstraint{"Tag", storage::Table::ConstraintType::DEFAULT_VALUE, true}});
-    ensure(defaultRows.size() == 1, "query constraint DEFAULT filter mismatch");
-    ensure(defaultRows.front().values.size() == 2 && defaultRows.front().values[1] == "N/A",
-           "query constraint DEFAULT value mismatch");
-
-    const auto uniqueRows = databaseManager->selectRows(
-        dbName,
-        constraintTableName,
-        {"ID", "Name"},
-        {},
-        {storage::Table::QueryConstraint{"Name", storage::Table::ConstraintType::UNIQUE, true}});
-    ensure(uniqueRows.size() == 2, "query constraint UNIQUE filter mismatch");
-
-    ensure(std::filesystem::exists(catalogFile), "database.db file not found");
-    ensure(std::filesystem::exists(tdfFile), ".tdf file not found");
-    ensure(std::filesystem::exists(trdFile), ".trd file not found");
-    ensure(std::filesystem::exists(ticFile), ".tic file not found");
-    ensure(std::filesystem::exists(tidFile), ".tid file not found");
-    ensure(std::filesystem::exists(nidxBFile), ".nidx B reserve file not found");
-    ensure(std::filesystem::exists(nidxCFile), ".nidx C reserve file not found");
-
-    std::ifstream tdf(tdfFile);
-    std::ifstream trd(trdFile);
-    std::ifstream tic(ticFile);
-    std::ifstream tid(tidFile);
-    bool foundSchemaVersion = false;
-    bool foundTable = false;
-    bool foundColumns = false;
-    bool foundPrimaryIndexDef = false;
-    bool foundReservedIndexDefB = false;
-    bool foundReservedIndexDefC = false;
-    bool foundPrimaryConstraint = false;
-    bool foundReservedTicB = false;
-    bool foundReservedTicC = false;
-    bool foundRow = false;
-    bool foundTidHeader = false;
-    bool foundTidRootPage = false;
-    bool foundTidKeyEntry = false;
-    std::string line;
-    while (std::getline(tdf, line)) {
-        if (line == "schema_version=2") foundSchemaVersion = true;
-        if (line == "table=" + tableName) foundTable = true;
-        if (line == "columns=A:TEXT|B:TEXT|C:TEXT") foundColumns = true;
-        if (line == "index_definitions=PRIMARY(A):BTREE:" + tableName + ".tid") foundPrimaryIndexDef = true;
-        if (line == "index_reserved=B:BTREE:" + tableName + ".B.nidx") foundReservedIndexDefB = true;
-        if (line == "index_reserved=C:BTREE:" + tableName + ".C.nidx") foundReservedIndexDefC = true;
-    }
-    while (std::getline(tic, line)) {
-        if (line == "constraint=PRIMARY_KEY(A)") foundPrimaryConstraint = true;
-        if (line == "index_reserved=B:" + tableName + ".B.nidx") foundReservedTicB = true;
-        if (line == "index_reserved=C:" + tableName + ".C.nidx") foundReservedTicC = true;
-    }
-    while (std::getline(trd, line)) {
-        if (line == "ROW|v1|v9|v8") {
-            foundRow = true;
+            // Delete smallest
+            auto pd = storage::Table::load(layout.dbDir, "PKTest");
+            pd.deleteByPrimaryKey("0");
+            auto pv = storage::Table::load(layout.dbDir, "PKTest");
+            auto pAfter = pv.select({"*"});
+            ensure(pAfter.size() == 6, "PKTest after delete mismatch (" + std::to_string(pAfter.size()) + ")");
         }
-    }
-    while (std::getline(tid, line)) {
-        if (line == "TID_PAGED_V1") foundTidHeader = true;
-        if (line == "root_page=1") foundTidRootPage = true;
-        if (line.rfind("ENTRY|v1|", 0) == 0) foundTidKeyEntry = true;
-    }
 
-    ensure(foundSchemaVersion, "tdf schema_version missing");
-    ensure(foundTable, "tdf table line mismatch");
-    ensure(foundColumns, "tdf columns line mismatch");
-    ensure(foundPrimaryIndexDef, "tdf index definition missing");
-    ensure(foundReservedIndexDefB, "tdf reserved index B missing");
-    ensure(foundReservedIndexDefC, "tdf reserved index C missing");
-    ensure(foundPrimaryConstraint, "tic primary key missing");
-    ensure(foundReservedTicB, "tic reserved index B missing");
-    ensure(foundReservedTicC, "tic reserved index C missing");
-    ensure(foundRow, "trd row line mismatch");
-    ensure(foundTidHeader, "tid header missing");
-    ensure(foundTidRootPage, "tid root page missing");
-    ensure(foundTidKeyEntry, "tid key entry missing");
-
-    std::cout << "StorageCoreChainTest passed." << std::endl;
-    return 0;
+        std::cout << "StorageCoreChainTest passed." << std::endl;
+        return 0;
     } catch (const std::exception &e) {
         std::cerr << "StorageCoreChainTest failed: " << e.what() << std::endl;
         return 1;
@@ -405,3 +634,6 @@ int main()
         return 1;
     }
 }
+
+
+

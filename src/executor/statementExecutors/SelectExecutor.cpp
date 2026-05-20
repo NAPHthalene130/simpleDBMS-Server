@@ -11,6 +11,7 @@
 
 #include "log/LogWriter.h"
 #include "storage/manager/SystemCatalogManager.h"
+#include "SubqueryEvaluationUtils.h"
 
 namespace {
 ExecutionResult buildFailureResult(const std::string &message,
@@ -296,7 +297,7 @@ ExecutionResult SelectExecutor::executeTableSelect(const SelectStmt *selectStmt,
             }
 
             if (whereCondition != nullptr
-                && !evaluateConditionTree(whereCondition, row.values, schema.columns)) {
+                && !evaluateConditionTree(whereCondition, row.values, schema.columns, dbName, tableName)) {
                 continue;
             }
 
@@ -347,7 +348,7 @@ ExecutionResult SelectExecutor::executeTableSelect(const SelectStmt *selectStmt,
         if (havingCondition != nullptr) {
             std::vector<std::vector<std::string>> havingFilteredRows;
             for (const auto &row : groupedRows) {
-                if (evaluateConditionTree(havingCondition, row, schema.columns)) {
+                if (evaluateConditionTree(havingCondition, row, schema.columns, dbName, tableName)) {
                     havingFilteredRows.push_back(row);
                 }
             }
@@ -390,55 +391,22 @@ bool SelectExecutor::validateTargetFields(const SelectStmt *selectStmt) const
 
 bool SelectExecutor::evaluateConditionTree(const ConditionNode *conditionNode,
                                            const std::vector<std::string> &row,
-                                           const std::vector<std::string> &columns) const
+                                           const std::vector<std::string> &columns,
+                                           const std::string &dbName,
+                                           const std::string &tableName) const
 {
-    if (conditionNode == nullptr) {
-        return true;
-    }
-
-    const auto &leftNode = conditionNode->getLeftNode();
-    const auto &rightNode = conditionNode->getRightNode();
-
-    if (leftNode != nullptr || rightNode != nullptr) {
-        const bool leftResult = evaluateConditionTree(leftNode.get(), row, columns);
-        const bool rightResult = evaluateConditionTree(rightNode.get(), row, columns);
-        const std::string opUpper = toUpperString(conditionNode->getOperator());
-        if (opUpper == "AND") {
-            return leftResult && rightResult;
-        }
-        return leftResult || rightResult;
-    }
-
-    return evaluateLeafCondition(conditionNode, row, columns);
+    return subquery_eval::evaluateConditionTree(
+        conditionNode, row, columns, dbName, tableName, {}, {}, "");
 }
 
 bool SelectExecutor::evaluateLeafCondition(const ConditionNode *conditionNode,
                                            const std::vector<std::string> &row,
-                                           const std::vector<std::string> &columns) const
+                                           const std::vector<std::string> &columns,
+                                           const std::string &dbName,
+                                           const std::string &tableName) const
 {
-    if (conditionNode == nullptr) {
-        return true;
-    }
-
-    const std::string &columnName = conditionNode->getLeftOperand();
-    const std::string &opStr = conditionNode->getOperator();
-    const std::string &value = conditionNode->getRightOperand();
-
-    auto it = std::find(columns.begin(), columns.end(), columnName);
-    if (it == columns.end()) {
-        LogWriter::warning("executor",
-                           "SelectExecutor",
-                           "evaluateLeafCondition",
-                           "Unknown column in WHERE: " + columnName);
-        return false;
-    }
-
-    const std::size_t columnIndex = static_cast<std::size_t>(std::distance(columns.begin(), it));
-    if (columnIndex >= row.size()) {
-        return false;
-    }
-
-    return compareValues(row[columnIndex], mapCompareOp(opStr), value);
+    return subquery_eval::evaluateLeafCondition(
+        conditionNode, row, columns, dbName, tableName, {}, {}, "");
 }
 
 std::vector<std::vector<std::string>> SelectExecutor::buildMetadataResultSet(
@@ -530,6 +498,12 @@ bool SelectExecutor::compareValues(const std::string &leftValue,
 {
     if (op == storage::Table::CompareOp::LIKE) {
         return likeMatch(leftValue, rightValue);
+    }
+
+    // NULL（空字符串）与任何值比较均返回 false
+    // 作者：NAPH130
+    if (leftValue.empty() || rightValue.empty()) {
+        return false;
     }
 
     double leftNum = 0.0;

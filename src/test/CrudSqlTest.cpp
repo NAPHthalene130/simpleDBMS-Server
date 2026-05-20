@@ -4,6 +4,7 @@
  */
 #include "Core.h"
 #include "core/SqlPipeline.h"
+#include "dbLog/DbLogManager.h"
 #include "log/LogWriter.h"
 #include "models/network/NetworkExecutionContext.h"
 
@@ -20,6 +21,8 @@
 #include <thread>
 #include <vector>
 
+#include "TestUtils.h"
+
 #ifndef SERVER_PROJECT_ROOT
 #define SERVER_PROJECT_ROOT "H:/CODE/DBMS/simpleDBMS-Server"
 #endif
@@ -35,6 +38,8 @@ int main()
 
     int passed = 0;
     int failed = 0;
+    int testId = 0;
+    std::vector<int> passedIds, failedIds;
 
     auto sendSql = [&](const std::string &sql) -> nlohmann::json {
         const std::string req = NetData("sql", sql).toJson();
@@ -48,8 +53,9 @@ int main()
     };
 
     auto check = [&](bool ok, const std::string &desc, const std::string &extra = "") {
-        if (ok) { std::cout << "PASS: " << desc << std::endl; ++passed; }
-        else { std::cout << "FAIL: " << desc; if (!extra.empty()) std::cout << " [" << extra << "]"; std::cout << std::endl; ++failed; }
+        ++testId;
+        if (ok) { std::cout << "PASS: " << desc << std::endl; ++passed; passedIds.push_back(testId); }
+        else { std::cout << "FAIL: " << desc; if (!extra.empty()) std::cout << " [" << extra << "]"; std::cout << std::endl; ++failed; failedIds.push_back(testId); }
     };
 
     // ========== SETUP ==========
@@ -239,6 +245,39 @@ int main()
         check(!j.value("success", false), "ERROR: INSERT non-existent table fails");
     }
 
+    // ========== DELETE with ARITHMETIC EXPRESSIONS ==========
+    // Insert fresh data for arithmetic tests
+    check(sendSql("INSERT INTO students VALUES (10, 'ArithA', 20);").value("success", false), "INSERT ArithA for arithmetic test");
+    check(sendSql("INSERT INTO students VALUES (11, 'ArithB', 30);").value("success", false), "INSERT ArithB for arithmetic test");
+    check(sendSql("INSERT INTO students VALUES (12, 'ArithC', 40);").value("success", false), "INSERT ArithC for arithmetic test");
+
+    // Test left-side arithmetic: age + 10 = 50 → ArithC(40+10=50) should be deleted
+    check(sendSql("DELETE FROM students WHERE age + 10 = 50;").value("success", false), "DELETE WHERE age+10=50 (left arithmetic)");
+    {
+        auto rs = sendSql("SELECT name FROM students WHERE name = 'ArithC';").value("resultSet", nlohmann::json::array());
+        check(rs.empty(), "Verify ArithC deleted by left arithmetic expression");
+    }
+
+    // Test right-side arithmetic: 40 = age + 10 → ArithB(30+10=40) should be deleted
+    check(sendSql("DELETE FROM students WHERE 40 = age + 10;").value("success", false), "DELETE WHERE 40=age+10 (right arithmetic)");
+    {
+        auto rs = sendSql("SELECT name FROM students WHERE name = 'ArithB';").value("resultSet", nlohmann::json::array());
+        check(rs.empty(), "Verify ArithB deleted by right arithmetic expression");
+    }
+
+    // Test both-sides arithmetic: age + 5 = age + 5 → always true, deletes ArithA(20)
+    check(sendSql("DELETE FROM students WHERE age + 5 = age + 5;").value("success", false), "DELETE WHERE age+5=age+5 (both sides arithmetic)");
+    {
+        auto rs = sendSql("SELECT name FROM students WHERE name = 'ArithA';").value("resultSet", nlohmann::json::array());
+        check(rs.empty(), "Verify ArithA deleted by both-sides arithmetic expression");
+    }
+
+    // Verify all arithmetic test rows are gone
+    {
+        auto rs = sendSql("SELECT id FROM students WHERE name LIKE 'Arith%';").value("resultSet", nlohmann::json::array());
+        check(rs.empty(), "All arithmetic test rows deleted");
+    }
+
     // ========== DROP TABLE then DROP DATABASE CLEANUP ==========
     check(sendSql("DROP TABLE wide_table;").value("success", false), "DROP TABLE wide_table");
     check(sendSql("DROP TABLE items;").value("success", false), "DROP TABLE items");
@@ -249,22 +288,6 @@ int main()
     int total = passed + failed;
     int pct = total > 0 ? passed * 100 / total : 0;
     std::cout << "\nCrudSqlTest: " << passed << "/" << total << " (" << pct << "%)" << std::endl;
-
-    const auto now = std::chrono::system_clock::now();
-    const std::time_t t = std::chrono::system_clock::to_time_t(now);
-    std::tm tm{};
-    localtime_s(&tm, &t);
-    std::ostringstream ts;
-    ts << (tm.tm_year + 1900) << "-" << std::setw(2) << std::setfill('0') << (tm.tm_mon + 1) << "-"
-       << std::setw(2) << tm.tm_mday << " " << std::setw(2) << tm.tm_hour << ":"
-       << std::setw(2) << tm.tm_min << ":" << std::setw(2) << tm.tm_sec;
-
-    auto logPath = std::filesystem::path(SERVER_PROJECT_ROOT) / "src" / "test" / "report.log";
-    std::ofstream log(logPath, std::ios::app);
-    if (log.is_open()) {
-        log << "==========\nCrudSqlTest\n" << ts.str() << "\n"
-            << passed << "/" << total << " " << pct << "%\n";
-    }
-
+    writeReport("CrudSqlTest", passed, failed, passedIds, failedIds);
     return failed > 0 ? 1 : 0;
 }

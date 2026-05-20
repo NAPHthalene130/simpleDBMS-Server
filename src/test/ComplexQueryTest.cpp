@@ -18,6 +18,8 @@
 #include <string>
 #include <vector>
 
+#include "TestUtils.h"
+
 #ifndef SERVER_PROJECT_ROOT
 #define SERVER_PROJECT_ROOT "H:/CODE/DBMS/simpleDBMS-Server"
 #endif
@@ -33,6 +35,8 @@ int main()
 
     int passed = 0;
     int failed = 0;
+    int testId = 0;
+    std::vector<int> passedIds, failedIds;
 
     auto sendSql = [&](const std::string &sql) -> nlohmann::json {
         const std::string req = NetData("sql", sql).toJson();
@@ -46,8 +50,9 @@ int main()
     };
 
     auto check = [&](bool ok, const std::string &desc, const std::string &extra = "") {
-        if (ok) { std::cout << "PASS: " << desc << std::endl; ++passed; }
-        else { std::cout << "FAIL: " << desc; if (!extra.empty()) std::cout << " [" << extra << "]"; std::cout << std::endl; ++failed; }
+        ++testId;
+        if (ok) { std::cout << "PASS: " << desc << std::endl; ++passed; passedIds.push_back(testId); }
+        else { std::cout << "FAIL: " << desc; if (!extra.empty()) std::cout << " [" << extra << "]"; std::cout << std::endl; ++failed; failedIds.push_back(testId); }
     };
 
     // ===== Setup =====
@@ -331,22 +336,6 @@ int main()
     int total = passed + failed;
     int pct = total > 0 ? passed * 100 / total : 0;
     std::cout << "\nComplexQueryTest: " << passed << "/" << total << " (" << pct << "%)" << std::endl;
-
-    const auto now = std::chrono::system_clock::now();
-    const std::time_t t = std::chrono::system_clock::to_time_t(now);
-    std::tm tm{};
-    localtime_s(&tm, &t);
-    std::ostringstream ts;
-    ts << (tm.tm_year + 1900) << "-" << std::setw(2) << std::setfill('0') << (tm.tm_mon + 1) << "-"
-       << std::setw(2) << tm.tm_mday << " " << std::setw(2) << tm.tm_hour << ":"
-       << std::setw(2) << tm.tm_min << ":" << std::setw(2) << tm.tm_sec;
-
-    auto logPath = std::filesystem::path(SERVER_PROJECT_ROOT) / "src" / "test" / "report.log";
-    std::ofstream log(logPath, std::ios::app);
-    if (log.is_open()) {
-        log << "==========\nComplexQueryTest\n" << ts.str() << "\n"
-            << passed << "/" << total << " " << pct << "%\n";
-    }
-
+    writeReport("ComplexQueryTest", passed, failed, passedIds, failedIds);
     return failed > 0 ? 1 : 0;
 }

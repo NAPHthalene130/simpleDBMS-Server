@@ -11,6 +11,7 @@
 #include <nlohmann/json.hpp>
 
 #include "Core.h"
+#include "TestUtils.h"
 #include "binder/BinderManager.h"
 #include "binder/Binder.h"
 #include "core/SqlPipeline.h"
@@ -60,14 +61,17 @@ int main()
 {
     int passCount = 0;
     int failCount = 0;
+    int testId = 0;
+    std::vector<int> passedIds, failedIds;
 
     auto check = [&](bool condition, const std::string &desc) {
+        ++testId;
         if (condition) {
             std::cout << "PASS: " << desc << std::endl;
-            ++passCount;
+            ++passCount; passedIds.push_back(testId);
         } else {
             std::cout << "FAIL: " << desc << std::endl;
-            ++failCount;
+            ++failCount; failedIds.push_back(testId);
         }
     };
 
@@ -418,43 +422,10 @@ int main()
               "Executor: DclExecutor explicitly non-null (type check)");
     }
 
-    const int total = passCount + failCount;
-    const int percent = (total > 0) ? static_cast<int>((static_cast<double>(passCount) / total) * 100.0) : 0;
-
-    /**
-     * @brief 写入报告到 report.log
-     * @author NAPH130
-     */
-    const auto now = std::chrono::system_clock::now();
-    const std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
-    std::tm localTime{};
-    localtime_s(&localTime, &currentTime);
-
-    std::ostringstream timeStream;
-    timeStream << std::setfill('0')
-               << (localTime.tm_year + 1900) << "-"
-               << std::setw(2) << (localTime.tm_mon + 1) << "-"
-               << std::setw(2) << localTime.tm_mday << " "
-               << std::setw(2) << localTime.tm_hour << ":"
-               << std::setw(2) << localTime.tm_min << ":"
-               << std::setw(2) << localTime.tm_sec;
-
-    const auto logPath = std::filesystem::path(SERVER_PROJECT_ROOT) / "src" / "test" / "report.log";
-
-    if (!std::filesystem::exists(logPath.parent_path())) {
-        std::filesystem::create_directories(logPath.parent_path());
-    }
-
-    std::ofstream logFile(logPath, std::ios::app);
-    if (logFile.is_open()) {
-        logFile << "==========\n"
-                << "ModuleTest\n"
-                << timeStream.str() << "\n"
-                << passCount << "/" << total << " " << percent << "%\n";
-        logFile.close();
-    }
-
-    std::cout << "\nSummary: " << passCount << "/" << total << " passed (" << percent << "%)" << std::endl;
+    int total = passCount + failCount;
+    int pct = total > 0 ? passCount * 100 / total : 0;
+    std::cout << "\nSummary: " << passCount << "/" << total << " passed (" << pct << "%)" << std::endl;
+    writeReport("ModuleTest", passCount, failCount, passedIds, failedIds);
 
     return failCount > 0 ? 1 : 0;
 }

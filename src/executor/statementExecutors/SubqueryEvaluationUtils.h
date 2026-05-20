@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -163,6 +164,84 @@ inline bool tryResolveColumnValue(const std::string &operand,
     return false;
 }
 
+inline bool evaluateArithmeticExpression(const std::string &expr,
+                                          const std::vector<std::string> &row,
+                                          const std::vector<std::string> &columns,
+                                          const std::string &currentTableName,
+                                          std::string &outResult)
+{
+    if (expr.find(" + ") == std::string::npos
+        && expr.find(" - ") == std::string::npos
+        && expr.find(" * ") == std::string::npos
+        && expr.find(" / ") == std::string::npos) {
+        return false;
+    }
+
+    std::vector<std::string> tokens;
+    std::istringstream stream(expr);
+    std::string token;
+    while (stream >> token) {
+        tokens.push_back(token);
+    }
+
+    if (tokens.size() < 3 || tokens.size() % 2 == 0) {
+        return false;
+    }
+
+    std::vector<double> values;
+    for (std::size_t i = 0; i < tokens.size(); i += 2) {
+        const std::string &operand = tokens[i];
+        std::string resolvedValue;
+        if (tryResolveColumnValue(operand, row, columns, currentTableName, resolvedValue)) {
+            try {
+                std::size_t pos = 0;
+                values.push_back(std::stod(resolvedValue, &pos));
+            } catch (...) {
+                return false;
+            }
+        } else {
+            try {
+                std::size_t pos = 0;
+                values.push_back(std::stod(operand, &pos));
+            } catch (...) {
+                return false;
+            }
+        }
+    }
+
+    std::vector<std::string> operators;
+    for (std::size_t i = 1; i < tokens.size(); i += 2) {
+        operators.push_back(tokens[i]);
+    }
+
+    for (std::size_t i = 0; i < operators.size();) {
+        if (operators[i] == "*" || operators[i] == "/") {
+            if (operators[i] == "/" && values[i + 1] == 0.0) {
+                return false;
+            }
+            values[i] = (operators[i] == "*") ? (values[i] * values[i + 1]) : (values[i] / values[i + 1]);
+            values.erase(values.begin() + i + 1);
+            operators.erase(operators.begin() + i);
+        } else {
+            ++i;
+        }
+    }
+
+    double result = values[0];
+    for (std::size_t i = 0; i < operators.size(); ++i) {
+        if (operators[i] == "+") {
+            result += values[i + 1];
+        } else if (operators[i] == "-") {
+            result -= values[i + 1];
+        }
+    }
+
+    std::ostringstream oss;
+    oss << result;
+    outResult = oss.str();
+    return true;
+}
+
 inline bool evaluateConditionTree(const ConditionNode *node,
                                   const std::vector<std::string> &row,
                                   const std::vector<std::string> &columns,
@@ -287,11 +366,16 @@ inline bool evaluateLeafCondition(const ConditionNode *node,
 
     std::string leftValue;
     if (!tryResolveColumnValue(node->getLeftOperand(),
-                               row,
-                               columns,
-                               currentTableName,
-                               leftValue)) {
-        return false;
+                                row,
+                                columns,
+                                currentTableName,
+                                leftValue)
+        && !evaluateArithmeticExpression(node->getLeftOperand(),
+                                          row,
+                                          columns,
+                                          currentTableName,
+                                          leftValue)) {
+        leftValue = node->getLeftOperand();
     }
 
     const std::string opUpper = toUpperString(node->getOperator());
@@ -343,6 +427,12 @@ inline bool evaluateLeafCondition(const ConditionNode *node,
                                      outerColumns,
                                      outerTableName,
                                      resolvedValue)) {
+            rightValue = resolvedValue;
+        } else if (evaluateArithmeticExpression(rightValue,
+                                                 row,
+                                                 columns,
+                                                 currentTableName,
+                                                 resolvedValue)) {
             rightValue = resolvedValue;
         }
 

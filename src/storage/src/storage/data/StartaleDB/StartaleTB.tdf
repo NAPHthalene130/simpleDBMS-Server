@@ -1,5 +1,0 @@
-schema_version=2
-table=StartaleTB
-columns=A:TEXT|B:TEXT|C:TEXT
-primary_key=A
-index_definitions=PRIMARY(A):BTREE:StartaleTB.tid

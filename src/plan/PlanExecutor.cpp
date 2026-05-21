@@ -161,6 +161,7 @@ ExecutionResult PlanExecutor::execute(std::shared_ptr<PlanNode> root,
         // 检测是否有 JOIN 节点
         // 作者：NAPH130
         bool hasJoin = false;
+        bool hasAggregation = false;
         {
             std::function<void(const PlanNode *)> checkJoin;
             checkJoin = [&](const PlanNode *node) {
@@ -229,6 +230,7 @@ ExecutionResult PlanExecutor::execute(std::shared_ptr<PlanNode> root,
                     return nullptr;
                 };
                 aggNode = findAgg(root.get());
+                hasAggregation = (aggNode != nullptr);
             }
 
             if (aggNode != nullptr) {
@@ -423,6 +425,7 @@ ExecutionResult PlanExecutor::execute(std::shared_ptr<PlanNode> root,
                     return nullptr;
                 };
                 aggNode = findAgg(root.get());
+                hasAggregation = (aggNode != nullptr);
             }
 
             if (aggNode != nullptr) {
@@ -449,9 +452,9 @@ ExecutionResult PlanExecutor::execute(std::shared_ptr<PlanNode> root,
             applyOrderByAndLimit(resultSet, columns, selectStmt);
         }
 
-        // 单表路径下的后置 WHERE 条件过滤
+        // 单表路径下的后置 WHERE 条件过滤（仅在无聚合时执行，聚合的 WHERE 已在 table.select 中完成）
         // 作者：NAPH130
-        if (!hasJoin && whereCond != nullptr) {
+        if (!hasJoin && whereCond != nullptr && !hasAggregation) {
             std::vector<std::vector<std::string>> filteredSet;
             for (const auto &row : resultSet) {
                 if (evaluateConditionTreeWithDb(whereCond.get(), row, columns, dbName)) {

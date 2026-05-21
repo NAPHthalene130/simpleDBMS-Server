@@ -1,4 +1,0 @@
-constraints_version=1
-constraint=PRIMARY_KEY(A)
-constraint=NOT_NULL(A)
-index=PRIMARY:StartaleTB.tid
